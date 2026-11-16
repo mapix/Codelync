@@ -13,9 +13,9 @@ export function publicSourcePath(name) {
   const parts = name.split('/');
   if (!name || name.includes('\\') || parts.some(part => !part || part === '.' || part === '..')) return false;
   if (!(parts.length === 1 ? ROOT_FILES.has(name) : SOURCE_ROOTS.has(parts[0]))) return false;
-  if (OBSOLETE.has(name) || /^(?:native\/(?:bin|codelight-qa|codelight-native-worker-qa)|website\/(?:downloads|release\.json))(?:\/|$)/u.test(name)) return false;
+  if (OBSOLETE.has(name) || /^(?:native\/(?:bin|codelight-qa|codelight-native-worker-qa)|website\/(?:downloads|release\.json)|docs\/tasks)(?:\/|$)/u.test(name)) return false;
   return !parts.some(part => PRIVATE_DIRS.has(part) || PRIVATE_FILES.has(part)
-    || part.startsWith('.env') && part !== '.env.example' || /^WORKLOG.*\.md$/iu.test(part)
+    || part.startsWith('.env') && part !== '.env.example' || part.startsWith('._') || part === '__MACOSX' || /^WORKLOG.*\.md$/iu.test(part)
     || /\.(?:app|framework|xcframework|xcarchive|bundle|xcresult)$/iu.test(part))
     && !/\.(?:p8|p12|pem|key|mobileprovision|keystore|jks|ipa|apk|log|sqlite(?:-wal|-shm)?|db|pcap|pcapng|tsbuildinfo)$/iu.test(name);
 }

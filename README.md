@@ -1,13 +1,14 @@
 # CodeLight
 
-[Website](https://codelight.novarock.io/) · [Public source](https://github.com/mapix/CodeLight) · [MIT license](LICENSE) · [中文](README.zh-CN.md)
+[Website](https://codelight.novarock.io/) · [Source repository](https://github.com/mapix/CodeLight) · [MIT license](LICENSE) · [中文](README.zh-CN.md)
 
-Only desktop Codex connected through gateway mode is supported.
-只支持使用网关模式接入的桌面 Codex。
+CodeLight supports existing native sessions from Codex, Antigravity Desktop and
+Claude Desktop (Gateway). The source repository requires access permission. It is a native phone companion: open the Mac App and
+scan its QR code, with no phone account registration or VPN. Available actions
+follow each desktop's current state and confirmed capabilities.
 
-CodeLight is a native phone companion for existing Codex desktop sessions. Open the Mac App and scan its QR code: no phone account registration or VPN.
-
-The public Mac preview targets Apple Silicon with macOS 14+. Public downloads
+The public Mac preview 0.6.1 targets Apple Silicon with macOS 14+ and includes
+the three-Desktop integration within each owner's confirmed capabilities. Public downloads
 are Developer ID signed, Apple notarized and stapled. The iPhone client currently
 requires building from source with your own Apple development signing; there is
 no public App Store/TestFlight release or device-bound IPA download yet.
@@ -17,9 +18,13 @@ device can control the exposed sessions of your Mac's CodeLight account.
 
 ## Supported scope
 
-- The current distribution supports Codex only, using the original desktop session owner and its native session protocol.
+- Codex, Antigravity Desktop and Claude Desktop (Gateway) keep their original native sessions. Each app/mode exposes only its confirmed capabilities; support for a desktop does not imply identical controls across apps. Claude Desktop's complete formal controls remain under verification.
 - Session IDs, history increments, input admission, stop actions, questions, permissions and model/effort settings keep the original Codex identity and confirmed capability boundaries.
-- Other harnesses, window sharing and accessibility control are deferred. Historical source files and research specs remain in the repository; they are not advertised as enabled product support.
+- CLI families, other harnesses, window sharing and accessibility control are deferred. Historical source files and research specs remain in the repository; they are not advertised as enabled product support.
+
+Build the current source for the three-Desktop implementation. Integration and
+live verification are tracked in the [Antigravity contract](spec/antigravity-remote-control.md)
+and [Claude Desktop contract](spec/claude-desktop-native.md).
 
 See the [current product contract](spec/codelight-product.md),
 [project activity contract](spec/codelight-project-activity.md) and
@@ -63,14 +68,14 @@ For a signed iPhone trial, use `pnpm build:mobile --device YOUR_DEVICE_ID --team
 
 ## Behavior
 
-- Titles publish most recent first using original Codex update time, grouped by project across worktrees. Sessions older than 72 hours initially load basic title/project/time fields; opening one loads its richer data.
+- Titles publish most recent first using the original desktop update time, grouped by project across worktrees and isolated by app/host. Codex sessions older than 72 hours initially load basic title/project/time fields; opening one loads its richer data.
 - Paired phones restore an account-bound encrypted title cache. Existing rows remain usable while titles synchronize; stale connection results show synchronization until a current request can confirm failure. Opening a chat never waits for the whole title catalog.
 - A session tap requests desktop selection immediately and starts synchronization; no extra Open Desktop step.
 - Native project conversations use a session select box. Long titles fit the closed control, and the platform menu lists the available conversations.
-- Foreground project headers and visible session rows use lightweight active/waiting summaries from Codex. Unknown, stale or disconnected observations remain explicit; message history is loaded only for selected sessions.
+- Foreground project headers and visible session rows use lightweight native active/waiting summaries. Unknown, stale or disconnected observations remain explicit; message history is loaded only for selected sessions.
 - Opening a session waits for its existing observation and reads a fresh recent window, positioned at the newest messages. Earlier history loads in bounded pages only when you scroll upward; list/background work does not prefetch old history. A long active turn's start time is not used to date every new message.
 - After pairing, the Mac App defaults to a statistics dashboard with realtime/cumulative gateway traffic and interaction counts. Use the Statistics/Pairing switch to scan again.
-- Mac **Start** and **Pause** control the CodeLight service. Pause completes its owned service shutdown before Start becomes available. Pairing, settings and operation journals are retained; original Codex sessions keep running.
+- Mac **Start** and **Pause** control the CodeLight service. Pause completes its owned service shutdown before Start becomes available. Pairing, settings and operation journals are retained; the original desktop sessions keep running.
 - Mac **Connections** has independent Local network and Cloudflare checkboxes,
   plus Relay after a compatible HTTPS Relay server/key has been configured.
   Available channels start enabled by default; later checkbox choices persist.
@@ -87,8 +92,8 @@ For a signed iPhone trial, use `pnpm build:mobile --device YOUR_DEVICE_ID --team
   Select an option, then explicitly submit; the original question identity and
   native acceptance/unknown-receipt rules still apply.
 - Device authorization, rename and individual revocation are managed by the Mac App.
-- Phone background refresh requests a 60-minute minimum schedule from iOS; the operating system chooses actual runs. Mac observers keep collecting selected Codex sources.
-- Native model and reasoning controls update the existing desktop owner, with conflict and unknown-receipt protection.
+- Phone background refresh requests a 60-minute minimum schedule from iOS; the operating system chooses actual runs. Mac keeps collecting the selected native sources.
+- Where confirmed for the desktop app and mode, native model and reasoning controls update the existing session with conflict and unknown-receipt protection. Unverified settings controls stay unavailable.
 - User-facing strings follow the phone's selected language with a documented fallback. Native UI and runtime support are verified separately from TypeScript or fixture results.
 
 Local addresses/ports and Cloudflare Quick Tunnel addresses can change on Mac
@@ -101,7 +106,7 @@ not an App Store/TestFlight release.
 
 The normal user entry point is the Mac App. `scripts/codelight-daemon.mjs` remains
 an advanced self-hosted/diagnostic entry point with an explicit server/profile;
-it must retain the same Codex-only source boundary. Legacy server-selection and
+it retains the same verified native source boundary. Legacy server-selection and
 manual-account flows are not the current one-scan phone onboarding.
 
 ## Licensing

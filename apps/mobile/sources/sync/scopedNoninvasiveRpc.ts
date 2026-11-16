@@ -1,5 +1,6 @@
-import { NoninvasiveRpcJournal, type BridgeRpcReply, type BridgeRpcStorage } from './noninvasiveRpcJournal';
+import { NoninvasiveRpcJournal, type BridgeRpcReply, type BridgeRpcStorage, type BridgeRpcCompleteValidator } from './noninvasiveRpcJournal';
 import { rpcTarget } from '@slopus/happy-wire/codelight';
+import { readCodeLightOperationTrace, type CodeLightOperationSource, type CodeLightOperationTrace } from '@/utils/codeLightOperationLog';
 
 type KeyedStorage = {
     getItem(key: string): Promise<string | null>;
@@ -17,6 +18,9 @@ type Options = {
     digest(value: string): Promise<string>;
     id(): string;
     rpc(entityId: string, method: string, params: unknown, serverUrl: string): Promise<BridgeRpcReply>;
+    sourceContext?(entityId: string, target: string): CodeLightOperationSource | null;
+    onDiagnostics?(sessionId: string): void;
+    validateComplete?: BridgeRpcCompleteValidator;
 };
 
 /** Each authenticated connection/entity owns its operation journal. */
@@ -33,9 +37,11 @@ export class ScopedNoninvasiveRpc {
                 let legacyRead: { key: string; value: string } | null = null;
                 let legacyReply: { id: string; reply: BridgeRpcReply } | null = null;
                 const store: BridgeRpcStorage = {
-                    get: async () => {
+                    get: async (expectedCommandId?: string) => {
                         const current = await this.options.storage.getItem(storageKey);
                         if (current !== null) { legacyRead = null; legacyReply = null; return current; }
+                        // An explicit original-ID check never probes another legacy record first.
+                        if (expectedCommandId !== undefined) { legacyRead = null; legacyReply = null; return null; }
                         const origin = this.options.serverUrl();
                         const oldKeys = this.options.legacyKey ? [this.options.legacyKey] : [];
                         if (this.options.legacyScopedPrefix) oldKeys.push(this.options.legacyScopedPrefix + await this.options.digest(JSON.stringify([origin, entityId])));
@@ -72,14 +78,36 @@ export class ScopedNoninvasiveRpc {
                 }, this.options.id, this.options.digest, async event => {
                     const key = storageKey + ':diagnostics';
                     const prior = JSON.parse(await this.options.storage.getItem(key) ?? '[]');
-                    await this.options.storage.setItem(key, JSON.stringify([...(Array.isArray(prior) ? prior : []), event].slice(-32)));
-                });
+                    const rows = Array.isArray(prior) ? prior : [];
+                    // An acknowledged stage keeps the dispatch owner's identity even after reattachment.
+                    const recorded = [...rows].reverse().find(value => value?.commandId === event.commandId && value.source)?.source;
+                    const source = recorded ?? (event.stage === 'dispatch' ? this.options.sourceContext?.(entityId, target) : null);
+                    await this.options.storage.setItem(key, JSON.stringify([...rows, { ...event, authority, entityId, method: JSON.parse(target)[0], ...(source ? { source } : {}) }].slice(-32)));
+                    if (source) this.options.onDiagnostics?.(source.sessionId);
+                }, this.options.validateComplete);
             });
             this.journals.set(scope, create);
             void create.catch(() => { if (this.journals.get(scope) === create) this.journals.delete(scope); });
             existing = create;
         }
         return existing;
+    }
+
+    /** Local diagnostics only; never recovers a receipt or invokes the source. */
+    async readDiagnostics(sessionId: string): Promise<CodeLightOperationTrace[]> {
+        const authority = this.options.identity?.() ?? this.options.serverUrl(), rows: CodeLightOperationTrace[] = [];
+        const keys = await this.options.storage.getAllKeys?.() ?? [];
+        for (const key of keys) {
+            if (!key.startsWith(this.options.keyPrefix) || !key.endsWith(':diagnostics')) continue;
+            const value = JSON.parse(await this.options.storage.getItem(key) ?? '[]');
+            if (!Array.isArray(value) || value.length > 32) continue;
+            for (const event of value) {
+                const parsed = readCodeLightOperationTrace(event, authority, sessionId);
+                if (parsed) rows.push(parsed);
+            }
+        }
+        if ((this.options.identity?.() ?? this.options.serverUrl()) !== authority) throw Error('Log connection changed');
+        return rows.sort((a, b) => a.at - b.at);
     }
 
     async execute(entityId: string, method: string, params: Record<string, unknown>) {
@@ -108,6 +136,11 @@ export class ScopedNoninvasiveRpc {
         let confirmed = true;
         for (const target of targets) if (!await (await this.journal(authority, entityId, target)).recover({ serverUrl: authority, sessionId: entityId, method, target })) confirmed = false;
         return confirmed;
+    }
+
+    async recoverDetailed(entityId: string, method: string, params: Record<string, unknown>, expectedCommandId?: string) {
+        const authority = this.options.identity?.() ?? this.options.serverUrl(), target = rpcTarget(method, params);
+        return (await this.journal(authority, entityId, target)).recoverDetailed({ serverUrl: authority, sessionId: entityId, method, target }, expectedCommandId);
     }
 
     async recoverPending() {

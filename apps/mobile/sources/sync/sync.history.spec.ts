@@ -6,6 +6,9 @@ import { normalizeRawMessage, RawRecordSchema } from './typesRaw';
 import { messageSortKey } from './typesMessage';
 import { messagePlanMode } from './messagePlanMode';
 import { AsyncLock } from '@/utils/lock';
+import { codeLightLoadingProgress } from './codeLightLoadingProgress';
+import { isNoninvasiveBridge } from './noninvasiveBridge';
+import { mergeMessageArray } from './messageArray';
 
 // Like sync.receipts.spec.ts, extract the real transport/store adapters without
 // booting native services. Unlike the preload mock, pagination cannot create an
@@ -27,7 +30,7 @@ visit(storeSource);
 expect(adapters).toHaveLength(adapterNames.length);
 const syncSource = source('./sync.ts');
 const klass = syncSource.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'Sync')!;
-const methodNames = ['fetchMessages', 'fetchInitialLatestPage', 'fetchForwardSince', 'applyFetchedMessages', 'loadOlderMessages', 'preloadLatestPage', 'fetchOlderMessagesInBackground'];
+const methodNames = ['hasCodeLightPeer', 'fetchMessages', 'fetchInitialLatestPage', 'fetchForwardSince', 'applyFetchedMessages', 'loadOlderMessages', 'preloadLatestPage', 'fetchOlderMessagesInBackground'];
 const methods = klass.members.filter(node => node.name && methodNames.includes(node.name.getText(syncSource))).map(node => node.getText(syncSource));
 expect(methods).toHaveLength(methodNames.length);
 
@@ -42,7 +45,7 @@ function setup(rows: ReturnType<typeof record>[], archived = false) {
     let state: any = { sessions: { session: { id: 'session', active: !archived, metadata: null, agentState: null } }, sessionMessages: {} };
     Object.assign(state, compile(`return ({${adapters.join(',')}});`, {
         set: (update: (state: any) => any) => { state = update(state); },
-        createReducer, reducer, messageSortKey, messagePlanMode, rigSendsMessageReceipts: () => false,
+        createReducer, reducer, messageSortKey, messagePlanMode, isNoninvasiveBridge, mergeMessageArray, rigSendsMessageReceipts: () => false,
     }));
     const storage = { getState: () => state };
     const request = vi.fn(async (url: string) => {
@@ -54,6 +57,9 @@ function setup(rows: ReturnType<typeof record>[], archived = false) {
     });
     const Harness = compile(`class Sync { ${methods.join('\n')} }; return Sync;`, {
         storage, apiSocket: { request }, normalizeRawMessage, SEQ_BACKWARD_INITIAL_SENTINEL: 2147483647,
+        // These cases exercise legacy encrypted message transport; native peer
+        // recent/history boundaries are covered separately with real source IDs.
+        config: { noninvasiveLocal: false }, codeLightLoadingProgress,
         log: { log() {} }, setTimeout: (resolve: () => void) => resolve(),
     });
     const sync = new Harness();

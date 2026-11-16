@@ -11,27 +11,33 @@ import { MacConnectionService, privateLANAddresses } from '../src/happy/mac-conn
 import { ConnectionChannelsManager } from '../src/network/connection-channels.mjs';
 import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
 import { DeviceRegistry } from '../src/happy/device-registry.mjs';
+import { channelPath } from '@slopus/happy-wire/codelight';
 
 /** @typedef {Record<string,any>} Value */
 const LAN = { en0: [{ address: '192.168.50.2', family: 'IPv4', internal: false }] };
 /** @param {()=>boolean} predicate */
 async function until(predicate) { for (let index = 0; index < 100; index++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.ok(predicate()); }
-class Tunnel extends EventEmitter { async start() { return 'https://fixture-public.example'; } activate() {} close() {} }
-/** @param {import('node:test').TestContext} t */
-async function fixture(t) {
+class Tunnel extends EventEmitter {
+  /** @param {string} origin */
+  constructor(origin) { super(); this.origin = origin; }
+  async start() { return this.origin; } activate() {} close() {}
+}
+/** @param {import('node:test').TestContext} t @param {string} [sourceApp] */
+async function fixture(t, sourceApp = 'codex') {
   const state = await mkdtemp(join(tmpdir(), 'codelight-mac-connections-')), phone = nacl.box.keyPair(), mac = nacl.box.keyPair();
   const token = 'synthetic-device-token', account = { secret: randomBytes(32).toString('base64url') }, devices = new DeviceRegistry(join(state, 'devices.json'));
   const deviceId = await devices.approve(Buffer.from(phone.publicKey).toString('base64url'), 'Fixture phone', token);
   const invitations = new PairingInvitations({ key: mac.secretKey, credentials: { ...account, token, deviceId } });
   let backendHeaders = /** @type {Value|null} */ (null), reads = 0, starts = 0, preparations = 0;
   const backend = createServer((req, res) => { backendHeaders = req.headers; res.end('synthetic-backend'); }); backend.listen(0, '127.0.0.1'); await once(backend, 'listening'); const address = backend.address(); assert.ok(address && typeof address !== 'string');
-  const selected = { source: { app: 'codex', id: 'native-fixture', title: 'Fixture session', hostId: 'fixture-host', updatedAt: Date.now() },
+  const selected = { source: { app: sourceApp, id: 'native-fixture', kind: 'session', title: 'Fixture session', hostId: sourceApp === 'antigravity' ? 'local:antigravity:' + 'a'.repeat(64) : 'fixture-host', updatedAt: Date.now(),
+    ...(sourceApp === 'antigravity' ? { protocol: 'antigravity-connect', runtimeGeneration: 'fixture-owner', parentId: 'native-parent', isSubagent: true } : {}) },
     binding: { happySessionId: 'mirror-fixture', machineId: 'machine-fixture', sessionKey: Buffer.alloc(32, 8).toString('base64'), metadata: { nativeSession: { catalogueAvailable: true } } } };
   const uses = new Map(), actors = new Map();
   const actor = { status: () => ({ sourceStatus: 'connected' }), transport: { peerSnapshot: () => ({ metadata: selected.binding.metadata }) }, connector: { readRecent: async (/** @type {Value} */ options) => {
     assert.ok((uses.get('fixture-source') ?? 0) > 0, 'source must remain pinned throughout the native read'); reads++; return { rows: [{ id: 'latest', role: 'assistant', turnId: 'fixture-turn', text: 'synthetic-current' }], hasMore: false, nextCursor: null, fresh: options.fresh };
   } }, openDesktop: () => { throw Error('recent reads must not navigate desktop'); } };
-  const daemon = { sources: new Map([['fixture-source', selected]]), actors, closed: false, ownsLease: true, inventoryAvailable: true,
+  const daemon = { sources: new Map([['fixture-source', selected]]), actors, closed: false, ownsLease: true, inventoryAvailable: true, registrationAvailable: true, machine: { id: 'machine-fixture' },
     useSource: async (/** @type {string} */ key, /** @type {()=>Promise<Value>} */ operation) => { uses.set(key, (uses.get(key) ?? 0) + 1); try { return await operation(); } finally { uses.set(key, uses.get(key) - 1); } },
     prepareSource: async (/** @type {string} */ key) => { assert.equal(key, 'fixture-source'); preparations++; actors.set(key, actor); return actor; },
     startSource: async (/** @type {string} */ key, /** @type {Value} */ value) => { assert.equal(key, 'fixture-source'); assert.equal(value, actor); starts++; } };
@@ -40,14 +46,14 @@ async function fixture(t) {
     interfaces: () => LAN,
     gatewayFactory: options => { gatewayOptions.push(options); const server = createPairingGateway(options), listen = server.listen.bind(server);
       server.listen = /** @type {typeof server.listen} */ ((/** @type {number} */ port, /** @type {string} */ host) => { requestedHosts.push(host); return listen(port, '127.0.0.1'); }); return server; },
-    managerFactory: options => new ConnectionChannelsManager({ ...options, transportFactory: () => new Tunnel(), probesFor: () => ({ verify: async () => {} }) }) });
+    managerFactory: options => new ConnectionChannelsManager({ ...options, transportFactory: config => new Tunnel(config.kind === 'relay' ? config.serverUrl + '/r/' + 'a'.repeat(24) : 'https://fixture-public.example'), probesFor: () => ({ verify: async () => {} }) }) });
   t.after(async () => { await service.close(); invitations.close(); backend.closeAllConnections(); await new Promise(resolve => backend.close(resolve)); await rm(state, { recursive: true, force: true }); });
   await service.start(); await until(() => service.candidates().some(row => row.kind === 'local'));
   return { service, phone, mac, token, account, devices, deviceId, daemon, gatewayOptions, requestedHosts, counters: () => ({ reads, starts, preparations, backendHeaders }) };
 }
 /** @param {Value} f @param {Value} channel @param {string} path @param {string} [method] */
 function header(f, channel, path, method = 'GET') {
-  const nonce = randomBytes(24), payload = { version: 2, token: f.token, origin: channel.url, method, path, at: Date.now() };
+  const nonce = randomBytes(24), payload = { version: 2, token: f.token, origin: channel.url, method, path: channelPath(channel.url, channel.url + path), at: Date.now() };
   return 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
     ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(payload)), nonce, f.mac.publicKey, f.phone.secretKey)).toString('base64url') })).toString('base64url');
 }
@@ -62,6 +68,26 @@ test('LAN discovery selects at most three distinct actual private IPv4 addresses
     { address: '192.168.1.2', family: 'IPv4', internal: false }, { address: '10.0.0.2', family: 'IPv4', internal: false }, { address: '172.20.1.2', family: 'IPv4', internal: false }, { address: '10.0.0.3', family: 'IPv4', internal: false }, { address: 'fe80::1', family: 'IPv6', internal: false }] };
   const rows = privateLANAddresses(interfaces); assert.equal(rows.length, 3); assert.equal(new Set(rows).size, 3);
   assert.ok(rows.every(row => !['127.0.0.1', '8.8.8.8', 'fe80::1', '0.0.0.0'].includes(row)));
+});
+
+test('[N07] malformed IPv4 and mislabeled IPv6 records cannot become DNS or loopback LAN binds', () => {
+  const interfaces = { synthetic: [
+    { address: '10..0.1', family: 'IPv4', internal: false },
+    { address: '192.168.50.02', family: 'IPv4', internal: false },
+    { address: '10.0.0.3 ', family: 'IPv4', internal: false },
+    { address: '[::1]', family: 'IPv4', internal: false },
+    { address: 'fd00::1', family: 'IPv4', internal: false },
+    { address: '10.0.0.3', family: 'IPv6', internal: false },
+    { address: '10.0.0.2', family: 4, internal: false }
+  ] };
+  assert.deepEqual(privateLANAddresses(interfaces), ['10.0.0.2']);
+});
+
+test('[N05] concurrent service shutdown joins the same owned gateway cleanup', async t => {
+  const f = await fixture(t), first = f.service.close(), second = f.service.close();
+  try { assert.equal(first, second); }
+  finally { await Promise.all([first, second]); }
+  assert.equal(f.service.gateways.size, 0); assert.deepEqual(f.service.candidates(), []);
 });
 
 test('Mac composition shares one proof/account/daemon, uses distinct public gateways and does not rotate QR on repeated readiness confirmation', async t => {
@@ -87,6 +113,22 @@ test('LAN rejects a raw bearer and exposes peer channels only as a pinned sealed
   assert.equal((await fetch(url, { headers: { Authorization: authorization } })).status, 401);
 });
 
+test('Cloudflare and Relay gateways reject approved legacy tokens and require fresh device proofs', async t => {
+  const f = await fixture(t);
+  await f.service.manager.configureRelay({ serverUrl: 'https://fixture-relay.example', token: 'synthetic-relay-token' });
+  for (const kind of /** @type {('cloudflare'|'relay')[]} */ (['cloudflare', 'relay'])) {
+    const channel = f.service.candidates().find(row => row.kind === kind); assert.ok(channel);
+    const gateway = f.service.publicGateways.get(kind); assert.ok(gateway);
+    const path = '/v2/sessions', url = gateway.origin + path;
+    assert.equal((await fetch(url, { headers: { Authorization: 'Bearer ' + f.token } })).status, 401);
+    const authorization = header(f, channel, path);
+    const response = await fetch(url, { headers: { Authorization: authorization } });
+    assert.equal(response.status, 200); assert.equal(await response.text(), 'synthetic-backend');
+    assert.equal(f.counters().backendHeaders?.authorization, 'Bearer ' + f.token);
+    assert.equal((await fetch(url, { headers: { Authorization: authorization } })).status, 401);
+  }
+});
+
 test('peer catalog is index-only and recent/history source reads remain pinned without desktop navigation', async t => {
   const f = await fixture(t), catalog = await f.service.peerApi('/api/peer/catalog?limit=200', 'GET', {}, f.deviceId);
   assert.equal(catalog.sessions[0].id, 'mirror-fixture'); assert.equal(catalog.sessions[0].sessionKey, undefined);
@@ -96,6 +138,51 @@ test('peer catalog is index-only and recent/history source reads remain pinned w
   await assert.rejects(f.service.peerApi('/api/peer/sessions/mirror-fixture/history', 'GET', {}, f.deviceId), /cursor/);
   await assert.rejects(f.service.peerApi('/api/peer/sessions/foreign/recent', 'POST', {}, f.deviceId), /unavailable/);
   assert.equal(f.daemon.closed, false);
+});
+
+test('bodyless authenticated history GET uses query bounds without the recent POST body guard', async t => {
+  const f = await fixture(t), local = f.service.candidates().find(row => row.kind === 'local'); assert.ok(local);
+  const path = '/api/peer/sessions/mirror-fixture/history?cursor=known-history-boundary&limit=4';
+  const response = await fetch(localRequestUrl(local, path), { headers: { Authorization: header(f, local, path) } });
+  assert.equal(response.status, 200);
+  assert.equal(unseal(f, await response.json()).payload.rows.length, 1);
+  assert.equal(f.counters().reads, 1);
+  await assert.rejects(f.service.peerApi(path, 'GET', { unexpected: true }, f.deviceId), { code: 'invalid-peer-request' });
+  await assert.rejects(f.service.peerApi('/api/peer/sessions/mirror-fixture/recent', 'POST', /** @type {any} */ (undefined), f.deviceId), { code: 'invalid-peer-request' });
+});
+
+test('an incomplete other-app inventory preserves registered Codex and Antigravity child catalog/read authority', async t => {
+  for (const sourceApp of ['codex', 'antigravity']) await t.test(sourceApp, async child => {
+    const f = await fixture(child, sourceApp); f.daemon.inventoryAvailable = false;
+    const catalog = await f.service.peerApi('/api/peer/catalog', 'GET', {}, f.deviceId);
+    assert.equal(catalog.sessions[0].id, 'mirror-fixture'); assert.equal(f.counters().reads, 0); assert.equal(f.counters().preparations, 0);
+    assert.equal(catalog.sessions[0].agentState, null); assert.equal(catalog.sessions[0].active, false);
+    if (sourceApp === 'antigravity') {
+      assert.equal(catalog.sessions[0].metadata.nativeSession.parentId, 'native-parent');
+      assert.equal(catalog.sessions[0].metadata.nativeSession.isSubagent, true);
+    }
+    const recent = await f.service.peerApi('/api/peer/sessions/mirror-fixture/recent', 'POST', { limit: 1 }, f.deviceId);
+    assert.equal(recent.rows[0].text, 'synthetic-current');
+    const older = await f.service.peerApi('/api/peer/sessions/mirror-fixture/history?cursor=known-history-boundary&limit=1', 'GET', {}, f.deviceId);
+    assert.equal(older.rows.length, 1); assert.equal(f.counters().reads, 2);
+    f.daemon.ownsLease = false;
+    await assert.rejects(f.service.peerApi('/api/peer/catalog', 'GET', {}, f.deviceId), { code: 'source-unavailable' });
+    await assert.rejects(f.service.peerApi('/api/peer/sessions/mirror-fixture/recent', 'POST', { limit: 1 }, f.deviceId), { code: 'source-unavailable' });
+    assert.equal(f.counters().reads, 2);
+  });
+});
+
+test('catalog remains unavailable before registration completes or without its current machine and lease', async t => {
+  const f = await fixture(t);
+  f.daemon.registrationAvailable = false;
+  await assert.rejects(f.service.peerApi('/api/peer/catalog', 'GET', {}, f.deviceId), { code: 'source-unavailable' });
+  f.daemon.registrationAvailable = true; f.daemon.machine.id = '';
+  await assert.rejects(f.service.peerApi('/api/peer/catalog', 'GET', {}, f.deviceId), { code: 'source-unavailable' });
+  f.daemon.machine.id = 'machine-fixture';
+  assert.equal((await f.service.peerApi('/api/peer/catalog', 'GET', {}, f.deviceId)).sessions.length, 1);
+  f.daemon.closed = true;
+  await assert.rejects(f.service.peerApi('/api/peer/catalog', 'GET', {}, f.deviceId), { code: 'source-unavailable' });
+  assert.deepEqual(f.counters(), { reads: 0, starts: 0, preparations: 0, backendHeaders: null });
 });
 
 test('proof authorization replaces the token only on the owned backend link and revocation affects the same LAN entry', async t => {

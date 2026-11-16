@@ -1,4 +1,4 @@
-export interface CodeLightProjectDescriptor { id: string; projectKey: string; hostId: string; machineId: string; sessions?: Array<{ id: string; nativeId: string }> }
+export interface CodeLightProjectDescriptor { id: string; projectKey: string; hostId: string; machineId: string; app?: 'codex' | 'antigravity' | 'claude-desktop'; sessions?: Array<{ id: string; nativeId: string }> }
 export interface CodeLightSessionActivity { known: boolean; active: boolean; waiting: boolean; status: 'ready' | 'refreshing' | 'unavailable' | 'stale'; observedAt: number }
 export interface CodeLightProjectActivity {
     total: number; active: number; waiting: number; unknown: number;

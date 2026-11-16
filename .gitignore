@@ -45,3 +45,6 @@ website/downloads/
 **/network-access.json
 **/network-identity.json
 **/connection-channels.json
+
+# Private implementation diaries and real-device acceptance notes stay local.
+docs/tasks/

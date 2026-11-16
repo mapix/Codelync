@@ -4,6 +4,8 @@
  */
 
 import { isNoninvasiveBridge, getNoninvasiveTurnId } from './noninvasiveBridge';
+import { prepareNativeQueryCancel, type NativeQuery } from '@/utils/nativeQuery';
+import { nativeSubagentInputReadOnly } from '@/utils/nativeParentControl';
 import { apiSocket } from './apiSocket';
 import { sync } from './sync';
 import { storage } from './storage';
@@ -885,12 +887,18 @@ export function sessionSetAgentModes(sessionId: string, patch: SessionAgentModes
 /**
  * Abort the current session operation
  */
-export async function sessionAbort(sessionId: string): Promise<void> {
-    const metadata = storage.getState().sessions[sessionId]?.metadata;
-    if (!rigCanAbort(metadata)) {
+export async function sessionAbort(sessionId: string, expectedQuery?: NativeQuery | null): Promise<void> {
+    const session = storage.getState().sessions[sessionId], metadata = session?.metadata;
+    if (nativeSubagentInputReadOnly(session) || !rigCanAbort(metadata, session?.agentState)) {
         throw new Error('Abort is not available for this session');
     }
     if (isNoninvasiveBridge(metadata)) {
+        if (metadata?.bridge?.source.app === 'claude-desktop') {
+            const payload = prepareNativeQueryCancel(session, expectedQuery);
+            if (!payload) throw new Error('The native query changed or cannot be cancelled');
+            await executeNoninvasiveRpc(sessionId, 'abort', payload);
+            return;
+        }
         const turnId = getNoninvasiveTurnId(metadata);
         if (!turnId) throw new Error('Abort is not available for this session');
         // 原 owner 的 interrupt 必须带当前 turn，不能把 Happy 会话 id 当作原 turn 身份。

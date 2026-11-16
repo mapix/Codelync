@@ -33,7 +33,7 @@ import { isRunningOnMac } from '@/utils/platform';
 import { MobileGlassSurface } from './MobileGlass';
 import { AnimatedFade } from './AnimatedOverlay';
 import { BubblePressable } from './BubblePressable';
-import { resolveAgentInputPrimaryAction } from './agentInputPrimaryAction';
+import { agentInputPrimaryActionDisabled, agentInputPrimaryActionLabel, resolveAgentInputPrimaryAction } from './agentInputPrimaryAction';
 import { NativeSettingsMenu, type NativeSettingsMenuGroup, type NativeSettingsMenuOption } from './NativeSettingsMenu';
 import { ProviderIcon } from './ProviderIcon';
 import { PickerSheet, PickerSheetOption, PickerSheetSection } from './PickerSheet';
@@ -80,6 +80,7 @@ interface AgentInputProps {
     modelMode?: ModelMode | null;
     availableModels?: ModelMode[];
     onModelModeChange?: (mode: ModelMode) => void;
+    onViewModelCatalog?: () => void;
     effortLevel?: EffortLevel | null;
     availableEffortLevels?: EffortLevel[];
     onEffortLevelChange?: (level: EffortLevel) => void;
@@ -126,6 +127,8 @@ interface AgentInputProps {
     currentPath?: string | null;
     onPathClick?: () => void;
     blockSend?: boolean;
+    stopWhenSendBlocked?: boolean;
+    showReadOnlyEffort?: boolean;
     isSendDisabled?: boolean;
     isSending?: boolean;
     minHeight?: number;
@@ -882,7 +885,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     // ellipsises only when the row really runs out of width.
     const modelLabel = truncateModelLabel(modelName);
     const effortLabel = props.effortLevel?.name;
-    const canOpenModelPicker = availableModels.length > 0 && !!props.onModelModeChange;
+    const canOpenModelPicker = availableModels.length > 0 && (!!props.onModelModeChange || !!props.onViewModelCatalog);
     const canOpenEffortPicker = availableEffortLevels.length > 0 && !!props.onEffortLevelChange;
     const isSandboxEnabled = React.useMemo(() => {
         const sandbox = props.metadata?.sandbox as unknown;
@@ -961,6 +964,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         // desktop layout keeps its own send/mic resolution below. A live voice
         // session stays in this state so the same button can end it.
         canVoice: compactMobileComposer && !!props.onMicPress,
+        stopWhenSendBlocked: props.stopWhenSendBlocked,
     });
     const shouldShowStopButton = primaryAction === 'stop';
     const shouldShowVoiceButton = primaryAction === 'voice';
@@ -1244,8 +1248,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
 
     const handleModelPress = React.useCallback(() => {
         if (!canOpenModelPicker) return;
+        if (!props.onModelModeChange && props.onViewModelCatalog) { props.onViewModelCatalog(); return; }
         handlePickerPress('model');
-    }, [canOpenModelPicker, handlePickerPress]);
+    }, [canOpenModelPicker, handlePickerPress, props.onModelModeChange, props.onViewModelCatalog]);
 
     const handleEffortPress = React.useCallback(() => {
         if (!canOpenEffortPicker) return;
@@ -2093,6 +2098,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         hitSlop={6}
                                         style={(p) => [
                                             styles.mobileModeButton,
+                                            props.onViewModelCatalog ? { minHeight: 44, minWidth: 44 } : undefined,
                                             { opacity: p.pressed && canOpenModelPicker ? 0.7 : canOpenModelPicker ? 1 : 0.58 },
                                         ]}
                                         accessibilityRole="button"
@@ -2105,7 +2111,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 {/* The separator lives between the two chips rather
                                     than inside the effort label, which would wrap
                                     it onto its own line in a narrow trigger. */}
-                                {effortSettingsGroup && (
+                                {(effortSettingsGroup || props.showReadOnlyEffort && effortLabel) && (
                                     <Text style={styles.mobileModeSeparator}>·</Text>
                                 )}
 
@@ -2139,6 +2145,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         </BubblePressable>
                                     )
                                 )}
+                                {!effortSettingsGroup && props.showReadOnlyEffort && effortLabel ? renderEffortValue() : null}
                             </>
                         ) : <View style={{ flex: 1 }} />}
                         </View>
@@ -2186,11 +2193,13 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     })}
                                     hitSlop={6}
                                     onPress={handleMobilePrimaryPress}
-                                    disabled={!canPressSendButton}
+                                    disabled={agentInputPrimaryActionDisabled(primaryAction, canPressSendButton, props.editable === false)}
                                     accessibilityRole="button"
-                                    accessibilityLabel={shouldShowStopButton ? 'Stop'
-                                        : shouldShowVoiceButton ? 'Voice'
-                                            : 'Send'}
+                                    accessibilityState={{ disabled: agentInputPrimaryActionDisabled(primaryAction, canPressSendButton, props.editable === false), busy: isAborting }}
+                                    accessibilityLabel={agentInputPrimaryActionLabel(primaryAction, isSendBlocked, props.editable === false, {
+                                        send: 'Send', stop: 'Stop', voice: 'Voice',
+                                        readOnly: t('agentInput.codexPermissionMode.readOnly'), unavailable: t('codeLightLoading.unavailable'),
+                                    })}
                                 >
                                     {isAborting ? (
                                         <ActivityIndicator

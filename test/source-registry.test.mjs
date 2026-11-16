@@ -14,6 +14,41 @@ test('source identity includes host and never collapses sources with equal paths
   assert.notEqual(sourceKey({ app: 'codex', hostId: 'local', id: 'one' }), sourceKey({ app: 'zcode', hostId: 'local', id: 'one' }));
 });
 
+test('Antigravity registration retains the proven session protocol, kind and stable instance namespace through ACK recovery', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'codelight-antigravity-binding-'));
+  const source = { app: 'antigravity', id: 'native-conversation', hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'original-owner' };
+  let stored, calls = 0;
+  const registry = new SourceRegistry({ directory: dir, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') }, fetch: /** @type {typeof fetch} */ (async (_url, request) => {
+    stored ??= { id: 'fixture-session', ...JSON.parse(/** @type {string} */ (request?.body)) }; calls++;
+    if (calls === 1) throw Error('fixture ACK loss'); return new Response(JSON.stringify({ session: stored }));
+  }) });
+  try {
+    await assert.rejects(registry.register(source, 'fixture-machine'));
+    const binding = await registry.register(source, 'fixture-machine');
+    assert.equal(binding.metadata.bridge.controlMode, 'session'); assert.equal(binding.source.kind, 'session'); assert.equal(binding.source.protocol, source.protocol); assert.equal(binding.source.hostId, source.hostId);
+    const recovered = (await registry.savedBindings())[0]; assert.equal(recovered.source.kind, 'session'); assert.equal(recovered.happySessionId, binding.happySessionId); assert.equal(calls, 2);
+    assert.notEqual(sourceKey(source), sourceKey({ ...source, hostId: 'local:antigravity:' + 'b'.repeat(64) }));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Claude registration and cold recovery preserve mode and native collection with independent encrypted bindings', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'codelight-claude-binding-')); let calls = 0;
+  const registry = new SourceRegistry({ directory, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') },
+    fetch: /** @type {typeof fetch} */ (async (_url, request) => new Response(JSON.stringify({ session: { id: 'fixture-' + ++calls, ...JSON.parse(/** @type {string} */ (request?.body)) } }))) });
+  try {
+    for (const [index, appMode] of ['code', 'chat'].entries()) {
+      const source = { app: 'claude-desktop', kind: 'session', id: 'same-native-id', hostId: 'local:claude-desktop:' + String(index + 1).repeat(64),
+        protocol: 'claude-desktop-native', runtimeGeneration: 'owner', appMode, nativeCollection: appMode === 'code' ? 'claude-code-sessions' : 'local-agent-mode-sessions' };
+      const binding = await registry.register(source, 'machine'); assert.equal(binding.source.appMode, appMode); assert.equal(binding.source.nativeCollection, source.nativeCollection);
+      assert.equal(binding.metadata.bridge.controlMode, 'session');
+    }
+    const recovered = await registry.savedBindings(); assert.equal(recovered.length, 2); assert.equal(new Set(recovered.map(item => item.sessionKey)).size, 2);
+    assert.deepEqual(recovered.map(item => item.source.appMode).sort(), ['chat', 'code']);
+    for (const binding of recovered) assert.equal(binding.metadata.bridge.source.nativeCollection, binding.source.nativeCollection);
+    assert.equal(calls, 2);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test('lost registration ACK reuses the durable data key and returns one source binding', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'codelight-registry-'));
   let stored, attempts = 0;
@@ -60,19 +95,19 @@ test('product registration rejects deferred sources before writes; research regi
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test('machine declares the Codex summary capability while every runner remains unavailable', async () => {
+test('machine declares three Desktop sources while every standalone runner remains unavailable', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'codelight-machine-scope-')), secret = randomBytes(32);
   const fakeFetch = /** @type {typeof fetch} */ (async (_url, request) => {
     const body = JSON.parse(/** @type {string} */ (request?.body));
     const metadata = /** @type {Value} */ (decryptRecord(body.metadata, new Uint8Array(secret), 'legacy'));
-    assert.deepEqual(metadata.codeLight, { codexOnly: true, projectActivityVersion: 1 });
+    assert.deepEqual(metadata.codeLight, { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 });
     for (const runner of ['codex', 'claude', 'gemini', 'openclaw', 'rig']) assert.equal(metadata.cliAvailability[runner], false);
     return new Response(JSON.stringify({ machine: { id: body.id } }));
   });
   try {
     const registry = new SourceRegistry({ directory: dir, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: secret.toString('base64') }, fetch: fakeFetch });
     const machine = await registry.machine();
-    assert.deepEqual(machine.metadata.codeLight, { codexOnly: true, projectActivityVersion: 1 });
+    assert.deepEqual(machine.metadata.codeLight, { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 });
     const saved = JSON.parse(await readFile(join(dir, 'machine.json'), 'utf8'));
     assert.deepEqual(saved.metadata.codeLight, machine.metadata.codeLight);
   } finally { await rm(dir, { recursive: true, force: true }); }

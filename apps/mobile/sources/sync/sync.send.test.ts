@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
     alert: vi.fn(),
     clearDraft: vi.fn(),
 }));
+vi.hoisted(() => vi.stubGlobal('__DEV__', false));
+vi.mock('@/auth/tokenStorage', () => ({ TokenStorage: { getCredentials: vi.fn(), setCredentials: vi.fn() } }));
 
 // Real Sync, key wrapping, key derivation, session decryption and outbox.
 // Only platform services and the authenticated HTTP/store boundaries are replaced.
@@ -20,11 +22,24 @@ vi.mock('expo-crypto', () => ({
     digest: (algorithm: string, bytes: Uint8Array) => webcrypto.subtle.digest(algorithm, bytes),
 }));
 vi.mock('expo-notifications', () => ({}));
+vi.mock('expo-background-task', () => ({ BackgroundTaskResult: { Success: 1, Failed: 2 } }));
+vi.mock('expo-task-manager', () => ({ defineTask: vi.fn() }));
+vi.mock('react-native-mmkv', () => ({
+    MMKV: class {
+        private values = new Map<string, string>();
+        getString(key: string) { return this.values.get(key); }
+        set(key: string, value: string) { this.values.set(key, value); }
+        delete(key: string) { this.values.delete(key); }
+    },
+}));
+vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
+    getItem: vi.fn(async () => null), setItem: vi.fn(), removeItem: vi.fn(), getAllKeys: vi.fn(async () => []),
+} }));
 vi.mock('react-native', () => ({ Platform: { OS: 'web' }, AppState: { currentState: 'active', addEventListener: vi.fn() } }));
 vi.mock('@/encryption/libsodium.lib', () => ({ default: sodium }));
 vi.mock('@/encryption/aes', () => import('@/encryption/aes.web'));
 vi.mock('@/utils/platform', () => ({ isRunningOnMac: () => false }));
-vi.mock('@/sync/apiSocket', () => ({ apiSocket: { request: mocks.request }, getCurrentAppState: () => 'active', getHappyClientId: () => 'test' }));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { request: mocks.request, onReconnected: vi.fn(() => () => {}) }, getCurrentAppState: () => 'active', getHappyClientId: () => 'test' }));
 vi.mock('@/sync/webTabTitle', () => ({ notifyUnreadMessage: vi.fn() }));
 vi.mock('@/sync/storage', () => ({ storage: { getState: () => mocks.state } }));
 vi.mock('@/sync/ops', () => ({ sessionSetAgentModes: vi.fn() }));

@@ -2,7 +2,8 @@ export type BridgeReceipt = { id: string; status: 'complete' | 'failed' | 'unkno
 export type BridgeRpcReply = { receipt: BridgeReceipt | null };
 export type BridgeRpcContext = { serverUrl: string; sessionId: string; method: string; target?: string };
 export type PendingBridgeRpc = BridgeRpcContext & { commandId: string; digest: string; createdAt: number };
-export type BridgeRpcStorage = { get(): Promise<string | null>; set(value: string): Promise<void>; remove(): Promise<void> };
+export type BridgeRpcStorage = { get(expectedCommandId?: string): Promise<string | null>; set(value: string): Promise<void>; remove(): Promise<void> };
+export type BridgeRpcCompleteValidator = (pending: PendingBridgeRpc, result: unknown) => boolean | Promise<boolean>;
 const UNKNOWN_MESSAGE = 'The computer did not respond';
 export class BridgeRpcUnconfirmedError extends Error {
     constructor(readonly commandId: string) { super('The reply result is not confirmed'); this.name = 'BridgeRpcUnconfirmedError'; }
@@ -19,6 +20,7 @@ export class NoninvasiveRpcJournal {
         private readonly id: () => string,
         private readonly digest: (payload: string) => Promise<string>,
         private readonly trace?: (event: BridgeRpcTrace) => Promise<void>,
+        private readonly validateComplete?: BridgeRpcCompleteValidator,
     ) {}
 
     execute(context: BridgeRpcContext, params: Record<string, unknown>): Promise<unknown> {
@@ -44,18 +46,28 @@ export class NoninvasiveRpcJournal {
 
     /** Receipt-only recovery; never dispatches a new mutation or invents another ID. */
     async recover(context: BridgeRpcContext): Promise<boolean> {
-        if (this.flight) return false;
+        return (await this.recoverDetailed(context)).confirmed;
+    }
+
+    async recoverDetailed(context: BridgeRpcContext, expectedCommandId?: string): Promise<{ confirmed: boolean; pending?: PendingBridgeRpc; result?: unknown; failed?: boolean }> {
+        if (this.flight) return { confirmed: false };
         const operation = (async () => {
-            const text = await this.store.get(); if (!text) return { confirmed: true };
+            const text = await (expectedCommandId === undefined ? this.store.get() : this.store.get(expectedCommandId));
+            if (!text) return { confirmed: expectedCommandId === undefined };
             const pending = JSON.parse(text) as PendingBridgeRpc;
+            if (expectedCommandId !== undefined && (pending.commandId !== expectedCommandId || pending.target !== context.target)) return { confirmed: false };
             if (pending.serverUrl !== context.serverUrl || pending.sessionId !== context.sessionId || pending.method !== context.method) return { confirmed: false };
             await this.record('receipt-query', pending.commandId);
             const reply = await this.rpc(pending.sessionId, 'bridge-receipt', { commandId: pending.commandId });
             if (reply?.receipt?.id !== pending.commandId || !['complete', 'failed'].includes(reply.receipt.status)) return { confirmed: false, pending };
-            const result = await this.confirm(reply, pending.commandId); return { confirmed: true, pending, result };
+            if (expectedCommandId !== undefined && reply.receipt.status === 'failed') {
+                try { await this.confirm(reply, pending); } catch { /* Return only the confirmed failure, never its private error text. */ }
+                return { confirmed: true, pending, failed: true };
+            }
+            const result = await this.confirm(reply, pending); return { confirmed: true, pending, result };
         })().finally(() => { if (this.flight === operation) { this.flight = null; this.flightKey = null; } });
         // 恢复查询与提交共享 owner，不能在旧回执查询期间删除新操作的记录。
-        this.flight = operation; this.flightKey = 'receipt-recovery'; return (await operation).confirmed;
+        this.flight = operation; this.flightKey = 'receipt-recovery'; return await operation;
     }
 
     private async run(context: BridgeRpcContext, params: Record<string, unknown>): Promise<unknown> {
@@ -71,7 +83,7 @@ export class NoninvasiveRpcJournal {
             try { recovered = await this.rpc(pending.sessionId, 'bridge-receipt', { commandId: pending.commandId }); }
             catch { throw new BridgeRpcUnconfirmedError(pending.commandId); }
             const sameAction = pending.sessionId === context.sessionId && pending.method === context.method && pending.digest === digest;
-            const result = await this.confirm(recovered, pending.commandId);
+            const result = await this.confirm(recovered, pending);
             // 同一问题旧答案已完成时只结束恢复；重新打开表单的改选不能变成第二次回答。
             const sameTarget = pending.sessionId === context.sessionId && pending.method === context.method && !!context.target && pending.target === context.target;
             if (sameAction || sameTarget) return result;
@@ -99,12 +111,21 @@ export class NoninvasiveRpcJournal {
             try { reply = await this.rpc(context.sessionId, 'bridge-receipt', { commandId: pending.commandId }); }
             catch { throw new BridgeRpcUnconfirmedError(pending.commandId); }
         }
-        return await this.confirm(reply, pending.commandId);
+        return await this.confirm(reply, pending);
     }
 
-    private async confirm(reply: BridgeRpcReply, commandId: string): Promise<unknown> {
+    private async confirm(reply: BridgeRpcReply, pending: PendingBridgeRpc): Promise<unknown> {
+        const commandId = pending.commandId;
         if (reply?.receipt?.id !== commandId || reply.receipt.status !== 'complete' && reply.receipt.status !== 'failed') {
             await this.record('unconfirmed', commandId, reply?.receipt?.status); throw new BridgeRpcUnconfirmedError(commandId);
+        }
+        if (reply.receipt.status === 'complete' && this.validateComplete) {
+            let valid = false;
+            try { valid = await this.validateComplete(pending, reply.receipt.result); } catch { /* An unreadable proof is unconfirmed. */ }
+            if (!valid) {
+                await this.record('unconfirmed', commandId, reply.receipt.status);
+                throw new BridgeRpcUnconfirmedError(commandId);
+            }
         }
         await this.store.remove();
         await this.record('confirmed', commandId, reply.receipt.status);

@@ -8,3 +8,8 @@ export function channelList(value: unknown): PeerChannel[];
 export function channelPath(origin: string, requestUrl: string): string;
 export function peerMaterial(macKey: string, secret: string): string;
 export function rpcTarget(method: string, params?: Record<string, unknown>): string;
+export type NativeJsonValue = null | boolean | number | string | NativeJsonValue[] | { [key: string]: NativeJsonValue };
+export type NativeToolInput = { [key: string]: NativeJsonValue };
+export const NATIVE_TOOL_INPUT_MAX_BYTES: number;
+export function isNativeToolInput(value: unknown): value is NativeToolInput;
+export function projectNativeToolInput(value: unknown): { input: NativeToolInput; inputUnavailable?: never } | { input?: never; inputUnavailable: true };

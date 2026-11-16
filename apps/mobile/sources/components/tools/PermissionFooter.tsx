@@ -18,6 +18,9 @@ import { useUnistyles } from 'react-native-unistyles';
 import { storage } from '@/sync/storage';
 import { t } from '@/text';
 import { useIsTablet } from '@/utils/responsive';
+import { nativeReadingControlsUnavailable, nativeReadingControlScope } from '@/utils/nativeReadingWindow';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
+import { apiSocket } from '@/sync/apiSocket';
 
 interface PermissionActionButtonProps {
     label: string;
@@ -128,6 +131,16 @@ interface PermissionFooterProps {
 }
 
 export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, sessionId, toolName, toolInput, metadata }) => {
+    const capturedScope = nativeReadingControlScope(metadata);
+    const isSourceBlocked = React.useCallback(() => {
+        const current = storage.getState().sessions[sessionId]?.metadata ?? metadata;
+        return nativeWriteConnectionBlocked(current, apiSocket.peerConnected()) || nativeReadingControlsUnavailable(current) || capturedScope !== null && capturedScope !== nativeReadingControlScope(current);
+    }, [sessionId, metadata, capturedScope]);
+    const subscribeSource = React.useCallback((listener: () => void) => {
+        const releaseStore = storage.subscribe(listener), releaseSocket = apiSocket.onStatusChange(() => listener());
+        return () => { releaseStore(); releaseSocket(); };
+    }, []);
+    const sourceBlocked = React.useSyncExternalStore(subscribeSource, isSourceBlocked, isSourceBlocked);
     const { theme } = useUnistyles();
     const isTablet = useIsTablet();
     const { height: windowHeight } = useWindowDimensions();
@@ -140,7 +153,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     const isCodex = metadata?.flavor === 'codex' || toolName.startsWith('Codex');
 
     const handleApprove = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
 
         setLoadingButton('allow');
         try {
@@ -149,7 +162,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
             // 'default' — mirror that here, otherwise the next message's meta
             // still carries the stale 'plan' and pushes the SDK back into
             // plan mode, undoing the approval.
-            if (toolName === 'exit_plan_mode' || toolName === 'ExitPlanMode') {
+            if (!isSourceBlocked() && (toolName === 'exit_plan_mode' || toolName === 'ExitPlanMode')) {
                 sessionSetAgentModes(sessionId, { permissionMode: 'default' });
             }
         } catch (error) {
@@ -160,13 +173,13 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     };
 
     const handleApproveAllEdits = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
 
         setLoadingAllEdits(true);
         try {
             await sessionAllow(sessionId, permission.id, 'acceptEdits');
             // Update the session permission mode to 'acceptEdits' for future permissions
-            sessionSetAgentModes(sessionId, { permissionMode: 'acceptEdits' });
+            if (!isSourceBlocked()) sessionSetAgentModes(sessionId, { permissionMode: 'acceptEdits' });
         } catch (error) {
             console.error('Failed to approve all edits:', error);
         } finally {
@@ -175,12 +188,12 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     };
 
     const handleBypassPermissions = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
 
         setLoadingBypass(true);
         try {
             await sessionAllow(sessionId, permission.id, 'bypassPermissions');
-            sessionSetAgentModes(sessionId, { permissionMode: 'bypassPermissions' });
+            if (!isSourceBlocked()) sessionSetAgentModes(sessionId, { permissionMode: 'bypassPermissions' });
         } catch (error) {
             console.error('Failed to bypass permissions:', error);
         } finally {
@@ -189,7 +202,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     };
 
     const handleApproveForSession = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession || !toolName) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession || !toolName) return;
 
         setLoadingForSession(true);
         try {
@@ -209,7 +222,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     };
 
     const handleDeny = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingAllEdits || loadingBypass || loadingForSession) return;
 
         setLoadingButton('deny');
         try {
@@ -223,7 +236,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     
     // Codex-specific handlers
     const handleCodexApprove = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingForSession) return;
         
         setLoadingButton('allow');
         try {
@@ -236,7 +249,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     };
     
     const handleCodexApproveForSession = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingForSession) return;
         
         setLoadingForSession(true);
         try {
@@ -249,7 +262,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
     };
     
     const handleCodexAbort = async () => {
-        if (permission.status !== 'pending' || loadingButton !== null || loadingForSession) return;
+        if (isSourceBlocked() || permission.status !== 'pending' || loadingButton !== null || loadingForSession) return;
         
         setLoadingButton('abort');
         try {
@@ -263,7 +276,7 @@ export const PermissionFooter: React.FC<PermissionFooterProps> = ({ permission, 
 
     const isApproved = permission.status === 'approved';
     const isDenied = permission.status === 'denied';
-    const isPending = permission.status === 'pending';
+    const isPending = permission.status === 'pending' && !sourceBlocked;
 
     // Helper function to check if tool matches allowed pattern
     const isToolAllowed = (toolName: string, toolInput: any, allowedTools: string[] | undefined): boolean => {

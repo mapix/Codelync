@@ -16,10 +16,63 @@ function window(): PeerRecentWindow {
 }
 
 describe('self-contained native recent windows', () => {
+    it('seeds assistant-envelope tools independently without allowing a tool-only UUID to claim a consumed text alias', () => {
+        const state = createReducer(), source = window();
+        source.rows = [{ ...source.rows[0], id: 'native-full-text', text: 'Confirmed original body', replaceIds: ['api-wire'], replaceSourceRowIds: ['claude-api:shared'] }];
+        reducer(state, nativeRecentMessages(source));
+        source.rows = [{ ...source.rows[0], id: 'native-full-tool', text: '', tools: [{ id: 'native-tool-call', name: 'Shell', output: 'Original result', status: 'completed' }] }];
+        const projected = nativeRecentMessages(source);
+        expect(projected).toHaveLength(2);
+        reducer(state, projected); reducer(state, projected);
+        expect(state.messages.get(state.nativeRowIds.get('native-full-text')!)?.text).toBe('Confirmed original body');
+        expect(state.nativeRowIds.get('native-full-text')).not.toBe(state.nativeRowIds.get('native-full-tool'));
+        const tools = [...state.messages.values()].filter(row => row.tool);
+        expect(tools).toHaveLength(1);
+        expect(tools[0].tool).toMatchObject({ callId: 'native-tool-call', state: 'completed', result: 'Original result' });
+        const whitespaceEnvelope = { ...source.rows[0], id: 'native-whitespace-tool', text: ' \n ' };
+        reducer(state, nativeRecentMessages({ ...source, rows: [whitespaceEnvelope] }));
+        expect(state.messages.get(state.nativeRowIds.get('native-full-text')!)?.text).toBe('Confirmed original body');
+        expect(state.nativeRowIds.get('native-full-text')).not.toBe(state.nativeRowIds.get('native-whitespace-tool'));
+        source.rows[0].text = 'This envelope also has original text'; source.rows[0].snapshotRevision++;
+        reducer(state, nativeRecentMessages(source));
+        expect(state.messages.get(state.nativeRowIds.get('native-full-tool')!)?.text).toBe('This envelope also has original text');
+        expect(state.messages.get(state.nativeRowIds.get('native-full-text')!)?.text).toBe('Confirmed original body');
+    });
+    it('records only actual native timestamps while keeping legacy display and sort fallback unchanged', () => {
+        const source = window(); source.rows = [source.rows[0]];
+        let messages = reducer(createReducer(), nativeRecentMessages(source)).messages;
+        expect(messages[0].meta?.nativeTimestamp).toBe(100);
+        expect(messages[0].createdAt).toBe(100);
+        source.rows[0].at = null;
+        messages = reducer(createReducer(), nativeRecentMessages(source)).messages;
+        expect(messages[0].meta?.nativeTimestamp).toBeNull();
+        expect(messages[0].createdAt).toBe(source.session.nativeUpdatedAt);
+        expect(messageSortKey(messages[0])).toBe(source.session.nativeUpdatedAt + 10 / 1000);
+    });
+    it('keeps original image file parameters across fresh seeds, stream corrections and repeated reads', () => {
+        const state = createReducer(), current = window();
+        const args = { nativeImageId: 'original-image', name: 'image.png' };
+        current.rows = [{ ...current.rows[1], id: 'original-image', tools: [{ id: 'original-image', name: 'view_image', output: 'Image could not be loaded.', status: 'failed' }] }];
+        reducer(state, nativeRecentMessages(current));
+        const record = RawRecordSchema.parse({ role: 'session', content: { id: 'image-recovery', time: 101, role: 'agent', turn: 'original-turn',
+            ev: { t: 'native-row-upsert', sourceRowId: 'original-image', role: 'tool', text: '', revision: 1, replaceIds: [],
+                tools: [{ id: 'original-image', name: 'file', output: '', status: 'completed', arguments: args }] } } });
+        const update = normalizeRawMessage('image-recovery', null, 101, record)!;
+        reducer(state, [update]); reducer(state, [update]);
+        current.rows[0].snapshotRevision++;
+        current.rows[0].streamRevision = 1;
+        current.rows[0].tools = [{ id: 'original-image', name: 'file', output: '', status: 'completed', arguments: args }];
+        reducer(state, nativeRecentMessages(current)); reducer(state, nativeRecentMessages(current));
+        const tools = [...state.messages.values()].filter(row => row.tool);
+        expect(tools).toHaveLength(1);
+        expect(tools[0].tool).toMatchObject({ callId: 'original-image', name: 'file', input: args, state: 'completed', result: '' });
+        const freshState = createReducer(); reducer(freshState, nativeRecentMessages(current));
+        expect([...freshState.messages.values()][0].tool?.input).toEqual(args);
+    });
     it('a confirmed native own-input window joins the optimistic row before its POST acknowledgment', () => {
         const state = createReducer();
         const optimistic: NormalizedMessage = { id: 'phone-local', localId: 'phone-local', createdAt: 120, role: 'user', isSidechain: false,
-            meta: { sentFrom: 'ios', expectsAcceptance: true }, content: { type: 'text', text: 'Own input' } };
+            meta: { sentFrom: 'ios', expectsAcceptance: true, nativeTimestamp: 999 }, content: { type: 'text', text: 'Own input' } };
         reducer(state, [optimistic], null, { holdUserMessagesUntilAccepted: true });
         const current = window(); current.rows = [{ ...current.rows[0], id: 'native-user-row', role: 'user', text: 'Own input', at: 100,
             replaceIds: ['server-user', 'phone-local'] }];
@@ -27,7 +80,7 @@ describe('self-contained native recent windows', () => {
         current.rows[0].snapshotRevision++;
         reducer(state, nativeRecentMessages(current));
         const rows = [...state.messages.values()].filter(row => row.role === 'user');
-        expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ text: 'Own input', pending: false, localId: 'phone-local', createdAt: 120 });
+        expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ text: 'Own input', pending: false, localId: 'phone-local', createdAt: 120, meta: { nativeTimestamp: 100 } });
     });
     it('native fragment identity survives the real encrypted-record normalization contract', () => {
         const state = createReducer();

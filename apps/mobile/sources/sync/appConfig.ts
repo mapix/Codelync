@@ -1,5 +1,7 @@
 import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import * as Application from 'expo-application';
+import { resolveNativeSourceMode } from './appDistribution';
 
 export interface AppConfig {
     noninvasiveLocal?: boolean;
@@ -93,5 +95,6 @@ export function loadAppConfig(): AppConfig {
         config.serverUrl = process.env.EXPO_PUBLIC_SERVER_URL;
     }
 
+    config.noninvasiveLocal = resolveNativeSourceMode(Application.applicationId, config.noninvasiveLocal);
     return config as AppConfig;
 }

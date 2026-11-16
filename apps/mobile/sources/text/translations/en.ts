@@ -16,12 +16,18 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
  * CodeLight keys and parameter shapes synchronized with that canonical object.
  */
 export const en: TranslationStructure = {
+    codeLightHandoff: {
+        action: "Send to…",
+        noTargets: "No other connected desktop session on this Mac.",
+        unavailable: "The source or target session is no longer available.",
+    },
+
     codeLightSetup: {
         createFailed: "Could not set up this connection. Check the connection to your Mac and try again.",
         storageFailed: "Could not save this connection securely. Check device storage and try again.",
         reloadFailed: "Close and reopen CodeLight to reconnect with the saved settings.",
         pairFailed: "This pairing link is unavailable. Scan a fresh QR code shown in CodeLight on your Mac.",
-        macHelp: "Open CodeLight on your Mac and keep your existing Codex sessions running.",
+        macHelp: "Open CodeLight on your Mac and keep your existing Codex / Antigravity / Claude Desktop sessions running.",
         helpBody: "Open CodeLight on your Mac and keep it running. Scan its QR code from this phone. If the connection address changes, refresh and scan the new code. No registration or VPN is needed.",
     },
 
@@ -34,23 +40,26 @@ export const en: TranslationStructure = {
         network: "Could not reach your Mac. Keep CodeLight running there and try again.",
     },
 
+    codeLightCommands: { modelMenu: 'Use the model button beside the input field to choose this session’s model.', unsupported: "This command is not available for this app in CodeLight. Your draft was kept.", busy: "This session is busy. Your draft was kept.", unconfirmed: "The command result is not confirmed. Check its result." },
     codeLightModels: {
+        nextMessage: 'Next message',
         default: "Default",
         check: "Check settings",
         saving: "Updating the model settings on your Mac…",
-        failed: "The settings changed or could not be updated. Check the current choice and select again.",
-        unconfirmed: "Update unconfirmed. Checking the original settings; do not repeat the change.",
+        readFailed: "Could not read the model settings. Check the connection to your Mac.",
+        failed: "Could not update the model setting. Check the current choice.",
+        unconfirmed: "The change is not confirmed. Check its result without repeating it.",
     },
 
     codeLightChannels: {
         title: "Connection",
         automatic: "Automatic",
-        automaticDetail: "Use an available verified connection.",
+        automaticDetail: "Check saved connections and connect to this Mac.",
         local: "Local network",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "Connected",
-        available: "Available",
+        available: "Saved",
         probing: "Checking",
         failed: "Unavailable",
         switching: "Connecting…",
@@ -58,16 +67,24 @@ export const en: TranslationStructure = {
         current: "Current",
         latency: ({ ms }: { ms: number }) => "{ms} ms".replace("{ms}", String(ms)),
         latencyUnknown: "Latency unknown",
-        switchFailed: "Could not switch connections. Your current route is unchanged.",
+        switchFailed: "Could not connect. Your saved choice was kept.",
+        connectingTitle: "Connecting to Mac…",
+        failedTitle: "Can’t connect to Mac",
+        failedHelp: "Open CodeLight on your Mac and check the network. Then retry or choose a connection.",
+        accessEndedTitle: "Mac connection not accepted",
+        accessEndedHelp: "Scan the current QR code in CodeLight on that Mac. Saved messages and drafts are kept.",
+        retryConnection: "Retry connection",
+        scanMac: "Scan Mac code",
     },
 
     codeLightLoading: {
-        titles: "Loading Codex session titles…",
-        discovered: ({ count }: { count: number }) => `Found ${count} Codex ${count === 1 ? 'session' : 'sessions'} · loading more…`,
-        messages: "Syncing this session…",
+        titles: "Loading Codex, Antigravity and Claude Desktop sessions…",
+        discovered: ({ count }: { count: number }) => "{count} entries loaded · loading more…".replace("{count}", String(count)),
+        messages: "Loading this session…",
         older: "Loading earlier messages…",
-        failed: "Could not complete synchronization. Retry to continue.",
-        empty: "No Codex sessions found on this Mac.",
+        unavailable: "Unavailable",
+        failed: "Could not refresh sessions. Retry to continue.",
+        empty: "No Codex, Antigravity or Claude Desktop sessions are available on this Mac.",
     },
 
     codeLightProjects: {
@@ -90,10 +107,10 @@ export const en: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "Delivery unconfirmed. Checking the original Codex session; do not resend.",
-        waiting: "Waiting for the original Codex desktop session.",
+        deliveryUnconfirmed: "Delivery unconfirmed. Checking the original session; do not resend.",
+        waiting: "Waiting for the original desktop session.",
         openDesktop: "Open on desktop",
-        openFailed: "Could not open the original Codex session. Check that Codex is running.",
+        openFailed: "Could not open the original session. Check that its desktop app is running.",
     },
 
     voiceStatusBar: {
@@ -211,7 +228,7 @@ export const en: TranslationStructure = {
         developer: 'Developer',
         developerTools: 'Developer Tools',
         about: 'About',
-        aboutFooter: "CodeLight connects your phone to existing Codex desktop sessions with end-to-end encrypted sync.",
+        aboutFooter: "CodeLight connects to Codex, Antigravity and Claude Desktop on your Mac. Claude Desktop uses Gateway; available actions depend on each session.",
         whatsNew: 'What\'s New',
         whatsNewSubtitle: 'See the latest updates and improvements',
         reportIssue: 'Report an Issue',
@@ -961,8 +978,8 @@ export const en: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "Codex on your phone",
-        subtitle: "Connect to your existing Codex desktop sessions with end-to-end encrypted sync.",
+        title: "Codex / Antigravity / Claude Desktop on your phone",
+        subtitle: "Connect to your existing Codex / Antigravity / Claude Desktop desktop sessions with end-to-end encrypted sync.",
         createAccount: 'Create account',
         linkOrRestoreAccount: 'Link or restore account',
         loginWithMobileApp: 'Login with mobile app',
@@ -972,7 +989,7 @@ export const en: TranslationStructure = {
         // First run on phones: create an account, then link a computer from
         // one checklist. The same checklist is the home empty state whenever
         // no computer is reachable.
-        headline: "Your Codex sessions,\nwherever you are",
+        headline: "Your Codex / Antigravity / Claude Desktop sessions,\nwherever you are",
         propEncrypted: "End-to-end encrypted",
         propNoPassword: "No registration or VPN",
         propOpenSource: "Open source, MIT license",
@@ -987,8 +1004,8 @@ export const en: TranslationStructure = {
         terminalInstall: "open /Applications/CodeLight.app",
         terminalRun: "open /Applications/CodeLight.app",
         // No-break spaces keep the button name on one line.
-        openStep: "Keep your Codex sessions running",
-        openBody: "Open CodeLight on your Mac and keep Codex running. A pairing QR code appears in CodeLight.",
+        openStep: "Keep your Codex / Antigravity / Claude Desktop sessions running",
+        openBody: "Open CodeLight on your Mac and keep Codex / Antigravity / Claude Desktop running. A pairing QR code appears in CodeLight.",
         scanStep: "Scan the QR code",
         scanButton: "Scan QR code",
         pasteLink: "Can’t scan? Paste the link instead",
@@ -1267,6 +1284,8 @@ export const en: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "Download image",
+        downloadFailed: "Could not save the image. Please try again.",
         open: 'Open image',
         close: 'Close image',
         zoomIn: 'Zoom in',

@@ -15,6 +15,8 @@ async function execute(command, args, cwd) {
   if (code !== 0) throw Error(`${command} exited ${code}`);
 }
 try {
+  const listing = await run('zipinfo', ['-1', archive], { maxBuffer: 16 * 1024 * 1024 });
+  if (listing.stdout.split('\n').some(name => /(^|\/)(?:\._|__MACOSX(?:\/|$))/u.test(name))) throw Error('Publisher metadata in source ZIP');
   await run('ditto', ['-x', '-k', archive, directory]);
   const root = join(directory, 'codelight');
   const product = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -27,7 +29,7 @@ try {
     for (const entry of await readdir(folder, { withFileTypes: true })) {
       const name = prefix + entry.name;
       if (/(^|\/)(node_modules|Pods|\.runtime|deliverables|xcuserdata|\.module-cache)(\/|$)/u.test(name)
-        || /evidence\/private/u.test(name) || /(^|\/)(account|devices|relay-key|mac-box-key|network-access|network-identity|connection-channels)\.json$/u.test(name)
+        || /^docs\/tasks(?:\/|$)/u.test(name) || /evidence\/private/u.test(name) || /(^|\/)(account|devices|relay-key|mac-box-key|network-access|network-identity|connection-channels)\.json$/u.test(name)
         || /\.(p8|p12|pem|mobileprovision|ipa|sqlite|db|log|tsbuildinfo)$/u.test(name) || /(^|\/)\.env(\.|$)/u.test(name) && !name.endsWith('.env.example')) throw Error(`Private/generated path in source export: ${name}`);
       if (entry.isSymbolicLink()) throw Error(`Source export must not depend on external symlinks: ${name}`);
       if (entry.isDirectory()) await inspect(join(folder, entry.name), name + '/'); else files++;

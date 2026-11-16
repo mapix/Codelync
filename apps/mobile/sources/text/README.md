@@ -58,4 +58,6 @@ pnpm --filter @codelight/mobile test run sources/text/resolveLanguage.test.ts so
 ```
 
 The tests cover language resolution, missing/invalid translation fallback,
-project counter parameters, current connection flows and Codex-only product text.
+project counter parameters, current connection flows and product text for Codex,
+Antigravity Desktop and Claude Desktop (Gateway), with source-specific controls
+and deferred standalone CLI/TUI support.

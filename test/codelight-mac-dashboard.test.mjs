@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { runInNewContext } from 'node:vm';
 
 const execute = promisify(execFile);
 
@@ -54,11 +55,19 @@ print("mac-dashboard-values-passed")
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('Mac dashboard current Chinese locale explicitly translates the gateway requirement and metrics labels', async () => {
+test('Mac dashboard current Chinese locale translates the three Desktop scope and metrics labels', async () => {
   const source = await readFile(new URL('../scripts/build-mac-app.mjs', import.meta.url), 'utf8');
   const dictionary = source.split('const chinese = ')[1]?.split('\n};')[0]; assert.ok(dictionary);
-  const translations = new Map([...dictionary.matchAll(/['"]([^'"]+)['"]\s*:\s*['"]([^'"]+)['"]/g)].map(match => [match[1], match[2]]));
-  assert.equal(translations.get('Only desktop Codex connected through gateway mode is supported.'), '只支持使用网关模式接入的桌面Codex');
+  const translations = new Map(Object.entries(runInNewContext(`(${dictionary}})`)));
+  const swift = await readFile(new URL('../apps/mac/CodeLight.swift', import.meta.url), 'utf8');
+  const headline = 'Codex, Antigravity and Claude Desktop on your phone';
+  const scope = "Native sessions from Codex, Antigravity Desktop and Claude Desktop (Gateway). Available actions follow the desktop's current state.";
+  assert.ok(swift.includes(`Text(${JSON.stringify(headline)})`));
+  assert.ok(swift.includes(`Label(${JSON.stringify(scope)},`));
+  for (const app of ['Codex', 'Antigravity', 'Claude Desktop']) assert.ok(translations.get(headline)?.includes(app), app);
+  for (const app of ['Codex', 'Antigravity Desktop', 'Claude Desktop（Gateway）']) assert.ok(translations.get(scope)?.includes(app), app);
+  assert.match(translations.get(scope), /当前可用操作依桌面状态/);
+  assert.equal(translations.has('Only desktop Codex connected through gateway mode is supported.'), false);
   for (const key of ['Connection ready', 'View', 'Statistics', 'Pairing', 'Gateway traffic', 'Receiving', 'Sending', 'This connection', 'All time', 'Received', 'Sent',
     'HTTP requests', 'RPC calls', 'Connected devices', 'Uptime', 'Waiting for gateway measurements…', 'Gateway traffic measured by CodeLight. — means not measured.', '/s']) {
     assert.ok(translations.get(key)?.trim(), key);

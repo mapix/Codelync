@@ -49,7 +49,7 @@ export function useProjectWorktreeSummary(sessionId: string): ProjectWorktreeSum
             found: true,
             projectName: found.project.name,
             workspaceName: found.workspace.id === '' ? null : found.workspace.name ?? found.workspace.id,
-            tabCount: resolved.tabs.length + resolved.pending.length,
+            tabCount: resolved.tabs.filter(tab => tab.isSubagent !== true).length + resolved.pending.length,
         };
     }));
 

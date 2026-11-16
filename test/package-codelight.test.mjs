@@ -62,7 +62,12 @@ test('standalone source ZIP omits tracked deletions and records the actual curre
     for (const path of ['scripts/package-codelight.mjs', 'src/release/source-snapshot.mjs']) await writeFile(join(input, path), await readFile(new URL(`../${path}`, import.meta.url)));
     await run('git', ['init', '-q'], { cwd: input }); await run('git', ['add', '--all'], { cwd: input });
     await rm(join(input, 'scripts/removed-runtime.mjs'));
+    if (process.platform === 'darwin') await run('xattr', ['-w', 'com.codelight.private-fixture', 'private-metadata-sentinel', join(input, 'package.json')]);
     await run(process.execPath, [join(input, 'scripts/package-codelight.mjs')]);
+    const listing = await run('zipinfo', ['-1', join(input, 'deliverables/CodeLight-Source.zip')]);
+    assert.ok(!/(^|\/)(?:\._|__MACOSX)/mu.test(listing.stdout));
+    const raw = await readFile(join(input, 'deliverables/CodeLight-Source.zip'));
+    assert.ok(!raw.includes(Buffer.from('private-metadata-sentinel')));
     await run('ditto', ['-x', '-k', join(input, 'deliverables/CodeLight-Source.zip'), extracted]);
     const manifest = JSON.parse(await readFile(join(input, 'deliverables/source-manifest.json'), 'utf8'));
     assert.deepEqual(manifest.files, ['.gitignore', 'package.json', 'scripts/package-codelight.mjs', 'src/release/source-snapshot.mjs']);

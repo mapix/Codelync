@@ -1,10 +1,14 @@
 import { z } from 'zod';
+import { NativeDispatchContextSchema } from '@/utils/nativeDispatchContext';
 
 // Shared message metadata schema
 export const MessageMetaSchema = z.object({
     sentFrom: z.string().optional(), // Source identifier
+    nativeDispatchContext: NativeDispatchContextSchema.optional(),
     /** Original row order breaks equal native timestamps; it is not a message timestamp. */
     nativeOrder: z.number().int().nonnegative().optional(),
+    /** Original-owner timestamp; null/absent never borrows the display/sort fallback. */
+    nativeTimestamp: z.number().finite().nonnegative().nullable().optional(),
     nativeRow: z.object({ id: z.string().min(1), offset: z.number().int().nonnegative(), revision: z.number().int().nonnegative() }).optional(),
     // Capability at send time, inside the encrypted payload. New history can
     // resume waiting after reconnect without holding pre-receipt-era messages.

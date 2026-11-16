@@ -44,7 +44,9 @@ export function rewriteLoopbackHost(url: string): string {
         }
         const reachable = new URL(getServerUrl());
         target.protocol = reachable.protocol;
-        target.host = reachable.host;
+        // host setter 在没有新端口时会保留旧端口；公网 HTTPS 因此曾错误连接本机服务端口。
+        target.hostname = reachable.hostname;
+        target.port = reachable.port;
         if (reachable.pathname !== '/' && !target.pathname.startsWith(reachable.pathname + '/')) target.pathname = reachable.pathname + target.pathname;
         return target.toString();
     } catch {

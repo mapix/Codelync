@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import sharp from 'sharp';
 import { createCipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,7 @@ class FixtureTransport extends EventEmitter {
   async ackInbox(/** @type {string} */ id) { this.inbox = this.inbox.filter(item => item.id !== id); }
   registerRpc(/** @type {string} */ method, /** @type {(params:unknown)=>Promise<any>} */ handler) { this.handlers.set(method, handler); return () => this.handlers.delete(method); }
   async updateMetadata(/** @type {(value:Value)=>Value} */ change) { this.metadata = change(this.metadata); }
-  async updateAgentState(/** @type {(value:Value)=>Value} */ change) { this.agentState = change(this.agentState); }
+  async updateAgentState(/** @type {(value:Value)=>Value|Promise<Value>} */ change) { this.agentState = await change(this.agentState); }
   async publish(/** @type {string} */ localId, /** @type {Value} */ record) { let found = this.records.find(item => item.localId === localId); if (!found) { found = { localId, record: structuredClone(record) }; this.records.push(found); } else assert.deepEqual(found.record, record); if (this.failPublication) { this.failPublication = false; throw Error('fixture happy ack lost'); } return { id: `log-${localId}` }; }
   inject(/** @type {Value} */ record, /** @type {string} */ localId = 'phone-local', /** @type {string} */ id = 'happy-user-1') { this.inbox.push({ id, localId, seq: this.inbox.length + 1, record, publishedByThisTransport: false }); this.emit('record'); }
   async rpc(/** @type {string} */ method, /** @type {Value} */ params) { const handler = this.handlers.get(method); assert.ok(handler); return handler(params); }
@@ -54,6 +55,378 @@ async function fixture(/** @type {Value} */ view = {}) {
 }
 const user = (/** @type {string} */ text) => ({ role: 'user', content: { type: 'text', text } });
 const events = (/** @type {FixtureTransport} */ transport) => transport.records.map(item => item.record.content);
+
+test('Antigravity roster totals remain independent of limited display rows and unavailable counts stay unknown', async () => {
+  const hostId = 'local:antigravity:' + 'a'.repeat(64);
+  const child = { id: 'worker', name: 'worker', app: 'antigravity', nativeConversationId: 'worker',
+    parentConversationId: 'original-native-id', nativeParentConversationId: 'coordinator', depth: 2,
+    hostId, ownerGeneration: 'owner-1', relationship: 'native-subagent', status: 'running' };
+  const f = await fixture({ ownerGeneration: 'owner-1', subagents: [child], subagentsAvailable: true,
+    subagentsComplete: false, subagentsTruncated: true, subagentsTotal: 137 });
+  const connector = await f.create({ sourceIdentity: { app: 'antigravity', id: 'original-native-id', hostId, kind: 'session', protocol: 'antigravity-connect' } });
+  try {
+    await connector.start();
+    assert.equal(f.transport.agentState.subagents.length, 1);
+    assert.equal(f.transport.agentState.subagents[0].nativeParentConversationId, 'coordinator');
+    assert.equal(f.transport.agentState.subagents[0].depth, 2);
+    assert.equal(f.transport.agentState.subagentsTotal, 137);
+    assert.equal(f.transport.agentState.subagentsTruncated, true);
+    f.adapter.view.subagentsTotal = -1; f.adapter.view.revision++; await connector.project(f.adapter.view);
+    assert.equal(f.transport.agentState.subagentsTotal, null);
+    f.adapter.view.subagentsTotal = 137; f.adapter.view.subagentsAvailable = false; f.adapter.view.revision++; await connector.project(f.adapter.view);
+    assert.equal(f.transport.agentState.subagentsTotal, null);
+    assert.equal(f.adapter.calls.length, 0);
+    assert.equal(f.adapter.completeReads, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('Claude task metadata stays compact and logs load only on request with owner/query fencing', async () => {
+  const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: 'original-native-id', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+    protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner-1' };
+  const scope = { app: sourceIdentity.app, nativeCollection: sourceIdentity.nativeCollection, parentConversationId: sourceIdentity.id,
+    hostId: sourceIdentity.hostId, ownerGeneration: 'owner-1', runtimeGeneration: 'main-owner', queryToken: 'query-1', cliSessionId: 'cli-1' };
+  const nativeTasks = { version: 1, scope, tasks: [{ ...scope, relationship: 'native-sdk-task', nativeTaskId: 'task-1', name: 'Review', kind: 'agent',
+    taskType: 'local_agent', status: 'running', isBackgrounded: true }], tasksAvailable: true, tasksComplete: false, backgroundTasksComplete: true,
+    dispatchChildren: [], dispatchChildrenAvailable: true, dispatchChildrenComplete: true, state: { output: 'private' }, logs: ['private'] };
+  const nativeQuery = { version: 1, app: sourceIdentity.app, nativeConversationId: sourceIdentity.id, hostId: sourceIdentity.hostId, ownerGeneration: 'owner-1',
+    queryToken: 'query-1', status: 'idle', canSend: true, activeSendMode: 'queue', canCancel: false };
+  const f = await fixture({ ownerGeneration: 'owner-1', nativeQuery, nativeTasks });
+  const adapter = /** @type {Value} */ (f.adapter); let taskReads = 0, logReads = 0, lateOwnerChange = false, malformedPage = false;
+  adapter.generation = () => 'main-owner';
+  adapter.taskSnapshot = async (/** @type {string} */ id, /** @type {Value} */ context) => {
+    taskReads++; assert.equal(id, sourceIdentity.id); assert.equal(context.expectedQueryToken, scope.queryToken); return structuredClone(nativeTasks);
+  };
+  adapter.taskLogPage = async (/** @type {string} */ id, /** @type {Value} */ context) => {
+    logReads++; assert.equal(id, sourceIdentity.id); assert.equal(context.limit, 12); assert.equal(context.expectedHostId, sourceIdentity.hostId);
+    if (lateOwnerChange) f.epoch('owner-2');
+    return { scope, status: 'ok', available: true, logs: Array.from({ length: malformedPage ? 13 : 12 }, (_, i) => ({ id: `log-${i}`, sequence: i,
+      nativeTaskId: 'task-1', subtype: 'task_progress', taskType: 'local_agent', kind: 'agent', status: 'running', output: 'private', toolInput: 'private' })),
+    hasMore: true, nextCursor: 'ct1.fixture', truncated: false };
+  };
+  const connector = await f.create({ sourceIdentity });
+  try {
+    await connector.start(); assert.equal(taskReads, 0); assert.equal(logReads, 0); assert.equal(adapter.calls.length, 0);
+    assert.equal('nativeTasks' in f.transport.agentState, false); assert.equal(f.transport.agentState.nativeTaskSignal.taskCount, 1);
+    assert.equal('tasks' in f.transport.agentState.nativeTaskSignal, false); assert.equal(f.transport.agentState.aggregateActivity.status, 'running');
+    assert.equal(f.transport.agentState.aggregateActivity.ownStatus, 'idle'); assert.equal(f.transport.agentState.aggregateActivity.taskCount, 1);
+    assert.ok(f.transport.metadata.capabilities.rpcMethods.includes('native-task-log-read'));
+    const read = await f.transport.rpc('native-task-read', { scope }); assert.equal(read.tasks.length, 1); assert.equal(taskReads, 1);
+    const page = await f.transport.rpc('native-task-log-read', { scope, taskId: 'task-1' }); assert.equal(page.logs.length, 12);
+    assert.equal('output' in page.logs[0], false); assert.equal('toolInput' in page.logs[0], false);
+    await assert.rejects(() => f.transport.rpc('native-task-log-read', { scope: { ...scope, queryToken: 'other' } }), { code: 'source-epoch-changed' });
+    assert.equal(logReads, 1);
+    await assert.rejects(() => f.transport.rpc('native-task-log-read', { scope, limit: 101 }), { code: 'invalid-rpc-payload' });
+    assert.equal(logReads, 1);
+    malformedPage = true;
+    await assert.rejects(() => f.transport.rpc('native-task-log-read', { scope }), { code: 'invalid-native-task-page' });
+    malformedPage = false; lateOwnerChange = true;
+    await assert.rejects(() => f.transport.rpc('native-task-log-read', { scope }), { code: 'source-epoch-changed' });
+    assert.equal(adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('task signals remove restored full lists and fresh deltas cannot be overwritten by queued older observations', async () => {
+  const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: 'original-native-id', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+    protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner-1' };
+  const scope = { app: sourceIdentity.app, nativeCollection: sourceIdentity.nativeCollection, parentConversationId: sourceIdentity.id,
+    hostId: sourceIdentity.hostId, ownerGeneration: 'owner-1', runtimeGeneration: 'main', queryToken: 'query', cliSessionId: 'cli' };
+  const task = (/** @type {number} */ i, /** @type {string} */ status) => ({ ...scope, relationship: 'native-sdk-task', nativeTaskId: `task-${i}`, name: `Review ${i}`,
+    taskType: 'local_agent', kind: 'agent', status, isBackgrounded: false });
+  const nativeTasks = { version: 1, scope, tasks: Array.from({ length: 128 }, (_, i) => task(i, i === 17 ? 'running' : 'completed')),
+    tasksAvailable: true, tasksComplete: true, tasksTruncated: false, backgroundTasksComplete: true, dispatchChildren: [],
+    dispatchChildrenAvailable: true, dispatchChildrenComplete: true, dispatchChildrenTruncated: false, partial: false, capture: { epoch: 'b'.repeat(32), seq: 1 } };
+  const nativeQuery = { version: 1, app: scope.app, nativeConversationId: sourceIdentity.id, hostId: scope.hostId, ownerGeneration: scope.ownerGeneration,
+    queryToken: scope.queryToken, status: 'idle', canSend: true, activeSendMode: 'queue', canCancel: false };
+  const f = await fixture({ ownerGeneration: 'owner-1', nativeTasks, nativeQuery, contentStamp: 'initial' });
+  const adapter = /** @type {Value} */ (f.adapter); adapter.generation = () => 'main';
+  const latest = structuredClone(nativeTasks); latest.tasks[17].status = 'completed'; latest.capture.seq = 3;
+  adapter.taskSnapshot = async () => structuredClone(latest);
+  f.transport.agentState = { nativeTasks: { privateOldList: 'must disappear' } };
+  const connector = await f.create({ sourceIdentity });
+  try {
+    await connector.start(); const base = f.transport.agentState.nativeTaskSignal.digest;
+    assert.equal('nativeTasks' in f.transport.agentState, false); assert.equal(f.transport.agentState.aggregateActivity.status, 'running');
+    let release = /** @type {()=>void} */ (() => {}), started = /** @type {()=>void} */ (() => {});
+    const blocked = /** @type {Promise<void>} */ (new Promise(resolve => { release = () => resolve(); }));
+    const entered = /** @type {Promise<void>} */ (new Promise(resolve => { started = () => resolve(); }));
+    let blockNext = true; const originalUpdate = f.transport.updateAgentState.bind(f.transport);
+    f.transport.updateAgentState = async change => { if (blockNext) { blockNext = false; started(); await blocked; } await originalUpdate(change); };
+    const old = structuredClone(adapter.view); old.contentStamp = 'older'; old.nativeTasks.capture.seq = 2;
+    const oldPublication = connector.project(old); await entered;
+    const delta = await f.transport.rpc('native-task-read', { scope, since: base });
+    assert.equal(delta.kind, 'native-task-delta'); assert.equal(delta.taskUpserts.length, 1);
+    assert.equal(delta.digest, f.transport.agentState.nativeTaskSignal.digest); assert.equal(f.transport.agentState.aggregateActivity.status, 'idle');
+    release(); await oldPublication;
+    assert.equal(f.transport.agentState.nativeTaskSignal.digest, delta.digest); assert.equal(f.transport.agentState.aggregateActivity.status, 'idle');
+    await connector.project(old);
+    assert.equal(f.transport.agentState.nativeTaskSignal.digest, delta.digest); assert.equal(f.transport.agentState.aggregateActivity.status, 'idle');
+    latest.capture.seq = 4;
+    const unchanged = await f.transport.rpc('native-task-read', { scope, since: delta.digest });
+    assert.equal(unchanged.kind, 'native-task-unchanged'); assert.equal('tasks' in unchanged, false);
+    const unknown = await f.transport.rpc('native-task-read', { scope, since: 'c'.repeat(64) });
+    assert.equal(unknown.kind, undefined); assert.equal(unknown.tasks.length, 128);
+    assert.equal(adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('Claude query controls accept queued input without inventing a native turn and cancel only the exact query', async () => {
+  const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: 'original-native-id', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+    protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner-1' };
+  const nativeQuery = { version: 1, app: 'claude-desktop', nativeConversationId: sourceIdentity.id, hostId: sourceIdentity.hostId, ownerGeneration: 'owner-1',
+    queryToken: 'original-query', status: 'running', canSend: true, activeSendMode: 'queue', canCancel: true };
+  const f = await fixture({ ownerGeneration: 'owner-1', status: 'running', currentTurnId: null, nativeQuery, nativeModel: { model: 'original-native-model[1m]', effort: null } });
+  const adapter = /** @type {Value} */ (f.adapter); adapter.supportedActions = ['send', 'interrupt'];
+  adapter.command = async (/** @type {string} */ nativeId, /** @type {string} */ action, /** @type {Value} */ payload, /** @type {string} */ commandId, /** @type {Value} */ context) => {
+    adapter.calls.push({ nativeId, action, payload, commandId, context });
+    assert.equal(context.expectedQueryToken, 'original-query');
+    return action === 'send' ? { admitted: true, nativeDispatchConfirmed: true, queued: true, messageId: 'claude:queued-native-id' } : { cancelRequested: true };
+  };
+  const connector = await f.create({ sourceIdentity });
+  try {
+    await connector.start(); assert.equal(f.transport.metadata.capabilities.send, true); assert.equal(f.transport.metadata.capabilities.steering, false); assert.equal(f.transport.metadata.capabilities.abort, true);
+    assert.equal(f.transport.metadata.nativeObservedModel.model, 'original-native-model[1m]'); assert.equal(f.transport.metadata.nativeObservedModel.readOnly, true);
+    assert.equal(f.transport.metadata.capabilities.modelSelection, false); assert.equal(f.transport.metadata.nativeObservedModel.ownerGeneration, 'owner-1');
+    f.transport.inject(user('Queued input')); await connector.processInbox();
+    const accepted = events(f.transport).filter(event => event.ev.t === 'user-message-accepted');
+    assert.equal(accepted.length, 1); assert.equal(accepted[0].ev.runId, null); assert.equal(accepted[0].ev.disposition, 'queued');
+    assert.equal(accepted[0].turn, undefined); assert.equal(adapter.calls.length, 1);
+    adapter.view.rows.push({ id: 'claude:queued-native-id', role: 'user', turnId: 'display-only-uuid-group', inputStatus: 'accepted', text: 'Queued input', tools: [] });
+    await connector.project(adapter.view);
+    assert.equal(events(f.transport).filter(event => event.ev.t === 'user-message-accepted').length, 1); assert.equal(adapter.calls.length, 1);
+    await assert.rejects(f.transport.rpc('abort', { commandId: 'wrong-query-cancel', queryToken: 'old-query' }), { code: 'stale-turn' });
+    await assert.rejects(f.transport.rpc('abort', { commandId: 'fake-turn-cancel', turnId: 'fake' }), { code: 'invalid-rpc-payload' });
+    await f.transport.rpc('abort', { commandId: 'native-query-cancel', queryToken: 'original-query' });
+    assert.equal(adapter.calls.length, 2); assert.deepEqual(adapter.calls[1].payload, { queryToken: 'original-query' });
+    await f.transport.rpc('abort', { commandId: 'native-query-cancel', queryToken: 'original-query' }); assert.equal(adapter.calls.length, 2);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('changed or unverified Claude native query input is rejected before any dispatch', async () => {
+  const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: 'original-native-id', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+    protocol: 'claude-desktop-native', appMode: 'chat', nativeCollection: 'local-agent-mode-sessions', runtimeGeneration: 'owner-1' };
+  for (const changed of [false, true]) {
+    const nativeQuery = { version: 1, app: 'claude-desktop', nativeConversationId: sourceIdentity.id, hostId: sourceIdentity.hostId, ownerGeneration: 'owner-1',
+      queryToken: null, status: 'idle', canSend: changed, activeSendMode: 'unverified', canCancel: false };
+    const f = await fixture({ ownerGeneration: 'owner-1', nativeQuery }); const connector = await f.create({ sourceIdentity });
+    try {
+      await connector.start(); if (changed) f.adapter.beforeSnapshot = () => { f.adapter.view.nativeQuery.queryToken = 'new-query'; };
+      f.transport.inject(user('Must not enter another query')); await connector.processInbox();
+      assert.equal(f.adapter.calls.length, 0); assert.equal(events(f.transport).some(event => event.ev.t === 'user-message-accepted'), false);
+    } finally { await connector.close(); await f.dispose(); }
+  }
+});
+
+test('a confirmed Claude native message survives observer restart without a fabricated turn or recent row', async () => {
+  const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: 'original-native-id', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+    protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner-1' };
+  const nativeQuery = { version: 1, app: 'claude-desktop', nativeConversationId: sourceIdentity.id, hostId: sourceIdentity.hostId, ownerGeneration: 'owner-1',
+    queryToken: null, status: 'idle', canSend: true, activeSendMode: 'queue', canCancel: false };
+  const f = await fixture({ ownerGeneration: 'owner-1', nativeQuery }), adapter = /** @type {Value} */ (f.adapter);
+  adapter.supportedActions = ['send'];
+  adapter.command = async (/** @type {string} */ _nativeId, /** @type {string} */ _action, /** @type {Value} */ _payload, /** @type {string} */ commandId) => {
+    adapter.calls.push({ commandId }); return { admitted: true, nativeDispatchConfirmed: true, queued: false, messageId: 'claude:admitted-native-uuid' };
+  };
+  let connector = await f.create({ sourceIdentity });
+  try {
+    await connector.start(); f.transport.inject(user('Original admitted input')); await connector.processInbox();
+    const commandId = adapter.calls[0].commandId, before = (await f.transport.rpc('bridge-receipt', { commandId })).receipt;
+    assert.equal(before.admission.confirmed, true); assert.equal(before.admission.turnId, null); assert.equal(before.admission.queued, false);
+    await connector.close(); connector = await f.create({ sourceIdentity }); await connector.start();
+    const after = (await f.transport.rpc('bridge-receipt', { commandId })).receipt;
+    assert.deepEqual(after.admission, before.admission); assert.equal(after.status, 'complete');
+    assert.equal(adapter.calls.length, 1); assert.equal(events(f.transport).filter(event => event.ev.t === 'user-message-accepted').length, 1);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('Claude native older pages preserve live controls and carry exact owner-bound UUID cursors', async () => {
+  const row = (/** @type {string} */ id) => ({ id: 'claude:' + id, role: 'assistant', turnId: 'display-native-turn', text: id, tools: [] });
+  const f = await fixture({ ownerGeneration: 'owner-1', status: 'running', historyComplete: false, rows: [row('recent-a'), row('recent-b')] });
+  const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: f.options.nativeId, hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+    protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner-1' };
+  const adapter = /** @type {Value} */ (f.adapter); adapter.supportsNativeHistoryPaging = true; adapter.supportsDataOnlyHistoryPaging = true;
+  let reads = 0; adapter.readDataHistoryPage = async (/** @type {string} */ nativeId, /** @type {Value} */ boundary) => {
+    reads++; assert.equal(nativeId, f.options.nativeId); assert.equal(boundary.ownerGeneration, 'owner-1');
+    return { ownerGeneration: 'owner-1', historyDataOnly: true, historyComplete: false, coverage: { found: true },
+      rows: [row('old-a'), row('old-b'), row('old-c')], status: 'idle', requests: [{ requestId: 'historical-unsafe-request' }] };
+  };
+  const connector = await f.create({ sourceIdentity });
+  try {
+    const recent = await connector.readRecent({ limit: 1 }); const metadata = structuredClone(f.transport.metadata), agentState = structuredClone(f.transport.agentState);
+    const old = await connector.readRecent({ fresh: false, cursor: recent.nextCursor, limit: 2 });
+    assert.deepEqual(old.rows.map((/** @type {Value} */ item) => item.id), ['claude:old-b', 'claude:old-c']);
+    assert.equal(old.status, 'running'); assert.equal(old.ownerGeneration, 'owner-1'); assert.equal(old.hasMore, true);
+    assert.deepEqual(f.transport.metadata, metadata); assert.deepEqual(f.transport.agentState, agentState);
+    const boundary = JSON.parse(Buffer.from(old.nextCursor, 'base64url').toString()); assert.equal(boundary.id, 'claude:old-b'); assert.equal(boundary.ownerGeneration, 'owner-1');
+    boundary.ownerGeneration = 'foreign-owner';
+    await assert.rejects(connector.readRecent({ fresh: false, cursor: Buffer.from(JSON.stringify(boundary)).toString('base64url') }), { code: 'source-epoch-changed' });
+    assert.equal(reads, 1); assert.equal(f.adapter.completeReads, 0); assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('Claude history rejects unconfirmed and changed-owner pages without projecting stale data', async () => {
+  for (const mode of ['unconfirmed', 'foreign', 'late-change']) {
+    const f = await fixture({ ownerGeneration: 'owner-1', historyComplete: false, rows: [{ id: 'claude:recent', role: 'assistant', turnId: 'display', text: 'Recent', tools: [] }] });
+    const adapter = /** @type {Value} */ (f.adapter); adapter.supportsNativeHistoryPaging = true; adapter.supportsDataOnlyHistoryPaging = true;
+    adapter.readDataHistoryPage = async () => {
+      if (mode === 'late-change') f.epoch('owner-2');
+      return { historyDataOnly: true, rows: [], historyComplete: true, ownerGeneration: mode === 'foreign' ? 'owner-other' : 'owner-1', coverage: { found: mode !== 'unconfirmed' } };
+    };
+    const sourceIdentity = { app: 'claude-desktop', kind: 'session', id: f.options.nativeId, hostId: 'local:claude-desktop:' + 'a'.repeat(64), protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner-1' };
+    const connector = await f.create({ sourceIdentity });
+    try {
+      const recent = await connector.readRecent({ limit: 1 }), metadata = structuredClone(f.transport.metadata);
+      await assert.rejects(connector.readRecent({ fresh: false, cursor: recent.nextCursor, limit: 1 }), { code: mode === 'late-change' ? 'source-epoch-changed' : 'complete-history-unconfirmed' });
+      assert.deepEqual(f.transport.metadata, metadata); assert.equal(f.adapter.completeReads, 0); assert.equal(f.adapter.calls.length, 0);
+    } finally { await connector.close(); await f.dispose(); }
+  }
+});
+
+test('verified Desktop saved history is readable with no live owner and cannot enable native controls or admission', async () => {
+  const f = await fixture({ status: 'history-only', ownerGeneration: null, currentTurnId: null, historyComplete: true,
+    rows: [{ id: 'saved-row', role: 'assistant', text: 'Saved original row', turnId: 'saved-native-turn', tools: [] }],
+    historicalRead: { app: 'codex', version: 1, available: true, originator: 'Codex Desktop', nativeId: 'original-native-id', hostId: 'local', namespaceHash: 'a'.repeat(64), sourceStamp: 'b'.repeat(64), byteBoundary: { start: 0, end: 100, total: 100 } } });
+  /** @type {Value} */ (f.adapter).supportsNativeSavedHistory = true;
+  const connector = await f.create();
+  try {
+    await connector.start(); const recent = await connector.readRecent({ limit: 1 });
+    assert.equal(recent.rows[0].text, 'Saved original row'); assert.equal(recent.ownerGeneration, null);
+    assert.equal(connector.status().sourceStatus, 'history-only'); assert.equal(f.transport.metadata.bridge.source.runtimeGeneration, null);
+    assert.equal(f.transport.metadata.capabilities.steering, false); assert.equal(f.transport.metadata.capabilities.abort, false);
+    assert.equal(f.transport.metadata.nativeSavedHistory.readOnly, true);
+    assert.deepEqual(f.transport.metadata.capabilities.rpcMethods, ['bridge-receipt']);
+    assert.deepEqual(f.transport.agentState.requests, {}); assert.deepEqual(f.transport.agentState.communications, {});
+    f.transport.inject(user('Must not execute from saved history')); await connector.processInbox();
+    assert.equal(f.adapter.calls.length, 0);
+    assert.equal(events(f.transport).some(event => event.ev?.t === 'user-message-accepted'), false);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('unverified or foreign saved-history provenance cannot enter the native projection', async () => {
+  for (const proof of [{ namespaceHash: 'invalid' }, { nativeId: 'foreign' }, { hostId: 'remote' }, { app: 'terminal' }, { byteBoundary: { start: 100, end: 50, total: 100 } }]) {
+    const f = await fixture({ status: 'history-only', ownerGeneration: null, currentTurnId: null,
+      historicalRead: { app: 'codex', version: 1, available: true, originator: 'Codex Desktop', nativeId: 'original-native-id', hostId: 'local', namespaceHash: 'a'.repeat(64), sourceStamp: 'b'.repeat(64), byteBoundary: { start: 0, end: 100, total: 100 }, ...proof } });
+    /** @type {Value} */ (f.adapter).supportsNativeSavedHistory = true;
+    const connector = await f.create();
+    try { await assert.rejects(connector.start(), { code: 'native-history-unverified' }); assert.equal(f.adapter.calls.length, 0); }
+    finally { await connector.close(); await f.dispose(); }
+  }
+});
+
+test('an async older saved page cannot publish under a newer saved-data metadata stamp', async () => {
+  const proof = { app: 'codex', version: 1, available: true, originator: 'Codex Desktop', nativeId: 'original-native-id', hostId: 'local', namespaceHash: 'a'.repeat(64), sourceStamp: 'b'.repeat(64), byteBoundary: { start: 100, end: 200, total: 200 } };
+  const f = await fixture({ status: 'history-only', ownerGeneration: null, currentTurnId: null, historyComplete: false,
+    rows: [{ id: 'saved-row', role: 'assistant', text: 'Saved original row', turnId: 'saved-turn', order: 100, tools: [] }], historicalRead: proof });
+  const adapter = /** @type {Value} */ (f.adapter); adapter.supportsNativeSavedHistory = true;
+  const connector = await f.create();
+  try {
+    await connector.start(); const first = await connector.readRecent({ limit: 1 });
+    const captured = structuredClone(f.adapter.view);
+    adapter.readHistoricalPage = async () => {
+      const newer = { ...f.adapter.view, contentStamp: 'new-saved-data', historicalRead: { ...proof, sourceStamp: 'c'.repeat(64) } };
+      await connector.project(newer); return captured;
+    };
+    await assert.rejects(connector.readRecent({ fresh: false, cursor: first.nextCursor, limit: 1 }), { code: 'source-epoch-changed' });
+    assert.equal(f.transport.metadata.nativeSavedHistory.sourceStamp, 'c'.repeat(64)); assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('GET history query limits normalize to numeric saved-reader bounds', async () => {
+  const proof = { app: 'codex', version: 1, available: true, originator: 'Codex Desktop', nativeId: 'original-native-id', hostId: 'local', namespaceHash: 'a'.repeat(64), sourceStamp: 'b'.repeat(64), byteBoundary: { start: 100, end: 200, total: 200 } };
+  const f = await fixture({ status: 'history-only', ownerGeneration: null, currentTurnId: null, historyComplete: false,
+    rows: [{ id: 'saved-row', role: 'assistant', text: 'Saved row', turnId: 'saved-turn', order: 100, tools: [] }], historicalRead: proof });
+  const adapter = /** @type {Value} */ (f.adapter); adapter.supportsNativeSavedHistory = true;
+  let requested = 0; adapter.readHistoricalPage = async (/** @type {string} */ _id, /** @type {Value} */ boundary) => {
+    if (!Number.isSafeInteger(boundary.limit)) throw new BridgeError('codex-history-boundary-invalid', 'Numeric limit required.', 400);
+    requested = boundary.limit;
+    return { ...f.adapter.view, historyComplete: true, historicalRead: { ...proof, byteBoundary: { start: 0, end: 100, total: 200 } } };
+  };
+  const connector = await f.create();
+  try {
+    await connector.start(); const first = await connector.readRecent({ limit: 1 });
+    const earlier = await connector.readRecent({ fresh: false, cursor: first.nextCursor, limit: '4' });
+    assert.equal(requested, 4); assert.equal(earlier.hasMore, false); assert.equal(f.adapter.calls.length, 0);
+    await assert.rejects(connector.readRecent({ fresh: false, cursor: first.nextCursor, limit: '4.5' }), { code: 'invalid-page-limit' });
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('image sync uses only markers; explicit reads reuse a durable attachment across ACK loss and restart', async () => {
+  const f = await fixture(); const png = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  const path = join(f.directory, 'image.png'); await writeFile(path, png);
+  f.adapter.view.rows = [{ id: 'original-image', role: 'tool', text: '', turnId: 'original-turn', tools: [{ id: 'original-image', name: 'view_image', imagePath: path, output: '', status: 'completed' }] }];
+  const uploads = /** @type {Value[]} */ ([]), ref = 'sessions/happy-fixture/attachments/11111111-1111-1111-1111-111111111111.enc';
+  /** @type {any} */ (f.transport).uploadAttachment = async (/** @type {Buffer} */ bytes, /** @type {Value} */ options) => { uploads.push({ bytes, options }); return { ref }; };
+  let connector = await f.create();
+  try {
+    f.transport.failPublication = true; await assert.rejects(connector.start()); await connector.close();
+    connector = await f.create(); await connector.start();
+    const recent = await connector.readRecent(); await connector.readRecent();
+    assert.equal(uploads.length, 0);
+    assert.deepEqual(recent.rows[0].tools[0].arguments, { nativeImageId: 'original-image', name: 'image.png' });
+    const attachment = await f.transport.rpc('native-image-read', { imageId: 'original-image' });
+    await f.transport.rpc('native-image-read', { imageId: 'original-image' });
+    await connector.close(); connector = await f.create(); await connector.start();
+    assert.deepEqual(await f.transport.rpc('native-image-read', { imageId: 'original-image' }), attachment);
+    assert.equal(uploads.length, 1); assert.deepEqual([...uploads[0].bytes.subarray(0, 3)], [255, 216, 255]); assert.ok(uploads[0].bytes.length + 40 <= 500000);
+    assert.deepEqual(attachment, { ref, name: 'image.jpg', size: uploads[0].bytes.length, image: { width: 1, height: 1 } });
+    assert.equal(recent.rows[0].tools[0].name, 'file'); assert.equal(JSON.stringify(recent).includes(path), false);
+    const start = events(f.transport).filter(event => event.ev.t === 'tool-call-start');
+    assert.equal(start.length, 1); assert.equal(start[0].ev.call, 'original-image'); assert.equal(start[0].ev.args.nativeImageId, 'original-image'); assert.equal(start[0].ev.args.ref, undefined);
+    await assert.rejects(f.transport.rpc('native-image-read', { imageId: 'other-session-image' }), { code: 'native-image-unavailable' });
+    await assert.rejects(f.transport.rpc('native-image-read', { imageId: 'original-image', path }), { code: 'invalid-image-request' });
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('history and missing images stay as markers until an explicit image read', async () => {
+  const f = await fixture(); const path = join(f.directory, 'later.png');
+  const image = { id: 'older-image', role: 'tool', text: '', turnId: 'original-turn', tools: [{ id: 'older-image', name: 'view_image', imagePath: path, output: '', status: 'completed' }] };
+  f.adapter.view.rows = [image, { id: 'latest', role: 'assistant', text: 'Latest', turnId: 'original-turn' }];
+  let uploads = 0; /** @type {any} */ (f.transport).uploadAttachment = async () => { uploads++; return { ref: 'sessions/happy-fixture/attachments/11111111-1111-1111-1111-111111111111.enc' }; };
+  const connector = await f.create({ recentRowLimit: 1 });
+  try {
+    await connector.start(); assert.equal(uploads, 0);
+    const failed = await connector.readRecent({ limit: 2 }); assert.equal(failed.rows.length, 2);
+    assert.equal(uploads, 0); assert.equal(failed.rows[0].tools[0].arguments.nativeImageId, 'older-image'); assert.equal(JSON.stringify(failed).includes(path), false);
+    await assert.rejects(f.transport.rpc('native-image-read', { imageId: 'older-image' }), { code: 'native-image-unavailable' });
+    await writeFile(path, await sharp({ create: { width: 1, height: 1, channels: 3, background: '#ffffff' } }).png().toBuffer());
+    const recovered = await connector.readRecent({ limit: 2 }); assert.equal(recovered.rows[0].tools[0].name, 'file'); assert.equal(uploads, 0);
+    await f.transport.rpc('native-image-read', { imageId: 'older-image' }); assert.equal(uploads, 1);
+    assert.equal((await connector.readRecent({ limit: 2 })).rows[0].tools[0].arguments.ref, undefined);
+    assert.equal(connector.status().sourceStatus, 'connected'); assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('an image from a remote or unleased owner cannot open or upload local files', async () => {
+  for (const hostId of ['remote', 'local']) {
+    const f = await fixture({ rows: [{ id: 'image', role: 'tool', text: '', turnId: 'turn', tools: [{ id: 'image', name: 'view_image', imagePath: '/untrusted/file.png', output: '', status: 'completed' }] }] });
+    let uploads = 0; /** @type {any} */ (f.transport).uploadAttachment = async () => { uploads++; throw Error('Must not upload'); };
+    if (hostId === 'local') f.lease(false);
+    const connector = await f.create({ sourceIdentity: { ...f.options.sourceIdentity, hostId } });
+    try {
+      await connector.start(); const recent = await connector.readRecent();
+      assert.equal(recent.rows[0].tools[0].arguments.nativeImageId, 'image');
+      await assert.rejects(f.transport.rpc('native-image-read', { imageId: 'image' }), { code: 'source-epoch-changed' });
+      assert.equal(uploads, 0); assert.equal(f.adapter.calls.length, 0);
+    } finally { await connector.close(); await f.dispose(); }
+  }
+});
+
+test('an unchanged original stamp cannot suppress the lazy image projection migration', async () => {
+  const f = await fixture({ contentStamp: 'unchanged-original', rows: [{ id: 'image', role: 'tool', text: '', turnId: 'turn', tools: [{ id: 'image', name: 'view_image', imagePath: '/fixture/image.png', output: '', status: 'completed' }] }] });
+  let connector = await f.create();
+  try {
+    await connector.start(); const before = await connector.readRecent(); await connector.close();
+    const file = JSON.parse(await readFile(f.options.statePath, 'utf8')), state = /** @type {Value} */ (decryptRecord(file.ciphertext, f.options.encryptionKey));
+    delete state.nativeImageProjectionVersion;
+    state.rows.find((/** @type {Value} */ row) => row.id === 'tool:image').inputDigest = 'prior-image-projection';
+    file.ciphertext = encryptRecord(state, f.options.encryptionKey); await writeFile(f.options.statePath, JSON.stringify(file));
+    connector = await f.create(); await connector.start(); const after = await connector.readRecent();
+    assert.ok(after.rows[0].snapshotRevision > before.rows[0].snapshotRevision);
+    assert.equal(after.rows[0].tools[0].arguments.nativeImageId, 'image');
+    assert.ok(events(f.transport).some(event => event.ev.t === 'native-row-upsert' && event.ev.tools?.[0]?.arguments?.nativeImageId === 'image'));
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
 
 test('an accepted native row publishes and retains the old steering wire identities in fresh seeds', async () => {
   const f = await fixture({ rows: [{ id: 'temporary-steering-uuid', role: 'user', text: 'Original input', turnId: 'original-turn', commandId: 'original-caller' }] });
@@ -114,6 +487,168 @@ test('an identical full snapshot with empty bootstrap does not rewrite the encry
   try { await connector.start(); const before = await readFile(f.options.statePath, 'utf8');
     await connector.project(f.adapter.view); await connector.project(f.adapter.view);
     assert.equal(await readFile(f.options.statePath, 'utf8'), before);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('same-owner unchanged Antigravity reattachment restores disconnected metadata without replay or content journal writes', async () => {
+  const f = await fixture({ contentStamp: 'unchanged-antigravity-owner', ownerGeneration: 'owner-1',
+    rows: [{ id: 'stable-agy-row', role: 'assistant', text: 'Synthetic unchanged native marker', turnId: 'stable-turn', status: 'completed' }] });
+  const sourceIdentity = { ...f.options.sourceIdentity, app: 'antigravity', kind: 'session', protocol: 'antigravity-connect', hostId: 'local:antigravity:' + 'a'.repeat(64) };
+  let connector = await f.create({ sourceIdentity });
+  try {
+    await connector.start(); assert.equal(f.transport.metadata.bridge.sourceStatus, 'connected'); assert.equal(f.transport.metadata.capabilities.steering, true);
+    const checkpoint = await readFile(f.options.statePath, 'utf8'); await connector.close();
+    // Normal bound-source retirement closes network capabilities separately from
+    // the original native content checkpoint and owner generation.
+    const transport = new FixtureTransport();
+    transport.metadata = { ...f.transport.metadata, bridge: { ...f.transport.metadata.bridge, sourceStatus: 'disconnected' },
+      capabilities: { ...f.transport.metadata.capabilities, steering: false, abort: false, rpcMethods: [] } };
+    let metadataUpdates = 0; const updateMetadata = transport.updateMetadata.bind(transport);
+    transport.updateMetadata = async change => { metadataUpdates++; await updateMetadata(change); };
+    connector = await f.create({ sourceIdentity, transport }); await connector.start();
+    const recent = await connector.readRecent({ fresh: true });
+    assert.equal(recent.rows.length, 1); assert.equal(connector.status().sourceStatus, 'connected');
+    assert.equal(transport.metadata.bridge.sourceStatus, 'connected'); assert.equal(transport.metadata.capabilities.steering, true);
+    assert.ok(transport.metadata.capabilities.rpcMethods.includes('abort')); assert.ok(metadataUpdates > 0);
+    assert.equal(await readFile(f.options.statePath, 'utf8'), checkpoint); assert.equal(transport.records.length, 0); assert.equal(f.adapter.calls.length, 0);
+    const publications = metadataUpdates; await connector.project(f.adapter.view); await connector.project(f.adapter.view);
+    assert.equal(metadataUpdates, publications); assert.equal(await readFile(f.options.statePath, 'utf8'), checkpoint);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('unchanged-content attachment retries failed metadata publication and rechecks a changed lease', async () => {
+  const f = await fixture({ contentStamp: 'unchanged-metadata-retry', rows: [{ id: 'stable', role: 'assistant', text: 'Synthetic stable row', turnId: 'stable-turn', status: 'completed' }] });
+  const connector = await f.create();
+  try {
+    await connector.start(); const checkpoint = await readFile(f.options.statePath, 'utf8');
+    const updateMetadata = f.transport.updateMetadata.bind(f.transport); let fail = true;
+    f.transport.updateMetadata = async change => { if (fail) { fail = false; throw Error('Synthetic metadata write failure'); } await updateMetadata(change); };
+    f.lease(false); await assert.rejects(connector.project(f.adapter.view), /metadata write failure/);
+    await connector.project(f.adapter.view); assert.equal(f.transport.metadata.capabilities.steering, false);
+    f.lease(true); await connector.project(f.adapter.view); assert.equal(f.transport.metadata.capabilities.steering, true);
+    assert.equal(await readFile(f.options.statePath, 'utf8'), checkpoint); assert.equal(f.adapter.calls.length, 0);
+    // A failed metadata update after a same-lease content/state transition also
+    // remains retryable; an earlier successful attachment cannot suppress it.
+    f.adapter.view.contentStamp = 'changed-running-native'; f.adapter.view.currentTurnId = 'native-running-turn'; f.adapter.view.status = 'active'; fail = true;
+    await assert.rejects(connector.project(f.adapter.view), /metadata write failure/);
+    const projected = await readFile(f.options.statePath, 'utf8'); await connector.project(f.adapter.view);
+    assert.equal(f.transport.metadata.bridge.currentTurnId, 'native-running-turn'); assert.equal(f.transport.metadata.capabilities.abort, true);
+    assert.equal(await readFile(f.options.statePath, 'utf8'), projected); assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('native first attachment primes its bounded history without broadcast and the first live repair is self-contained', async () => {
+  const rows = Array.from({ length: 300 }, (_, index) => ({ id: `native-old-${index}`, role: 'assistant', text: `Old native row ${index}`, turnId: `old-turn-${index}`, status: 'completed' }));
+  const f = await fixture({ rows, historyComplete: true });
+  const connector = await f.create({ publishInitialHistory: false, recentRowLimit: 100, supportsNativeProjection: true });
+  try {
+    await connector.start(); assert.equal(f.transport.records.length, 0);
+    const recent = await connector.readRecent({ fresh: true, limit: 1 }); assert.equal(recent.rows.length, 1); assert.equal(recent.rows[0].id, 'native-old-299');
+    const state = /** @type {Value} */ (decryptRecord(JSON.parse(await readFile(f.options.statePath, 'utf8')).ciphertext, f.options.encryptionKey));
+    assert.equal(state.activeRowIds.length, 100); assert.ok(state.rows.every((/** @type {Value} */ row) => !row.eventIds.length));
+    f.adapter.view.rows[299].text = 'Old native row 299 now revised'; f.adapter.view.revision++;
+    await connector.project(f.adapter.view);
+    const repaired = events(f.transport).find(event => event.ev.t === 'native-row-upsert' && event.ev.sourceRowId === 'native-old-299');
+    assert.ok(repaired); assert.equal(repaired.ev.text, 'Old native row 299 now revised');
+    f.adapter.view.rows.push({ id: 'new-live-row', role: 'assistant', text: 'New live text', turnId: 'new-live-turn', status: 'completed' }); f.adapter.view.revision++;
+    await connector.project(f.adapter.view); assert.ok(events(f.transport).some(event => event.ev.t === 'text' && event.ev.text === 'New live text'));
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('new historical rows and primed tool baselines do not leak history, while a real tool completion seeds itself', async () => {
+  const latest = { id: 'latest-tool', role: 'tool', text: '', turnId: 'tool-turn', tools: [{ id: 'native-tool', name: 'run_command', arguments: { command: 'synthetic only' }, output: '', status: 'running' }] };
+  const f = await fixture({ rows: [latest], currentTurnId: 'tool-turn', status: 'running', historyComplete: false });
+  const connector = await f.create({ publishInitialHistory: false, recentRowLimit: 100, supportsNativeProjection: true });
+  try {
+    await connector.start(); assert.equal(f.transport.records.length, 0);
+    const old = Array.from({ length: 80 }, (_, index) => ({ id: `history-${index}`, role: 'assistant', text: `Historical row ${index}`, turnId: `history-turn-${index}`, status: 'completed' }));
+    f.adapter.view.rows = [...old, latest]; f.adapter.view.revision++;
+    await connector.project(f.adapter.view, true); assert.equal(f.transport.records.length, 0);
+    latest.tools[0].output = 'Actual new completion'; latest.tools[0].status = 'completed'; f.adapter.view.currentTurnId = null; f.adapter.view.status = 'idle'; f.adapter.view.revision++;
+    await connector.project(f.adapter.view);
+    const tool = events(f.transport).find(event => event.ev.t === 'native-row-upsert' && event.ev.sourceRowId === 'latest-tool'); assert.ok(tool);
+    assert.equal(tool.ev.tools[0].output, 'Actual new completion'); assert.equal(tool.ev.tools[0].status, 'completed');
+    assert.equal(events(f.transport).some(event => event.ev.t === 'text' && event.ev.text.startsWith('Historical row')), false);
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('same-stamp reattachment marks the history baseline primed so the next newly live row is published', async () => {
+  const f = await fixture({ contentStamp: 'original-unchanged', rows: [{ id: 'old-row', role: 'assistant', text: 'Old native row', turnId: 'old-turn', status: 'completed' }] });
+  let connector = await f.create({ publishInitialHistory: false, supportsNativeProjection: true });
+  try {
+    await connector.start(); assert.equal(f.transport.records.length, 0); await connector.close();
+    connector = await f.create({ publishInitialHistory: false, supportsNativeProjection: true }); await connector.start();
+    f.adapter.view.rows.push({ id: 'fresh-row', role: 'assistant', text: 'Only new live data', turnId: 'fresh-turn', status: 'completed' });
+    f.adapter.view.contentStamp = 'new-live-stamp'; f.adapter.view.revision++; await connector.project(f.adapter.view);
+    assert.ok(events(f.transport).some(event => event.ev.t === 'text' && event.ev.text === 'Only new live data'));
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('history priming never suppresses exact native admission receipts or replays an unknown input', async () => {
+  const f = await fixture(); let connector = await f.create({ publishInitialHistory: false, supportsNativeProjection: true });
+  try {
+    await connector.start(); f.adapter.fail = true; f.transport.inject(user('Synthetic admission only'), 'original-local', 'original-broker');
+    await connector.processInbox(); assert.equal(f.adapter.calls.length, 1); const commandId = f.adapter.calls[0].commandId;
+    await connector.close(); f.adapter.fail = false;
+    f.adapter.view.rows = [{ id: 'original-native-user', role: 'user', text: 'Synthetic admission only', commandId, turnId: 'native-admitted-turn', inputStatus: 'accepted', status: 'completed' }];
+    f.adapter.view.revision++; connector = await f.create({ publishInitialHistory: false, supportsNativeProjection: true }); await connector.start();
+    const accepted = events(f.transport).find(event => event.ev.t === 'user-message-accepted'); assert.ok(accepted);
+    assert.equal(accepted.ev.ref, 'original-broker'); assert.equal(accepted.ev.runId, 'native-admitted-turn'); assert.equal(f.adapter.calls.length, 1);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('source-bound parent-owned native input disables direct steering without disconnecting read, stop or native responses', async () => {
+  const f = await fixture({ status: 'active', currentTurnId: 'native-active-turn',
+    rows: [{ id: 'async-question-row', role: 'assistant', text: '', turnId: 'native-active-turn', asyncQuestions: [{ questionItemId: 'async-child-question', title: 'Message question', options: ['A'], answered: false }] }],
+    requests: [{ kind: 'user-input', requestId: 'real-native-request', operable: true, questions: [{ id: 'native-q', question: 'Native request', options: [{ label: 'A' }] }] }],
+    nativeInput: { app: 'codex', nativeConversationId: 'original-native-id', hostId: 'local', ownerGeneration: 'owner-1',
+    available: false, reason: 'parent-owned-subagent', parentConversationId: 'parent-native', agentPath: '/root/child' } });
+  const connector = await f.create();
+  try {
+    await connector.start(); assert.equal(f.transport.metadata.bridge.sourceStatus, 'connected');
+    assert.equal(f.transport.metadata.capabilities.steering, false); assert.equal(f.transport.metadata.capabilities.abort, true);
+    assert.ok(f.transport.metadata.capabilities.rpcMethods.includes('permission')); assert.ok(f.transport.metadata.capabilities.rpcMethods.includes('communication'));
+    assert.equal(f.transport.agentState.nativeInput.reason, 'parent-owned-subagent'); assert.equal(f.transport.agentState.nativeInput.parentConversationId, 'parent-native');
+    assert.equal(Object.keys(f.transport.agentState.communications).length, 1);
+    assert.equal(Object.values(f.transport.agentState.communications)[0].form.questions[0].question, 'Native request');
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('verified native suffix history can advance a cursor without claiming complete history or replaying commands', async () => {
+  const f = await fixture({ status: 'idle', currentTurnId: null, nativeStepOffset: 48, nativeStepEnd: 64, historyComplete: false,
+    rows: [{ id: 'tail-row', role: 'assistant', text: 'Tail', turnId: 'original-turn', order: 48, status: 'completed' }] });
+  (/** @type {Value} */ (f.adapter)).supportsNativeHistoryPaging = true;
+  f.adapter.completeSnapshot = async () => ({ ...f.adapter.view, nativeStepOffset: 32, nativeStepEnd: 64, historyComplete: false,
+    rows: [{ id: 'earlier-row', role: 'assistant', text: 'Earlier', turnId: 'original-turn', order: 32, status: 'completed' }, ...f.adapter.view.rows] });
+  const connector = await f.create();
+  try {
+    const first = await connector.readRecent({ fresh: false, limit: 1 }); assert.equal(first.hasMore, true);
+    const earlier = await connector.readRecent({ fresh: false, cursor: first.nextCursor, limit: 1 });
+    assert.equal(earlier.rows[0].id, 'earlier-row'); assert.equal(earlier.historyComplete, false); assert.equal(earlier.hasMore, true);
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('materialized history pages survive a fresh latest view without changing live pending requests or native controls', async () => {
+  const f = await fixture({ status: 'idle', currentTurnId: null, trajectoryId: 'native-trajectory', nativeStepOffset: 48, nativeStepEnd: 64, historyComplete: false,
+    rows: [{ id: 'tail', role: 'assistant', text: 'Tail', turnId: 'original-turn', order: 63, status: 'completed' }] });
+  (/** @type {Value} */ (f.adapter)).supportsNativeHistoryPaging = true;
+  (/** @type {Value} */ (f.adapter)).readMaterializedHistory = () => ({ ownerGeneration: 'owner-1', status: 'active', currentTurnId: 'old-control-turn', requests: [{ id: 'old-request' }],
+    nativeStepOffset: 32, nativeStepEnd: 64, historyComplete: false,
+    rows: [{ id: 'earlier', role: 'assistant', text: 'Materialized', turnId: 'original-turn', order: 32, status: 'completed' }, ...f.adapter.view.rows] });
+  let expansions = 0; f.adapter.completeSnapshot = async () => { expansions++; return f.adapter.view; };
+  const connector = await f.create();
+  try {
+    const first = await connector.readRecent({ fresh: false, limit: 1 });
+    const source = structuredClone(f.transport.metadata), requests = structuredClone(f.transport.agentState.requests);
+    const page = await connector.readRecent({ fresh: false, cursor: first.nextCursor, limit: 1 });
+    assert.equal(page.rows[0].id, 'earlier'); assert.equal(page.status, 'idle'); assert.equal(page.currentTurnId, null);
+    assert.equal(expansions, 0); assert.deepEqual(f.transport.metadata, source); assert.deepEqual(f.transport.agentState.requests, requests);
+    assert.equal(f.adapter.calls.length, 0);
   } finally { await connector.close(); await f.dispose(); }
 });
 
@@ -205,10 +740,44 @@ test('bounded real observation retains full history evidence without publishing 
     assert.equal(first.rows[0].id, 'native-150'); assert.equal(f.adapter.completeReads, 0);
     assert.equal(events(f.transport).filter(event => event.ev.t === 'text').length, 100);
     const older = await connector.readRecent({ fresh: false, cursor: first.nextCursor });
-    assert.equal(f.adapter.completeReads, 1); assert.equal(older.historyComplete, true);
+    assert.equal(f.adapter.completeReads, 0); assert.equal(older.historyComplete, false);
     const earlier = await connector.readRecent({ fresh: false, cursor: older.nextCursor });
-    assert.equal(earlier.rows[0].id, 'native-50'); assert.equal(f.adapter.completeReads, 1);
+    assert.equal(earlier.rows[0].id, 'native-50'); assert.equal(f.adapter.completeReads, 0);
     assert.equal(events(f.transport).filter(event => event.ev.t === 'text').length, 100);
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('Codex small older pages reuse confirmed loaded rows while a bulk-history failure cannot replace live controls', async () => {
+  const rows = Array.from({ length: 8 }, (_, index) => ({ id: `loaded-${index}`, role: 'assistant', text: `Original ${index}`, tools: [], turnId: 'active-turn' }));
+  const f = await fixture({ ownerGeneration: 'owner-1', status: 'active', currentTurnId: 'active-turn', rows, historyComplete: false,
+    requests: [{ kind: 'native-request', requestId: 'pending-native' }] });
+  f.adapter.completeSnapshot = async () => { f.adapter.completeReads++; throw new BridgeError('history-unavailable', 'The original bulk history is unavailable.'); };
+  const connector = await f.create();
+  try {
+    const recent = await connector.readRecent({ limit: 1 });
+    const nativeCursor = JSON.parse(Buffer.from(recent.nextCursor, 'base64url').toString('utf8'));
+    assert.equal(nativeCursor.ownerGeneration, 'owner-1');
+    for (const foreign of [{ ...nativeCursor, sessionId: 'other-session' }, { ...nativeCursor, ownerGeneration: 'other-owner' }]) {
+      await assert.rejects(connector.readRecent({ fresh: false, cursor: Buffer.from(JSON.stringify(foreign)).toString('base64url'), limit: 4 }),
+        { code: foreign.sessionId === 'other-session' ? 'invalid-history-cursor' : 'source-epoch-changed' });
+    }
+    assert.equal(f.adapter.completeReads, 0);
+    const older = await connector.readRecent({ fresh: false, cursor: recent.nextCursor, limit: 4 });
+    await assert.rejects(connector.readRecent({ fresh: false,
+      cursor: Buffer.from(JSON.stringify({ ...nativeCursor, id: 'not-in-native-window' })).toString('base64url'), limit: 4 }),
+      { code: 'stale-history-cursor' });
+    assert.deepEqual(older.rows.map((/** @type {Value} */ row) => row.id), ['loaded-3', 'loaded-4', 'loaded-5', 'loaded-6']);
+    assert.equal(older.ownerGeneration, 'owner-1'); assert.equal(older.currentTurnId, 'active-turn');
+    assert.equal(older.historyComplete, false); assert.equal(f.adapter.completeReads, 0);
+    const start = await connector.readRecent({ fresh: false, cursor: older.nextCursor, limit: 4 });
+    assert.deepEqual(start.rows.map((/** @type {Value} */ row) => row.id), ['loaded-0', 'loaded-1', 'loaded-2']);
+    assert.equal(f.adapter.completeReads, 0);
+    await assert.rejects(connector.readRecent({ fresh: false, cursor: start.nextCursor, limit: 4 }), { code: 'history-unavailable' });
+    assert.equal(f.adapter.completeReads, 1);
+    const latest = await connector.readRecent({ limit: 1 });
+    assert.equal(latest.rows[0].id, 'loaded-7'); assert.equal(latest.currentTurnId, 'active-turn');
+    assert.deepEqual(f.adapter.view.requests, [{ kind: 'native-request', requestId: 'pending-native' }]);
     assert.equal(f.adapter.calls.length, 0);
   } finally { await connector.close(); await f.dispose(); }
 });
@@ -225,6 +794,26 @@ test('RPC identity includes the method and cannot reinterpret an open receipt as
     await assert.rejects(f.transport.rpc('abort', params), { code: 'command-conflict' });
     assert.equal(f.adapter.calls.length, 1); assert.equal(f.adapter.calls[0].action, 'open-desktop');
   } finally { await connector.close(); await f.dispose(); }
+});
+
+test('native child model display never starts a settings controller and stale clients cannot read or write it', async () => {
+  for (const app of ['codex', 'antigravity', 'claude-desktop']) {
+    const f = await fixture(); f.adapter.supportsNativeModelSettings = true;
+    const source = app === 'codex' ? f.options.sourceIdentity : { app, id: 'original-native-id', kind: 'session',
+      hostId: `local:${app}:` + 'a'.repeat(64), protocol: app === 'antigravity' ? 'antigravity-connect' : 'claude-desktop-native',
+      ...(app === 'claude-desktop' ? { nativeCollection: 'claude-code-sessions', appMode: 'code' } : {}) };
+    const connector = await f.create({ sourceIdentity: source, metadata: { ...f.options.metadata, nativeSession: { isSubagent: true } } });
+    try {
+      await connector.start();
+      assert.equal(f.transport.metadata.capabilities.rpcMethods.includes('codex-controls-read'), false);
+      assert.equal(f.transport.metadata.capabilities.rpcMethods.includes('codex-controls-update'), false);
+      await assert.rejects(f.transport.rpc('codex-controls-read', { commandId: 'child-model-read' }), { code: 'unsupported-action' });
+      await assert.rejects(f.transport.rpc('codex-controls-update', { commandId: 'child-model-write', model: 'model-B', reasoningEffort: null,
+        expectedModel: 'model-A', expectedReasoningEffort: null }), { code: 'unsupported-action' });
+      const view = await connector.readRecent({ fresh: true, limit: 1 });
+      assert.equal(view.ownerGeneration, 'owner-1'); assert.equal(f.adapter.calls.length, 0);
+    } finally { await connector.close(); await f.dispose(); }
+  }
 });
 
 test('native controls read publishes original settings and model writes retain CAS, receipt and epoch boundaries', async () => {
@@ -363,6 +952,30 @@ test('unknown native dispatch survives restart without retry and does not emit f
   } finally { await connector.close(); await f.dispose(); }
 });
 
+test('a late matching input row from a replacement owner cannot confirm an old native admission', async () => {
+  const f = await fixture({ ownerGeneration: 'owner-1' }), adapter = /** @type {Value} */ (f.adapter);
+  adapter.command = async (/** @type {string} */ _nativeId, /** @type {string} */ _action, /** @type {Value} */ _payload, /** @type {string} */ commandId) => {
+    adapter.calls.push({ commandId }); return { acknowledged: true, messageId: 'matching-native-row' };
+  };
+  f.adapter.beforeSnapshot = () => {
+    if (!adapter.calls.length) return;
+    f.epoch('replacement-owner'); adapter.view.ownerGeneration = 'replacement-owner';
+    adapter.view.rows = [{ id: 'matching-native-row', role: 'user', commandId: adapter.calls[0].commandId, inputStatus: 'accepted',
+      turnId: 'replacement-native-turn', text: 'Original input', tools: [] }];
+  };
+  const connector = await f.create();
+  try {
+    await connector.start(); f.transport.inject(user('Original input')); await connector.processInbox();
+    const commandId = adapter.calls[0].commandId;
+    assert.equal((await f.transport.rpc('bridge-receipt', { commandId })).receipt.status, 'unknown');
+    assert.equal(events(f.transport).some(event => event.ev.t === 'user-message-accepted'), false);
+    await connector.project(adapter.view);
+    assert.equal((await f.transport.rpc('bridge-receipt', { commandId })).receipt.status, 'unknown');
+    f.transport.inject(user('Original input')); await connector.processInbox();
+    assert.equal(adapter.calls.length, 1); assert.equal(events(f.transport).some(event => event.ev.t === 'user-message-accepted'), false);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
 test('unknown message receipt is stable across restart and late exact native identity confirms it without redispatch', async () => {
   const f = await fixture(); f.adapter.fail = true; let connector = await f.create();
   try {
@@ -444,7 +1057,7 @@ test('permission mapping keeps typed original id and rejects unsupported grants;
     const questionKey = Object.keys(f.transport.agentState.communications)[0];
     await f.transport.rpc('communication', { commandId: 'question-answer-1', id: questionKey, status: 'answered', answers: { answer: { options: [], custom: '中文😀' } } });
     assert.deepEqual(f.adapter.calls[1].payload, { questionItemId: 'original-question-item', answer: '中文😀' });
-    assert.deepEqual([...f.transport.handlers.keys()], ['abort', 'permission', 'communication', 'bridge-receipt', 'open-desktop', 'window-control']);
+    assert.deepEqual([...f.transport.handlers.keys()], ['abort', 'permission', 'communication', 'bridge-receipt', 'open-desktop', 'window-control', 'native-image-read']);
   } finally { await connector.close(); await f.dispose(); }
 });
 

@@ -18,31 +18,38 @@ export interface AuthCredentials {
     peer?: PeerCredentials;
 }
 
+export type CredentialRead = { status: 'available'; credentials: AuthCredentials }
+    | { status: 'missing' | 'unavailable'; credentials: null };
+
 export const TokenStorage = {
-    async getCredentials(): Promise<AuthCredentials | null> {
+    async readCredentials(): Promise<CredentialRead> {
+      try {
         if (Platform.OS === 'web') {
             const value = localStorage.getItem(AUTH_KEY);
-            if (!value) return null;
+            if (!value) return { status: 'missing', credentials: null };
             const credentials = JSON.parse(value) as AuthCredentials;
-            if (credentials.serverUrl && credentials.serverUrl !== getServerUrl() && !credentials.peer?.channels.some(channel => channel.url === getServerUrl())) return null;
-            return { ...credentials, serverUrl: getServerUrl() };
+            if (credentials.serverUrl && credentials.serverUrl !== getServerUrl() && !credentials.peer?.channels.some(channel => channel.url === getServerUrl())) return { status: 'missing', credentials: null };
+            return { status: 'available', credentials: { ...credentials, serverUrl: getServerUrl() } };
         }
-        try {
             const stored = await SecureStore.getItemAsync(AUTH_KEY);
-            if (!stored) return null;
+            if (!stored) return { status: 'missing', credentials: null };
             credentialsCache = stored; // Update cache
             const credentials = JSON.parse(stored) as AuthCredentials;
-            if (credentials.serverUrl && credentials.serverUrl !== getServerUrl() && !credentials.peer?.channels.some(channel => channel.url === getServerUrl())) return null;
+            if (credentials.serverUrl && credentials.serverUrl !== getServerUrl() && !credentials.peer?.channels.some(channel => channel.url === getServerUrl())) return { status: 'missing', credentials: null };
             if (config.noninvasiveLocal && Platform.OS === 'ios' && !backgroundAccessibilityMigrated && AppState.currentState === 'active') {
                 // iOS 锁屏后台刷新仍需要鉴权；仅设备本地、首次解锁后可读，不将 secret 写入普通缓存。
                 await SecureStore.setItemAsync(AUTH_KEY, stored, { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY });
                 backgroundAccessibilityMigrated = true;
             }
-            return { ...credentials, serverUrl: getServerUrl() };
-        } catch (error) {
-            console.error('Error getting credentials:', error);
-            return null;
-        }
+            return { status: 'available', credentials: { ...credentials, serverUrl: getServerUrl() } };
+      } catch {
+            // No credential values or native storage error payloads are logged.
+            return { status: 'unavailable', credentials: null };
+      }
+    },
+
+    async getCredentials(): Promise<AuthCredentials | null> {
+        return (await TokenStorage.readCredentials()).credentials;
     },
 
     async setCredentials(credentials: AuthCredentials): Promise<boolean> {

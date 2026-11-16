@@ -172,13 +172,22 @@ final class ServiceController: ObservableObject {
         guard process == nil else { return }
         guard let resources = Bundle.main.resourceURL else { return }
         let runtime = resources.appendingPathComponent("runtime")
-        let state = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("CodeLight")
+        let isolatedQA = Bundle.main.bundleIdentifier?.hasSuffix(".qa") == true
+        let defaultState = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(isolatedQA ? "CodeLight QA" : "CodeLight")
+        let configuredState = ProcessInfo.processInfo.environment["CODELIGHT_STATE_DIR"]
+        let state = configuredState.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? defaultState
         let task = Process(), output = Pipe(), errors = Pipe(), stdin = Pipe()
         task.executableURL = runtime.appendingPathComponent("node")
         task.arguments = [runtime.appendingPathComponent("src/happy/mac-app-service.mjs").path, "--state=\(state.path)"]
         task.currentDirectoryURL = runtime
         task.standardOutput = output; task.standardError = errors; task.standardInput = stdin
-        task.environment = ProcessInfo.processInfo.environment.merging(["PATH": runtime.path + ":/usr/bin:/bin:/usr/sbin:/sbin"]) { _, new in new }
+        var environment = ProcessInfo.processInfo.environment
+        if isolatedQA {
+            environment["CODELIGHT_STATE_DIR"] = state.path
+            environment["CODELIGHT_BACKEND_PORT"] = environment["CODELIGHT_BACKEND_PORT"] ?? "57770"
+            environment["CODELIGHT_LEASE_DIR"] = environment["CODELIGHT_LEASE_DIR"] ?? state.appendingPathComponent("leases").path
+        }
+        task.environment = environment.merging(["PATH": runtime.path + ":/usr/bin:/bin:/usr/sbin:/sbin"]) { _, new in new }
         output.fileHandleForReading.readabilityHandler = { [weak self, weak task] handle in
             let bytes = handle.availableData
             guard !bytes.isEmpty else { return }
@@ -353,7 +362,7 @@ struct ContentView: View {
                 Image("brand-icon").resizable().frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CodeLight").font(.system(size: 25, weight: .semibold))
-                    Text("Your existing Codex sessions on your phone").font(.caption).foregroundStyle(.secondary)
+                    Text("Codex, Antigravity and Claude Desktop on your phone").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(LocalizedStringKey(service.publicStatus)).font(.caption).foregroundStyle(.secondary)
@@ -365,7 +374,7 @@ struct ContentView: View {
                     .disabled(!service.phase.canPause).accessibilityIdentifier("codelight-service-pause")
                 if service.phase == .pausing { ProgressView().controlSize(.small) }
             }
-            Label("Only desktop Codex connected through gateway mode is supported.", systemImage: "info.circle")
+            Label("Native sessions from Codex, Antigravity Desktop and Claude Desktop (Gateway). Available actions follow the desktop's current state.", systemImage: "info.circle")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker("View", selection: Binding(get: { service.selection.panel }, set: { service.selectPanel($0) })) {
                 Text("Statistics").tag(DashboardPanel.statistics)

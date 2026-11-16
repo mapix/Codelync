@@ -1,4 +1,5 @@
 import { SessionContentView } from '@/components/SessionContentView';
+import { config } from '@/config';
 import { MobileGlassBackdrop } from '@/components/MobileGlass';
 import { AgentGoalBar, type AgentGoalAction } from '@/components/AgentGoalBar';
 import { AgentQuestionBanner } from '@/components/AgentQuestionBanner';
@@ -12,6 +13,8 @@ import {
     EffortLevel,
 } from '@/components/modelModeOptions';
 import { getSuggestions } from '@/components/autocomplete/suggestions';
+import { handleCodeLightSlashSubmission } from '@/utils/codeLightNativeCommands';
+import { runNoninvasiveRpc } from '@/sync/noninvasiveRpc';
 import { ChatHeaderView } from '@/components/ChatHeaderView';
 import { PendingChatPlaceholder } from '@/components/PendingChatPlaceholder';
 import { WorktreeTabStrip, WORKTREE_TAB_STRIP_HEIGHT } from '@/components/WorktreeTabStrip';
@@ -19,6 +22,28 @@ import { useProjectWorktreeSummary } from '@/hooks/useProjectWorktree';
 import { ChatList } from '@/components/ChatList';
 import { Deferred } from '@/components/Deferred';
 import { NativeSourceBanner } from '@/components/NativeSourceBanner';
+import { CodeLightConnectionNotice } from '@/components/CodeLightConnectionNotice';
+import { useCodeLightConnectionState } from '@/hooks/useCodeLightConnectionState';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
+import { apiSocket } from '@/sync/apiSocket';
+import { NativeSessionUnavailable } from '@/components/NativeSessionUnavailable';
+import { nativeSessionAvailability } from '@/utils/nativeSessionAvailability';
+import { nativeSessionAvailabilityLabels } from '@/text/nativeSessionAvailabilityLabels';
+import { useCodeLightDiscoveryProgress } from '@/sync/codeLightLoadingProgress';
+import { useCodeLightMessageProgress } from '@/sync/codeLightLoadingProgress';
+import { codeLightSubagentKindLabels } from '@/text/codeLightSubagentLabels';
+import { getCurrentLanguage } from '@/text';
+import { nativeParentControl } from '@/utils/nativeParentControl';
+import { nativeComposerInputReadOnly } from '@/utils/nativeComposerInputReadOnly';
+import { nativeReadingControlsUnavailable } from '@/utils/nativeReadingWindow';
+import { NativeReadonlyModelCatalog } from '@/components/NativeReadonlyModelCatalog';
+import { readNativeModelControlScope, nativeModelControlScopesEqual } from '@/utils/nativeModelControls';
+import type { NativeModelControlScope } from '@/sync/storageTypes';
+import { codeLightSavedHistory } from '@/utils/nativeSavedHistory';
+import { CodeLightSubagents } from '@/components/CodeLightSubagents';
+import { useCodeLightSubagents } from '@/hooks/useCodeLightSubagents';
+import { codeLightSourceAppName, codeLightSourceLabel } from '@/utils/codeLightSourceScope';
+import { readNativeQuery } from '@/utils/nativeQuery';
 import { CodeLightSessionLoading } from '@/components/CodeLightSessionLoading';
 import { useCodeLightModelControls } from '@/hooks/useCodeLightModelControls';
 import { NativeWindowPanel } from '@/components/NativeWindowPanel';
@@ -35,7 +60,7 @@ import { getCurrentVoiceConversationId, getCurrentVoiceSessionDurationSeconds, s
 import { sessionAbort, sessionCancelCommunication, sessionGoalAction, sessionSetAgentModes, spawnSideChat, sessionKill, sessionArchive } from '@/sync/ops';
 import { dismissPendingChat, getPendingChat, setPendingChatDraft, submitPendingChat, usePendingChat, type PendingChat } from '@/sync/pendingChats';
 import { claimComposerFocus } from '@/utils/composerFocus';
-import { storage, useIsDataReady, useLocalSetting, useRealtimeStatus, useSessionGitStatus, useSessionMessages, useSessionPendingCommunications, useSessionAvatar, useSessionUsage, useSetting, useSideChatSessions } from '@/sync/storage';
+import { storage, useIsDataReady, useLocalSetting, useRealtimeStatus, useSessionGitStatus, useSessionMessages, useSessionPendingCommunications, useSessionAvatar, useSessionUsage, useSetting, useSideChatSessions, useSocketStatus } from '@/sync/storage';
 import { useSession } from '@/sync/storage';
 import { getSessionForkSource } from '@/utils/sessionFork';
 import { useHappyAction } from '@/hooks/useHappyAction';
@@ -82,7 +107,7 @@ import {
     rigCanUseAttachments,
     rigCanUseShell,
 } from '@/sync/rig';
-import { isNoninvasiveBridge, canSendToNoninvasiveSource } from '@/sync/noninvasiveBridge';
+import { isNoninvasiveBridge, canReadFromNoninvasiveSource, canSendToNoninvasiveSource } from '@/sync/noninvasiveBridge';
 import { RigActivityBar } from '@/components/RigActivityBar';
 import { AnimatedFade } from '@/components/AnimatedOverlay';
 
@@ -105,6 +130,10 @@ export const SessionView = React.memo((props: { id: string }) => {
     // a chat that was asked for has not arrived.
     const sessionId = pendingChat ? pendingChat.sessionId : routeId;
     const session = useSession(sessionId ?? '');
+    const knownNative = React.useRef<{ id: string; session: Session } | null>(null);
+    if (sessionId && session && isNoninvasiveBridge(session.metadata)) knownNative.current = { id: sessionId, session };
+    if (knownNative.current?.id !== sessionId) knownNative.current = null;
+    const retainedNative = session ?? knownNative.current?.session ?? null;
     const avatar = useSessionAvatar(sessionId ?? '');
     /**
      * A chat that does not exist yet cannot speak for its checkout, so the
@@ -119,6 +148,10 @@ export const SessionView = React.memo((props: { id: string }) => {
         [headerSession?.metadata, gitStatus],
     );
     const isDataReady = useIsDataReady();
+    const nativeDiscovery = useCodeLightDiscoveryProgress();
+    const unavailableRead = useCodeLightMessageProgress(sessionId ?? routeId);
+    const availability = nativeSessionAvailability({ nativeProduct: !!config.noninvasiveLocal, ready: isDataReady,
+        pending: !!pendingChat, directoryPhase: nativeDiscovery.phase, session });
     // Grouped by project, a chat is one tab of its checkout: the header names
     // the checkout, and the strip under it holds the checkout's chats.
     const worktree = useProjectWorktreeSummary(headerSessionId);
@@ -135,10 +168,18 @@ export const SessionView = React.memo((props: { id: string }) => {
     // Keep Android's compact landscape header: it owns the session info and
     // Changes navigation even when a small tablet uses the phone layout.
     const hidesLandscapeHeader = isLandscape && !isTablet && Platform.OS === 'ios';
+    const nativeSubagents = useCodeLightSubagents(session ?? null, undefined, false, isFocused);
+    const [subagentPanelHeight, setSubagentPanelHeight] = React.useState(44);
+    const showSubagentPanel = !hidesLandscapeHeader && isDataReady && availability === 'available' && nativeSubagents.present;
+    const headerAccessoryHeight = tabStripHeight + (showSubagentPanel ? subagentPanelHeight : 0);
     const contentRunsUnderHeader = !isTablet
         && Platform.OS !== 'web'
         && !isLandscape;
     const realtimeStatus = useRealtimeStatus();
+    const unavailableSession = availability === 'unavailable' || availability === 'loading' && !pendingChat && !session;
+    // An uncached foreground route still needs its authenticated bounded read.
+    // Visibility owns observation only; it never selects the Desktop source.
+    useSessionVisibility(sessionId, isFocused && !!config.noninvasiveLocal && unavailableSession, false, realtimeStatus);
     const { width: windowWidth } = useLayoutDimensions();
     const fileDiffsSidebarEnabled = useSetting('fileDiffsSidebar');
     const zenMode = useLocalSetting('zenMode');
@@ -420,16 +461,18 @@ export const SessionView = React.memo((props: { id: string }) => {
             return { title: t('session.newChat'), isConnected: false };
         }
         if (!session) {
+            if (availability !== 'legacy-missing') return { title: retainedNative ? getSessionName(retainedNative)
+                : nativeSessionAvailabilityLabels[getCurrentLanguage()].title, isConnected: false };
             return { title: t('errors.sessionDeleted'), isConnected: false };
         }
-        const isConnected = session.presence === 'online';
+        const isConnected = availability === 'available' && session.presence === 'online';
         const sessionName = getSessionName(session);
         return {
             title: sessionName,
             isConnected,
         };
-    }, [session, isDataReady, pendingChat]);
-    const headerRight = session && !isTablet && Platform.OS !== 'web'
+    }, [session, isDataReady, pendingChat, availability, retainedNative]);
+    const headerRight = availability === 'available' && session && !isTablet && Platform.OS !== 'web'
         ? (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             {isNoninvasiveBridge(session.metadata) ? <PeerChannelControl presentation="header" /> : null}
@@ -484,7 +527,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                     paddingTop: !hidesLandscapeHeader
                         ? contentRunsUnderHeader
                             ? 0
-                            : safeArea.top + mobileHeaderHeight + tabStripHeight + (!isTablet && realtimeStatus !== 'disconnected' ? VOICE_PILL_TOTAL_HEIGHT : 0)
+                            : safeArea.top + mobileHeaderHeight + headerAccessoryHeight + (!isTablet && realtimeStatus !== 'disconnected' ? VOICE_PILL_TOTAL_HEIGHT : 0)
                         : 0,
                 }}
             >
@@ -492,6 +535,17 @@ export const SessionView = React.memo((props: { id: string }) => {
                     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                         <ActivityIndicator size="small" color={theme.colors.textSecondary} />
                     </View>
+                ) : unavailableSession ? (
+                    <NativeSessionUnavailable key={sessionId} sessionId={sessionId ?? routeId} known={retainedNative} loading={availability === 'loading' && unavailableRead.phase !== 'error'}
+                        topInset={contentRunsUnderHeader && !hidesLandscapeHeader
+                            ? safeArea.top + mobileHeaderHeight + headerAccessoryHeight + (!isTablet && realtimeStatus !== 'disconnected' ? VOICE_PILL_TOTAL_HEIGHT : 0) : 0}
+                        onBack={() => router.replace('/')}
+                        onRetry={async () => {
+                            if (config.noninvasiveLocal) { await sync.retryCodeLightSession(sessionId ?? routeId); return; }
+                            await sync.refreshSessions();
+                            const current = storage.getState().sessions[sessionId ?? routeId];
+                            if (current && isNoninvasiveBridge(current.metadata) && current.metadata?.nativeSession?.catalogueAvailable !== false) sync.onSessionVisible(current.id);
+                        }} />
                 ) : session || pendingChat ? (
                     // Keyed on the route rather than on the chat, because the
                     // chat arrives into this screen rather than replacing it:
@@ -505,7 +559,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                             session={session}
                             pending={pendingChat}
                             active={isFocused}
-                            headerAccessoryHeight={tabStripHeight}
+                            headerAccessoryHeight={headerAccessoryHeight}
                             onHeaderBackdropVisibilityChange={contentRunsUnderHeader
                                 ? setHeaderBackdropVisible
                                 : undefined}
@@ -530,9 +584,13 @@ export const SessionView = React.memo((props: { id: string }) => {
                     zIndex: 1000
                 }}>
                     <ChatHeaderView
-                        title={showTabStrip
+                        title={session?.metadata?.nativeSession?.isSubagent === true && isNoninvasiveBridge(session.metadata)
+                            ? `${codeLightSourceAppName(session.metadata.bridge?.source.app)} · ${codeLightSubagentKindLabels[getCurrentLanguage()]} · ${session.metadata.nativeSession.agentName || session.metadata.nativeSession.title || headerProps.title}`
+                            : showTabStrip
                             ? worktree.workspaceName ?? headerGit.subtitle ?? worktree.projectName
-                            : headerProps.title}
+                            : isNoninvasiveBridge(session?.metadata) && codeLightSourceAppName(session?.metadata?.bridge?.source.app)
+                                ? `${codeLightSourceLabel(session?.metadata?.bridge?.source)} · ${headerProps.title}`
+                                : headerProps.title}
                         subtitle={showTabStrip
                             ? Platform.OS === 'web'
                                 ? t('sessionsFilter.worktreeTabs', { count: worktree.tabCount })
@@ -548,6 +606,10 @@ export const SessionView = React.memo((props: { id: string }) => {
                     {/* The strip goes by the route, which is where a chat that
                         does not exist yet still has a chip of its own. */}
                     {showTabStrip && <WorktreeTabStrip sessionId={routeId} />}
+                    {showSubagentPanel ? <View onLayout={event => {
+                        const height = Math.ceil(event.nativeEvent.layout.height);
+                        setSubagentPanelHeight(previous => Math.abs(previous - height) < 1 ? previous : height);
+                    }}><CodeLightSubagents session={session ?? null} active={isFocused} /></View> : null}
                     {/* Voice status bar below header - not on tablet (shown in sidebar) */}
                     {!isTablet && realtimeStatus !== 'disconnected' && (
                         <VoiceAssistantStatusBar variant="full" />
@@ -838,7 +900,12 @@ export function SessionViewLoaded({
 
     const realtimeStatus = useRealtimeStatus();
     const { messages, isLoaded, isLoadingOlder } = useSessionMessages(sessionId ?? '');
+    const nativeMessageProgress = useCodeLightMessageProgress(sessionId ?? '');
     const nativeModels = useCodeLightModelControls(session ?? null);
+    const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected();
+    const { state: macConnection } = useCodeLightConnectionState();
+    const nativeWritesBlocked = nativeWriteConnectionBlocked(session?.metadata, socketConnected);
+    const connectionNoticeVisible = isNoninvasiveBridge(session?.metadata) && macConnection.kind !== 'connected' && macConnection.kind !== 'hidden';
     const pendingCommunications = useSessionPendingCommunications(sessionId ?? '');
     const acknowledgedCliVersions = useLocalSetting('acknowledgedCliVersions');
     const zenMode = useLocalSetting('zenMode');
@@ -929,11 +996,13 @@ export function SessionViewLoaded({
 
     // Function to update permission mode
     const updatePermissionMode = React.useCallback((mode: PermissionMode) => {
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
         if (sessionId) sessionSetAgentModes(sessionId, { permissionMode: mode.key });
-    }, [sessionId]);
+    }, [sessionId, session?.metadata]);
 
     const updateModelMode = React.useCallback((mode: ModelMode) => {
         if (!session || !sessionId) return;
+        if (nativeWriteConnectionBlocked(session.metadata, apiSocket.peerConnected())) return;
         const nextEffortLevels = getEffortLevelsForModel(flavor, mode.key, session.metadata);
         const currentEffortSupported = session.effortLevel
             ? nextEffortLevels.some((level) => level.key === session.effortLevel)
@@ -945,8 +1014,9 @@ export function SessionViewLoaded({
     }, [sessionId, flavor, session]);
 
     const updateEffortLevel = React.useCallback((level: EffortLevel) => {
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
         if (sessionId) sessionSetAgentModes(sessionId, { effortLevel: level.key });
-    }, [sessionId]);
+    }, [sessionId, session?.metadata]);
 
     // Memoize header-dependent styles to prevent re-renders
     const headerDependentStyles = React.useMemo(() => ({
@@ -973,10 +1043,26 @@ export function SessionViewLoaded({
             return;
         }
         if (sendingSessionsRef.current.has(sessionId)) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
         // 描述符/机器在线不等于原 runtime 已激活；按钮和最终 Sync 都必须用实时 metadata 阻止提前发送。
-        if (!canSendToNoninvasiveSource(storage.getState().sessions[sessionId]?.metadata)) return;
+        if (nativeComposerInputReadOnly(storage.getState().sessions[sessionId])
+            || !canSendToNoninvasiveSource(storage.getState().sessions[sessionId]?.metadata, storage.getState().sessions[sessionId]?.agentState)) return;
         const liveMessage = composer?.getMessage() ?? '';
         const draftUpdatedAt = storage.getState().sessions[sessionId]?.draftUpdatedAt;
+        if (handleCodeLightSlashSubmission(storage.getState().sessions[sessionId]?.metadata, liveMessage, {
+            nativeAction: sourceCommand => {
+                if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+                if (selectedImages.length) return;
+                sendingSessionsRef.current.add(sessionId);
+                void runNoninvasiveRpc(sessionId, 'source-command', sourceCommand).then(() => {
+                    const latest = storage.getState().sessions[sessionId];
+                    if (currentSessionIdRef.current === sessionId && latest?.draftUpdatedAt === draftUpdatedAt && composerHandleRef.current === composer && composer?.getMessage() === liveMessage) composer.clearMessage();
+                }).catch(() => { Modal.alert(t('common.error'), t('codeLightCommands.unconfirmed')); })
+                    .finally(() => sendingSessionsRef.current.delete(sessionId));
+            },
+            modelPicker: () => { Modal.alert(t('agentInput.model.title'), t('codeLightCommands.modelMenu')); },
+            blocked: reason => { Modal.alert(t('common.error'), t(reason === 'busy' ? 'codeLightCommands.busy' : 'codeLightCommands.unsupported')); },
+        })) return;
         if (liveMessage.trim() || selectedImages.length > 0) {
             const attachments = selectedImages.length > 0 ? selectedImages : undefined;
             const communicationsToDismiss = [...pendingCommunications];
@@ -1005,6 +1091,7 @@ export function SessionViewLoaded({
                         },
                     });
                     if (!accepted) return;
+                    if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
                     const dismissals = await Promise.allSettled(communicationsToDismiss.map(communication => (
                         sessionCancelCommunication(sessionId, communication.id, communication.kind)
                     )));
@@ -1020,13 +1107,15 @@ export function SessionViewLoaded({
                 }
             })();
         }
-    }, [sessionId, pendingChatId, selectedImages, removeImage, pendingCommunications]);
+    }, [sessionId, session?.metadata, pendingChatId, selectedImages, removeImage, pendingCommunications]);
 
+    const nativeQuery = readNativeQuery(session?.metadata, session?.agentState?.nativeQuery);
     const handleAbort = React.useCallback(() => {
         // Stop cancels only the active turn. Permission, model, and effort are
         // session choices and must remain sticky for the next message.
-        if (sessionId) sessionAbort(sessionId);
-    }, [sessionId]);
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        if (sessionId && !nativeComposerInputReadOnly(storage.getState().sessions[sessionId])) sessionAbort(sessionId, nativeQuery);
+    }, [sessionId, session?.metadata, nativeQuery?.nativeConversationId, nativeQuery?.hostId, nativeQuery?.ownerGeneration, nativeQuery?.queryToken]);
 
     const handleFileViewerPress = React.useCallback(() => {
         if (sessionId) router.push(`/session/${sessionId}/files`);
@@ -1067,6 +1156,8 @@ export function SessionViewLoaded({
     ]);
     const [goalActionInFlight, setGoalActionInFlight] = React.useState<AgentGoalAction | null>(null);
     const handleGoalAction = React.useCallback(async (action: AgentGoalAction) => {
+        if (!sessionId || codeLightSavedHistory(storage.getState().sessions[sessionId])) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
         await performAgentGoalAction({
             action,
             currentGoalText: visibleAgentGoal?.text ?? '',
@@ -1076,11 +1167,11 @@ export function SessionViewLoaded({
                 cancelText: t('common.cancel'),
                 confirmText: t('common.save'),
             }),
-            dispatchGoalAction: (nextAction, objective) => sessionGoalAction(sessionId!, nextAction, objective),
+            dispatchGoalAction: (nextAction, objective) => nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected()) ? Promise.resolve(undefined) : sessionGoalAction(sessionId!, nextAction, objective),
             setInFlight: setGoalActionInFlight,
             onError: (error) => console.error('Failed to perform goal action', error),
         });
-    }, [sessionId, visibleAgentGoal?.text]);
+    }, [sessionId, session?.metadata, visibleAgentGoal?.text]);
 
     // Handle microphone button press - memoized to prevent button flashing
     const handleMicrophonePress = React.useCallback(async () => {
@@ -1138,16 +1229,27 @@ export function SessionViewLoaded({
 
     const isWindowSource = !!session && !!sessionId && isNoninvasiveBridge(session.metadata) && session.metadata?.bridge?.controlMode === 'window';
     const sourceActivationRequired = !!session && !!sessionId && isNoninvasiveBridge(session.metadata)
-        && session.metadata?.bridge?.source.app === 'codex' && !canSendToNoninvasiveSource(session.metadata);
+        && session.metadata?.bridge?.controlMode === 'session' && (!canReadFromNoninvasiveSource(session.metadata) || nativeMessageProgress.phase === 'error');
+    const savedHistoryOnly = !!codeLightSavedHistory(session);
+    const nativeInputReadOnly = nativeComposerInputReadOnly(session) || nativeReadingControlsUnavailable(session?.metadata);
+    const [modelCatalogScope, setModelCatalogScope] = React.useState<NativeModelControlScope | null>(null);
+    const closeModelCatalog = React.useCallback(() => setModelCatalogScope(null), []);
+    const viewModelCatalog = React.useCallback(() => {
+        if (!sessionId || !nativeModels.scope || !nativeModels.catalogReadable || !nativeModels.models.length) return;
+        const current = storage.getState().sessions[sessionId], currentScope = readNativeModelControlScope(current);
+        if (currentScope && nativeModelControlScopesEqual(currentScope, nativeModels.scope) && current?.metadata?.nativeControls?.model.catalogAvailable === true) setModelCatalogScope({ ...currentScope });
+    }, [sessionId, nativeModels.scope, nativeModels.catalogReadable, nativeModels.models.length]);
     let content = isWindowSource
         ? <NativeWindowPanel sessionId={sessionId} topInset={chatListTopContentInset} />
         : session ? (
         <>
-            {sourceActivationRequired && <NativeSourceBanner sessionId={sessionId} topInset={chatListTopContentInset ?? 0} />}
-            {isNoninvasiveBridge(session.metadata) && !sourceActivationRequired && <CodeLightSessionLoading sessionId={session.id} initial={!isLoaded} older={isLoadingOlder} topInset={chatListTopContentInset ?? 0} />}
+            {isNoninvasiveBridge(session.metadata) ? <CodeLightConnectionNotice topInset={chatListTopContentInset ?? 0} showPicker={false} /> : null}
+            {sourceActivationRequired && <NativeSourceBanner sessionId={sessionId} topInset={connectionNoticeVisible ? 0 : chatListTopContentInset ?? 0} />}
+            {embedded || Platform.OS === 'ios' && isLandscape && !isTablet ? <CodeLightSubagents session={session} active={active} /> : null}
+            {isNoninvasiveBridge(session.metadata) && (!connectionNoticeVisible || nativeMessageProgress.phase === 'loading' || isLoadingOlder) && (!sourceActivationRequired || savedHistoryOnly || nativeParentControl(session)) && <CodeLightSessionLoading sessionId={session.id} initial={!isLoaded || nativeMessageProgress.phase !== 'complete'} older={isLoadingOlder} topInset={connectionNoticeVisible ? 0 : chatListTopContentInset ?? 0} />}
             {nativeModels.message ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', top: (chatListTopContentInset ?? 0) + 4, left: 14, right: 14, zIndex: 12, padding: 12, borderRadius: 12, backgroundColor: theme.colors.groupped.background }}>
                 <Text style={{ color: theme.colors.textSecondary }}>{nativeModels.message}</Text>
-                {nativeModels.status !== 'saving' ? <Pressable onPress={() => { void nativeModels.refresh().catch(() => {}); }} style={{ paddingTop: 8, minHeight: 36 }}><Text style={{ color: theme.colors.text }}>{t('codeLightModels.check')}</Text></Pressable> : null}
+                {nativeModels.status !== 'saving' && nativeModels.canRefresh ? <Pressable accessibilityRole="button" testID="codelight-check-model-settings" onPress={() => { void nativeModels.refresh().catch(() => {}); }} style={{ paddingTop: 8, minHeight: 44 }}><Text style={{ color: theme.colors.text }}>{t('codeLightModels.check')}</Text></Pressable> : null}
             </View> : null}
             <Deferred>
                 {messages.length > 0 && (
@@ -1175,7 +1277,8 @@ export function SessionViewLoaded({
     ) : null;
     const placeholder = !session ? (
         pending ? <PendingChatPlaceholder pending={pending} /> : null
-    ) : messages.length === 0 ? (
+    ) : messages.length === 0 && (!isNoninvasiveBridge(session.metadata)
+        || isLoaded && nativeMessageProgress.phase === 'complete' && !sourceActivationRequired) ? (
         <>
             {isLoaded ? (
                 <EmptyMessages session={session} />
@@ -1197,22 +1300,28 @@ export function SessionViewLoaded({
                 pendingChatId={pendingChatId}
                 focusOnMount={!!pending && !session}
                 permissionMode={permissionMode}
-                onPermissionModeChange={session && isRigPermissionSelectionEnabled(session.metadata) ? updatePermissionMode : undefined}
+                onPermissionModeChange={!nativeInputReadOnly && !nativeWritesBlocked && session && isRigPermissionSelectionEnabled(session.metadata) ? updatePermissionMode : undefined}
                 availableModes={availableModes}
                 modelMode={nativeModels.native ? nativeModels.currentModel : modelMode}
                 availableModels={nativeModels.native ? nativeModels.models : availableModels}
-                onModelModeChange={nativeModels.native ? nativeModels.enabled ? nativeModels.selectModel : undefined : session && isRigModelSelectionEnabled(session.metadata) ? updateModelMode : undefined}
+                onModelModeChange={nativeInputReadOnly || nativeWritesBlocked ? undefined : nativeModels.native ? nativeModels.enabled ? nativeModels.selectModel : undefined : session && isRigModelSelectionEnabled(session.metadata) ? updateModelMode : undefined}
+                onViewModelCatalog={nativeModels.scope && nativeModels.catalogReadable && nativeModels.models.length ? viewModelCatalog : undefined}
                 effortLevel={nativeModels.native ? nativeModels.currentEffort : effortLevel}
+                showReadOnlyEffort={nativeModels.showReadOnlyEffort}
                 availableEffortLevels={nativeModels.native ? nativeModels.efforts : availableEffortLevels}
-                onEffortLevelChange={nativeModels.native ? nativeModels.enabled ? nativeModels.selectEffort : undefined : session && isRigReasoningSelectionEnabled(session.metadata) ? updateEffortLevel : undefined}
+                onEffortLevelChange={nativeInputReadOnly || nativeWritesBlocked ? undefined : nativeModels.native ? nativeModels.enabled ? nativeModels.selectEffort : undefined : session && isRigReasoningSelectionEnabled(session.metadata) ? updateEffortLevel : undefined}
                 metadata={composerSession?.metadata ?? null}
                 connectionStatus={session ? connectionStatus : undefined}
-                blockSend={!canSendToNoninvasiveSource(session?.metadata) || isRig && session?.thinking && session.metadata?.capabilities?.steering !== true}
+                editable={!nativeInputReadOnly}
+                blockSend={nativeWritesBlocked || nativeInputReadOnly || !canSendToNoninvasiveSource(session?.metadata, session?.agentState) || isRig && session?.metadata?.bridge?.source.app !== 'claude-desktop' && session?.thinking && session.metadata?.capabilities?.steering !== true}
+                stopWhenSendBlocked={!nativeWritesBlocked && session?.metadata?.bridge?.source.app === 'claude-desktop' && !nativeInputReadOnly && rigCanAbort(session?.metadata, session?.agentState) && !canSendToNoninvasiveSource(session?.metadata, session?.agentState)}
                 onSend={handleSend}
                 onMicPress={(embedded || isDisconnected || isNoninvasiveBridge(session?.metadata)) ? undefined : micButtonState.onMicPress}
                 isMicActive={(embedded || isDisconnected || isNoninvasiveBridge(session?.metadata)) ? false : micButtonState.isMicActive}
-                onAbort={!session || isDisconnected || !rigCanAbort(session.metadata) ? undefined : handleAbort}
-                showAbortButton={!!session && rigCanAbort(session.metadata) && (
+                onAbort={nativeWritesBlocked || nativeInputReadOnly || !session || isDisconnected || !rigCanAbort(session.metadata, session.agentState) ? undefined : handleAbort}
+                showAbortButton={!nativeWritesBlocked && !nativeInputReadOnly && !!session && rigCanAbort(session.metadata, session.agentState) && (
+                    nativeQuery?.status === 'running' || nativeQuery?.status === 'waiting'
+                    ||
                     sessionStatus.state === 'thinking'
                     // A pending selection or permission request parks the agent inside
                     // a tool call. Keep Stop reachable on every platform while either
@@ -1235,6 +1344,7 @@ export function SessionViewLoaded({
                 sessionStatusUsageLimits={session?.agentState?.usageLimits ?? null}
                 onActionAreaOffsetChange={usesFloatingMobileDock ? handleComposerCardOffsetChange : undefined}
             />
+            {modelCatalogScope ? <NativeReadonlyModelCatalog session={session} captured={modelCatalogScope} active={active} onClose={closeModelCatalog} /> : null}
         </View>
     );
 
@@ -1265,18 +1375,18 @@ export function SessionViewLoaded({
     const input = (
         <>
             {inactiveHint}
-            {visibleAgentGoal && (
+            {!savedHistoryOnly && visibleAgentGoal && (
                 <AnimatedFade visible={showBottomDockDetails}>
                     <CenteredInputWidth horizontalPadding={sessionInputHorizontalPadding}>
                         <AgentGoalBar
                             goal={visibleAgentGoal}
-                            onAction={handleGoalAction}
+                            onAction={nativeWritesBlocked ? undefined : handleGoalAction}
                             inFlightAction={goalActionInFlight}
                         />
                     </CenteredInputWidth>
                 </AnimatedFade>
             )}
-            {sessionId ? (
+            {!savedHistoryOnly && sessionId ? (
                 // 新问题可能只有 communication 状态，阅读旧历史时不能随辅助状态区淡出而失去入口。
                 <CenteredInputWidth horizontalPadding={sessionInputHorizontalPadding}>
                     <AgentQuestionBanner sessionId={sessionId} />

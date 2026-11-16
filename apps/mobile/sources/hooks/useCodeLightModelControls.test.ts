@@ -3,12 +3,13 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { expect, it, vi } from 'vitest';
 import type { Session } from '@/sync/storageTypes';
-const mocks = vi.hoisted(() => ({ write: vi.fn(), read: vi.fn(), recover: vi.fn() }));
-vi.mock('@/sync/noninvasiveRpc', () => ({ runCodeLightModelRpc: mocks.write, recoverCodeLightModelRpc: mocks.recover }));
-vi.mock('@/sync/apiSocket', () => ({ apiSocket: { sessionRPC: mocks.read } }));
+const mocks = vi.hoisted(() => ({ write: vi.fn(), read: vi.fn(), recover: vi.fn(), connected: true }));
+vi.mock('@/sync/noninvasiveRpc', () => ({ runCodeLightModelRpc: mocks.write, recoverCodeLightModelRpc: mocks.recover, recoverCodeLightNativeModelRpc: mocks.recover }));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { peerConnected: () => mocks.connected, sessionRPC: mocks.read } }));
 vi.mock('@/text', () => ({ t: (key: string) => key }));
+vi.mock('@/sync/storage', () => ({ useSocketStatus: () => ({ status: mocks.connected ? 'connected' : 'error' }), storage: { getState: () => ({ sessions: {} }) } }));
 import { useCodeLightModelControls } from './useCodeLightModelControls';
-const fixture = { id: 'relay', metadata: { client: { id: 'noninvasive-bridge' }, capabilities: { rpcMethods: ['codex-controls-read'] }, nativeControls: { model: { available: true,
+const fixture = { id: 'relay', metadata: { client: { id: 'noninvasive-bridge' }, bridge: { controlMode: 'session', sourceStatus: 'connected', source: { app: 'codex', id: 'native', hostId: 'local', kind: 'session', runtimeGeneration: 'owner' } }, capabilities: { rpcMethods: ['codex-controls-read', 'codex-controls-update'] }, nativeControls: { model: { available: true,
     current: { model: 'a', reasoningEffort: 'low', modelProvider: 'fixture' }, models: [{ id: 'a', label: 'Model A', reasoningEfforts: ['low', 'high'], defaultReasoningEffort: 'low' }, { id: 'b', label: 'Model B', reasoningEfforts: ['medium', 'high'], defaultReasoningEffort: 'medium' }] } } } } as unknown as Session;
 let controls!: ReturnType<typeof useCodeLightModelControls>;
 function Harness() { controls = useCodeLightModelControls(fixture); return null; }

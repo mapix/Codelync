@@ -61,14 +61,14 @@ export default {
     expo: {
         name: localBridge ? 'CodeLight' : name,
         slug: localBridge ? 'codelight' : 'happy',
-        version: "1.8.0",
+        version: "1.8.1",
         runtimeVersion: localBridge ? 'codelight-22' : '21',
         orientation: "default",
         icon: localBridge ? './sources/assets/images/codelight-icon-v2.png' : './sources/assets/images/icon.png',
         scheme: localBridge ? 'codelight' : 'happy',
         userInterfaceStyle: "automatic",
         ios: {
-            ...(localBridge ? { buildNumber: '2026110116' } : {}),
+            ...(localBridge ? { buildNumber: '2026111605' } : {}),
             supportsTablet: true,
             bundleIdentifier: nativeBundleId,
             config: {
@@ -154,6 +154,7 @@ export default {
             "expo-mail-composer",
             "expo-secure-store",
             "expo-web-browser",
+            "expo-video",
             "react-native-vision-camera",
             "@more-tech/react-native-libsodium",
             "react-native-audio-api",

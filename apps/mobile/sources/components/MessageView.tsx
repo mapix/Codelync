@@ -4,19 +4,45 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { MarkdownView } from "./markdown/MarkdownView";
-import { t } from '@/text';
-import { Message, UserTextMessage, AgentTextMessage, ToolCallMessage, isOtherParticipantMessage } from "@/sync/typesMessage";
+import { getCurrentLanguage, t } from '@/text';
+import { Message, UserTextMessage, AgentTextMessage, ToolCallMessage, isOtherParticipantMessage, type NativeMessageAdmission } from "@/sync/typesMessage";
+import { nativeQueuedAdmissionLabels } from '@/text/nativeAdmissionLabels';
 import { Metadata } from "@/sync/storageTypes";
 import { ToolView } from "./tools/ToolView";
 import { AgentEvent, SessionAuthor } from "@/sync/typesRaw";
 import { sync } from '@/sync/sync';
-import { useSetting } from '@/sync/storage';
+import { storage, useSetting } from '@/sync/storage';
 import { Option } from './markdown/MarkdownView';
 import { layout } from "./layout";
 import { Typography } from '@/constants/Typography';
 import { parseLocalCommandMessage, isUserSlashCommandEcho } from './parseLocalCommandMessage';
 import { resolveUserMessageBubbleColor } from '@/utils/userMessageBubbleColor';
 import { LongPressCopyable } from './LongPressCopyable';
+import { CodeLightHandoff } from './CodeLightHandoff';
+import { nativeSubagentInputReadOnly } from '@/utils/nativeParentControl';
+import { nativeReadingControlsUnavailable, nativeReadingControlScope } from '@/utils/nativeReadingWindow';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
+import { apiSocket } from '@/sync/apiSocket';
+
+function useMessageOptions(sessionId: string, metadata: Metadata | null) {
+  const capturedScope = nativeReadingControlScope(metadata);
+  // Subscribe only to the boolean restriction, not full session/status changes.
+  const isReadOnly = React.useCallback(() => {
+    const current = storage.getState().sessions[sessionId] ?? { metadata };
+    return nativeWriteConnectionBlocked(current.metadata, apiSocket.peerConnected()) || nativeSubagentInputReadOnly(current) || nativeReadingControlsUnavailable(current.metadata)
+      || capturedScope !== null && capturedScope !== nativeReadingControlScope(current.metadata);
+  }, [sessionId, metadata, capturedScope]);
+  const subscribeSource = React.useCallback((listener: () => void) => {
+    const releaseStore = storage.subscribe(listener), releaseSocket = apiSocket.onStatusChange(() => listener());
+    return () => { releaseStore(); releaseSocket(); };
+  }, []);
+  const optionsDisabled = React.useSyncExternalStore(subscribeSource, isReadOnly, isReadOnly);
+  const handleOptionPress = React.useCallback((option: Option) => {
+    if (isReadOnly()) return;
+    void sync.sendMessage(sessionId, option.title, { source: 'option' });
+  }, [sessionId, isReadOnly]);
+  return { optionsDisabled, handleOptionPress };
+}
 
 
 export const MessageView = React.memo((props: {
@@ -60,7 +86,7 @@ function RenderBlock(props: {
       );
 
     case 'agent-text':
-      return <AgentTextBlock message={props.message} sessionId={props.sessionId} />;
+      return <AgentTextBlock message={props.message} sessionId={props.sessionId} metadata={props.metadata} />;
 
     case 'tool-call':
       return <ToolCallBlock
@@ -97,6 +123,7 @@ function UserMessageFrame(props: {
   createdAt: number;
   sendError?: string;
   deliveryUnconfirmed?: boolean;
+  nativeAdmission?: NativeMessageAdmission;
   author?: SessionAuthor;
   children: React.ReactNode;
 }) {
@@ -114,6 +141,8 @@ function UserMessageFrame(props: {
     ? t('message.sendFailed', { reason: props.sendError })
     : props.deliveryUnconfirmed
       ? t('sourceBridge.deliveryUnconfirmed')
+    : props.nativeAdmission?.disposition === 'queued'
+      ? nativeQueuedAdmissionLabels[getCurrentLanguage()]
     : showPendingStatus
       ? (props.queuedWhileBusy === true ? t('message.sendsAfterThisTurn') : t('message.sending'))
       : '';
@@ -175,9 +204,7 @@ function UserTextBlock(props: {
   metadata: Metadata | null;
   sessionId: string;
 }) {
-  const handleOptionPress = React.useCallback((option: Option) => {
-    sync.sendMessage(props.sessionId, option.title, { source: 'option' });
-  }, [props.sessionId]);
+  const { optionsDisabled, handleOptionPress } = useMessageOptions(props.sessionId, props.metadata);
 
   const userMessageBubbleColor = useSetting('userMessageBubbleColor');
   const { theme } = useUnistyles();
@@ -215,10 +242,10 @@ function UserTextBlock(props: {
   }
   if (parsed.kind === 'goal-run') {
     return (
-      <UserMessageFrame pending={props.message.pending} queuedWhileBusy={props.message.meta?.queuedWhileBusy} createdAt={props.message.createdAt} sendError={props.message.sendError} deliveryUnconfirmed={props.message.deliveryUnconfirmed} author={props.message.author}>
+      <UserMessageFrame pending={props.message.pending} queuedWhileBusy={props.message.meta?.queuedWhileBusy} createdAt={props.message.createdAt} sendError={props.message.sendError} deliveryUnconfirmed={props.message.deliveryUnconfirmed} nativeAdmission={props.message.nativeAdmission} author={props.message.author}>
         <LongPressCopyable style={copyTargetStyle} text={parsed.goal}>
           <View style={[styles.userMessageBubble, styles.userMessageBubbleSolid, bubbleStyle, styles.goalMessageBubble]}>
-            <MarkdownView externalCopyHandler markdown={parsed.goal} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
+            <MarkdownView externalCopyHandler markdown={parsed.goal} onOptionPress={handleOptionPress} optionsDisabled={optionsDisabled} sessionId={props.sessionId} />
           </View>
           <View style={styles.goalSentRow}>
             <Ionicons name="locate-outline" size={16} color={styles.goalSentText.color} />
@@ -231,11 +258,11 @@ function UserTextBlock(props: {
   if (parsed.kind === 'command-run') {
     const commandText = parsed.args ? `/${parsed.commandName} ${parsed.args}` : `/${parsed.commandName}`;
     return (
-      <UserMessageFrame pending={props.message.pending} queuedWhileBusy={props.message.meta?.queuedWhileBusy} createdAt={props.message.createdAt} sendError={props.message.sendError} deliveryUnconfirmed={props.message.deliveryUnconfirmed} author={props.message.author}>
+      <UserMessageFrame pending={props.message.pending} queuedWhileBusy={props.message.meta?.queuedWhileBusy} createdAt={props.message.createdAt} sendError={props.message.sendError} deliveryUnconfirmed={props.message.deliveryUnconfirmed} nativeAdmission={props.message.nativeAdmission} author={props.message.author}>
         <LongPressCopyable style={copyTargetStyle} text={commandText}>
           {parsed.args ? (
             <View style={[styles.userMessageBubble, styles.userMessageBubbleSolid, bubbleStyle, styles.commandMessageBubble]}>
-              <MarkdownView externalCopyHandler markdown={parsed.args} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
+              <MarkdownView externalCopyHandler markdown={parsed.args} onOptionPress={handleOptionPress} optionsDisabled={optionsDisabled} sessionId={props.sessionId} />
             </View>
           ) : null}
           <View style={[styles.commandChip, styles.userMessageBubbleSolid, bubbleStyle]}>
@@ -247,12 +274,12 @@ function UserTextBlock(props: {
   }
 
   return (
-    <UserMessageFrame pending={props.message.pending} queuedWhileBusy={props.message.meta?.queuedWhileBusy} createdAt={props.message.createdAt} sendError={props.message.sendError} deliveryUnconfirmed={props.message.deliveryUnconfirmed} author={props.message.author}>
+    <UserMessageFrame pending={props.message.pending} queuedWhileBusy={props.message.meta?.queuedWhileBusy} createdAt={props.message.createdAt} sendError={props.message.sendError} deliveryUnconfirmed={props.message.deliveryUnconfirmed} nativeAdmission={props.message.nativeAdmission} author={props.message.author}>
       {/* Long-press copies the whole message through our own menu rather than the
           OS selection callout. Rewind remains in session actions. */}
       <LongPressCopyable style={copyTargetStyle} text={parsed.text}>
         <View style={[styles.userMessageBubble, styles.userMessageBubbleSolid, bubbleStyle]}>
-          <MarkdownView externalCopyHandler markdown={parsed.text} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
+          <MarkdownView externalCopyHandler markdown={parsed.text} onOptionPress={handleOptionPress} optionsDisabled={optionsDisabled} sessionId={props.sessionId} />
         </View>
       </LongPressCopyable>
     </UserMessageFrame>
@@ -262,10 +289,9 @@ function UserTextBlock(props: {
 function AgentTextBlock(props: {
   message: AgentTextMessage;
   sessionId: string;
+  metadata: Metadata | null;
 }) {
-  const handleOptionPress = React.useCallback((option: Option) => {
-    sync.sendMessage(props.sessionId, option.title, { source: 'option' });
-  }, [props.sessionId]);
+  const { optionsDisabled, handleOptionPress } = useMessageOptions(props.sessionId, props.metadata);
 
   // Hide thinking messages
   if (props.message.isThinking) {
@@ -274,14 +300,17 @@ function AgentTextBlock(props: {
 
   return (
     <View style={styles.agentMessageContainer}>
-      <MarkdownView markdown={props.message.text} onOptionPress={handleOptionPress} sessionId={props.sessionId} />
-      <MessageCopyButton text={props.message.text} />
+      <MarkdownView markdown={props.message.text} onOptionPress={handleOptionPress} optionsDisabled={optionsDisabled} sessionId={props.sessionId} />
+      <View style={styles.agentActions}>
+        <MessageCopyButton text={props.message.text} />
+        <CodeLightHandoff sessionId={props.sessionId} metadata={props.metadata} message={props.message} />
+      </View>
     </View>
   );
 }
 
 // The glyph is deliberately small, so widen the touch target well past it.
-const COPY_HIT_SLOP = { top: 14, bottom: 14, left: 14, right: 20 };
+const COPY_HIT_SLOP = { top: 8, bottom: 8, left: 14, right: 8 };
 
 function MessageCopyButton(props: { text: string }) {
   const { theme } = useUnistyles();
@@ -468,14 +497,20 @@ const styles = StyleSheet.create((theme) => ({
     maxWidth: '100%',
   },
   copyAction: {
-    // No width, so the box shrink-wraps the glyph and its left edge lands on the
-    // same x as the markdown text above it. hitSlop carries the touch target.
-    alignSelf: 'flex-start',
-    height: 20,
+    // Expose the actual button bounds to native accessibility as well as touch.
+    alignSelf: 'center',
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'flex-start',
     justifyContent: 'center',
     // Sits fully below the last markdown block's trailing margin, clear of the
     // reply text.
     marginTop: 0,
+  },
+  agentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
   },
   copyActionPressed: {
     opacity: 0.5,

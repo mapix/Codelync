@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Message } from '@/sync/typesMessage';
+import { Message, ToolCallMessage } from '@/sync/typesMessage';
 import { knownTools } from '@/components/tools/knownTools';
 import { isInteractiveQuestionToolName } from '@/utils/toolDisplay';
 import { assignTurns } from '@/utils/agentTurns';
@@ -24,7 +24,16 @@ export type AgentWorkGroupItem = {
     completedAt: number | null;
 };
 
-export type DisplayItem = TextItem | AgentWorkGroupItem;
+export type ToolsGroupItem = {
+    type: 'tools-group';
+    id: string;
+    anchorId: string;
+    /** Original rows in chronological order, rendered only when opened. */
+    messages: ToolCallMessage[];
+};
+
+export type DisplayItem = TextItem | AgentWorkGroupItem | ToolsGroupItem;
+type GroupingOptions = { collapseCurrentTurn?: boolean; collapseAgentWork?: boolean; adjacentTools?: boolean; sessionId?: string };
 
 /**
  * The messages array arrives newest-first (that is how sync stores it); the
@@ -32,38 +41,43 @@ export type DisplayItem = TextItem | AgentWorkGroupItem;
  *
  * Grouping is single-level on purpose: while a turn is streaming every message
  * renders flat, and once the turn completes its intermediate work collapses
- * into one AgentWorkGroupItem above the final answer. There is no grouping of
- * adjacent tool calls — an expanded work group renders its members exactly as
- * they looked while streaming. When disabled, every message passes through.
+ * into one AgentWorkGroupItem above the final answer. Native chats instead opt
+ * into adjacent ordinary tool groups, retaining all intervening text. When
+ * disabled and adjacent grouping is not requested, messages pass through.
  */
 export function useGroupedMessages(
     messages: Message[],
     enabled: boolean = true,
-    options: { collapseCurrentTurn?: boolean } = {},
+    options: GroupingOptions = {},
 ): DisplayItem[] {
     const collapseCurrentTurn = options.collapseCurrentTurn ?? true;
+    const { collapseAgentWork, adjacentTools, sessionId } = options;
+    const previous = React.useRef<{ sessionId: string | undefined; items: DisplayItem[] }>({ sessionId, items: [] });
     return React.useMemo(() => {
-        return groupMessagesForDisplay(messages, enabled, { collapseCurrentTurn });
-    }, [messages, enabled, collapseCurrentTurn]);
+        const items = groupMessagesForDisplay(messages, enabled, { collapseCurrentTurn, collapseAgentWork, adjacentTools, sessionId });
+        const stable = retainToolsGroupIds(items, previous.current.sessionId === sessionId ? previous.current.items : []);
+        previous.current = { sessionId, items: stable };
+        return stable;
+    }, [messages, enabled, collapseCurrentTurn, collapseAgentWork, adjacentTools, sessionId]);
 }
 
 export function groupMessagesForDisplay(
     messages: Message[],
     enabled: boolean = true,
-    options: { collapseCurrentTurn?: boolean } = {},
+    options: GroupingOptions = {},
 ): DisplayItem[] {
     if (!enabled) {
         const flat = messages
             .filter((msg) => !isInvisibleMessage(msg))
             .map((msg) => ({ type: 'message', id: msg.id, message: msg } as TextItem));
         flat.reverse();
-        return flat;
+        return options.adjacentTools ? groupAdjacentTools(flat, options.sessionId) : flat;
     }
 
     const collapseCurrentTurn = options.collapseCurrentTurn ?? true;
     // Newest-first → turn 0 is the current assistant turn.
     const turnOf = assignTurns(messages);
-    const workGroups = collectAgentWorkGroups(messages, turnOf, collapseCurrentTurn);
+    const workGroups = options.collapseAgentWork === false ? [] : collectAgentWorkGroups(messages, turnOf, collapseCurrentTurn);
     const hiddenWorkIndexes = new Set<number>();
     const workGroupByOldestIndex = new Map<number, AgentWorkGroupItem>();
 
@@ -95,7 +109,57 @@ export function groupMessagesForDisplay(
     }
 
     result.reverse();
-    return result;
+    return options.adjacentTools ? groupAdjacentTools(result, options.sessionId) : result;
+}
+
+/** Adjacent visible ordinary tools only; text and interactive rows remain boundaries. */
+export function groupAdjacentTools(items: readonly DisplayItem[], sessionId?: string): DisplayItem[] {
+    const result: DisplayItem[] = [];
+    let run: ToolCallMessage[] = [];
+    const flush = () => {
+        if (run.length) result.push({ type: 'tools-group', id: JSON.stringify(['tools', sessionId ?? null, run[0].id]), anchorId: run[0].id, messages: run });
+        run = [];
+    };
+    for (const item of items) {
+        const message = item.type === 'message' ? item.message : null;
+        if (message && isOrdinaryToolMessage(message)) {
+            if (run.length && run[run.length - 1].turn !== undefined && message.turn !== undefined && run[run.length - 1].turn !== message.turn) flush();
+            run.push(message);
+        } else {
+            flush(); result.push(item);
+        }
+    }
+    flush(); return result;
+}
+
+export function isOrdinaryToolMessage(message: Message): message is ToolCallMessage {
+    return message.kind === 'tool-call' && !isInvisibleMessage(message) && !isUserAttachment(message)
+        && !isInteractiveQuestionToolName(message.tool.name) && message.tool.permission?.status !== 'pending';
+}
+
+/** Include a retained adjacent run for an accurate count without mounting its details. */
+export function ordinaryToolRunWindowEnd(messages: readonly Message[], requestedEnd: number): number {
+    let end = Math.min(messages.length, Math.max(0, requestedEnd));
+    if (!end || !isOrdinaryToolMessage(messages[end - 1])) return end;
+    while (end < messages.length && isOrdinaryToolMessage(messages[end])) {
+        const previous = messages[end - 1], next = messages[end];
+        if ('turn' in previous && 'turn' in next && previous.turn !== undefined && next.turn !== undefined && previous.turn !== next.turn) break;
+        end++;
+    }
+    return end;
+}
+
+/** Preserve a summary's list key when live/history extends its original rows. */
+export function retainToolsGroupIds(items: DisplayItem[], previous: readonly DisplayItem[]): DisplayItem[] {
+    const oldGroups = previous.filter((item): item is ToolsGroupItem => item.type === 'tools-group');
+    const used = new Set<string>();
+    return items.map(item => {
+        if (item.type !== 'tools-group') return item;
+        const memberIds = new Set(item.messages.map(message => message.id));
+        const old = oldGroups.find(group => !used.has(group.id) && memberIds.has(group.anchorId));
+        if (!old) return item;
+        used.add(old.id); return old.id === item.id ? item : { ...item, id: old.id, anchorId: old.anchorId };
+    });
 }
 
 function collectAgentWorkGroups(messages: Message[], turnOf: number[], collapseCurrentTurn: boolean): Array<{

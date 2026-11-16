@@ -15,12 +15,18 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
  * Must match the exact structure of the English translations
  */
 export const es: TranslationStructure = {
+    codeLightHandoff: {
+        action: "Pasar a…",
+        noTargets: "No hay otra sesión de escritorio conectada en este Mac.",
+        unavailable: "La sesión de origen o de destino ya no está disponible.",
+    },
+
     codeLightSetup: {
         createFailed: "No se pudo configurar la conexión. Revisa la conexión con tu Mac y vuelve a intentarlo.",
         storageFailed: "No se pudo guardar la conexión de forma segura. Revisa el espacio del dispositivo y vuelve a intentarlo.",
         reloadFailed: "Cierra y vuelve a abrir CodeLight para conectar con los ajustes guardados.",
         pairFailed: "Este enlace de vinculación no está disponible. Escanea un código QR nuevo mostrado en CodeLight en tu Mac.",
-        macHelp: "Abre CodeLight en tu Mac y mantén en ejecución tus sesiones existentes de Codex.",
+        macHelp: "Abre CodeLight en tu Mac y mantén en ejecución tus sesiones existentes de Codex / Antigravity / Claude Desktop.",
         helpBody: "Abre CodeLight en tu Mac y mantenlo en ejecución. Escanea su código QR con este teléfono. Si cambia la dirección de conexión, actualiza y escanea el nuevo código. No necesitas registrarte ni usar una VPN.",
     },
 
@@ -33,23 +39,26 @@ export const es: TranslationStructure = {
         network: "No se pudo conectar con tu Mac. Mantén CodeLight en ejecución y vuelve a intentarlo.",
     },
 
+    codeLightCommands: { modelMenu: 'Usa el botón de modelo junto al campo de texto para elegir el modelo de esta sesión.', unsupported: "Este comando de la aplicación no está disponible en CodeLight. Se conservó el borrador.", busy: "Esta sesión está ocupada. Se conservó el borrador.", unconfirmed: "El resultado del comando no está confirmado. Comprueba el resultado." },
     codeLightModels: {
+        nextMessage: 'Siguiente mensaje',
         default: "Predeterminado",
         check: "Comprobar ajustes",
         saving: "Actualizando los ajustes del modelo en tu Mac…",
-        failed: "Los ajustes cambiaron o no se pudieron actualizar. Comprueba la opción actual y vuelve a elegir.",
-        unconfirmed: "Actualización sin confirmar. Comprobando los ajustes originales; no repitas el cambio.",
+        readFailed: "No se pudieron leer los ajustes del modelo. Comprueba la conexión con tu Mac.",
+        failed: "No se pudo actualizar el modelo. Comprueba la selección actual.",
+        unconfirmed: "El cambio no está confirmado. Comprueba el resultado sin repetirlo.",
     },
 
     codeLightChannels: {
         title: "Conexión",
         automatic: "Automática",
-        automaticDetail: "Usar una conexión disponible y verificada.",
+        automaticDetail: "Comprueba las conexiones guardadas y conecta con este Mac.",
         local: "Red local",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "Conectado",
-        available: "Disponible",
+        available: "Guardada",
         probing: "Comprobando",
         failed: "No disponible",
         switching: "Conectando…",
@@ -57,16 +66,24 @@ export const es: TranslationStructure = {
         current: "Ruta actual",
         latency: ({ ms }: { ms: number }) => "{ms} ms".replace("{ms}", String(ms)),
         latencyUnknown: "Latencia desconocida",
-        switchFailed: "No se pudo cambiar la conexión. Se conserva la ruta actual.",
+        switchFailed: "No se pudo conectar. Se conservó la selección anterior.",
+        connectingTitle: "Conectando con el Mac…",
+        failedTitle: "No se puede conectar al Mac",
+        failedHelp: "Abre CodeLight en el Mac y comprueba la red. Reintenta o elige otra conexión.",
+        accessEndedTitle: "Conexión al Mac sin verificar",
+        accessEndedHelp: "Escanea el código QR actual de CodeLight en ese Mac. Se conservan los mensajes y borradores guardados.",
+        retryConnection: "Reintentar conexión",
+        scanMac: "Escanear código del Mac",
     },
 
     codeLightLoading: {
-        titles: "Cargando títulos de sesiones de Codex…",
-        discovered: ({ count }: { count: number }) => "Sesiones de Codex encontradas: {count} · cargando más…".replace("{count}", String(count)),
-        messages: "Sincronizando esta sesión…",
+        titles: "Cargando sesiones de Codex, Antigravity y Claude Desktop…",
+        discovered: ({ count }: { count: number }) => "{count} elementos cargados · cargando más…".replace("{count}", String(count)),
+        messages: "Cargando esta sesión…",
         older: "Cargando mensajes anteriores…",
-        failed: "No se pudo completar la sincronización. Reintenta para continuar.",
-        empty: "No se encontraron sesiones de Codex en este Mac.",
+        unavailable: "No disponible",
+        failed: "No se pudieron actualizar las sesiones. Reintenta para continuar.",
+        empty: "No hay sesiones disponibles de Codex, Antigravity o Claude Desktop en este Mac.",
     },
 
     codeLightProjects: {
@@ -89,10 +106,10 @@ export const es: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "Entrega sin confirmar. Comprobando la sesión original de Codex; no reenvíes el mensaje.",
-        waiting: "Esperando la sesión original de Codex en el ordenador.",
+        deliveryUnconfirmed: "Entrega sin confirmar. Comprobando la sesión original; no vuelvas a enviar.",
+        waiting: "Esperando la sesión de escritorio original.",
         openDesktop: "Abrir en el ordenador",
-        openFailed: "No se pudo abrir la sesión original de Codex. Comprueba que Codex esté en ejecución.",
+        openFailed: "No se pudo abrir la sesión original. Comprueba que la aplicación de escritorio correspondiente esté en ejecución.",
     },
 
     voiceStatusBar: {
@@ -210,7 +227,7 @@ export const es: TranslationStructure = {
         developer: 'Desarrollador',
         developerTools: 'Herramientas de desarrollador',
         about: 'Acerca de',
-        aboutFooter: "CodeLight conecta tu teléfono con sesiones existentes de Codex en el ordenador mediante sincronización cifrada de extremo a extremo.",
+        aboutFooter: "CodeLight conecta con sesiones de Codex, Antigravity y Claude Desktop en el Mac. Claude Desktop usa Gateway; las acciones disponibles dependen de cada sesión.",
         whatsNew: 'Novedades',
         whatsNewSubtitle: 'Ve las últimas actualizaciones y mejoras',
         reportIssue: 'Reportar un problema',
@@ -957,14 +974,14 @@ export const es: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "Tus sesiones de Codex,\ndonde estés",
+        headline: "Tus sesiones de Codex / Antigravity / Claude Desktop,\ndonde estés",
         propEncrypted: "Cifrado de extremo a extremo",
         propNoPassword: "Sin registro ni VPN",
         propOpenSource: "Código abierto, licencia MIT",
         linkTitle: "Conectar con tu Mac",
         installStep: "Abre CodeLight en tu Mac",
-        openStep: "Mantén tus sesiones de Codex en ejecución",
-        openBody: "Abre CodeLight en tu Mac y mantén Codex en ejecución. CodeLight mostrará un código QR para vincularlos.",
+        openStep: "Mantén tus sesiones de Codex / Antigravity / Claude Desktop en ejecución",
+        openBody: "Abre CodeLight en tu Mac y mantén Codex / Antigravity / Claude Desktop en ejecución. CodeLight mostrará un código QR para vincularlos.",
         scanStep: "Escanea el código QR",
         scanButton: "Escanear código QR",
         pasteLink: "¿No puedes escanear? Pega el enlace",
@@ -987,8 +1004,8 @@ export const es: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "Codex en tu teléfono",
-        subtitle: "Conecta con tus sesiones existentes de Codex en el ordenador con cifrado de extremo a extremo.",
+        title: "Codex / Antigravity / Claude Desktop en tu teléfono",
+        subtitle: "Conecta con tus sesiones existentes de Codex / Antigravity / Claude Desktop en el ordenador con cifrado de extremo a extremo.",
         createAccount: 'Crear cuenta',
         linkOrRestoreAccount: 'Vincular o restaurar cuenta',
         loginWithMobileApp: 'Iniciar sesión con aplicación móvil',
@@ -1205,6 +1222,8 @@ export const es: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "Descargar imagen",
+        downloadFailed: "No se pudo guardar la imagen. Inténtalo de nuevo.",
         open: 'Abrir imagen',
         close: 'Cerrar imagen',
         zoomIn: 'Acercar',

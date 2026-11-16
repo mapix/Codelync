@@ -8,6 +8,7 @@ import {
 import type { ProjectGroupData } from './projectGroups';
 import type { Session } from './storageTypes';
 import type { SessionRowData } from './storage';
+import { isCodeLightSessionSource } from '@/utils/codeLightSourceScope';
 
 function session(options: {
     id: string;
@@ -137,6 +138,51 @@ describe('buildProjectGroups', () => {
     });
 });
 describe('buildPathProjectGroups', () => {
+    it('uses canonical native project metadata for a missing owner without enabling source controls', () => {
+        const a = session({ id: 'a', path: '/tmp/linked-tree-a' }), b = session({ id: 'b', path: '/tmp/linked-tree-b' });
+        for (const row of [a, b]) Object.assign(row.metadata!, { client: { id: 'noninvasive-bridge', name: 'CodeLight', version: 'test' },
+            nativeSession: { projectKey: 'canonical-repository', projectPath: '/projects/canonical', projectLabel: 'canonical' },
+            bridge: { controlMode: 'session', sourceStatus: 'disconnected', source: { app: 'antigravity', id: row.id, kind: 'session',
+                protocol: 'antigravity-connect', hostId: 'local:antigravity:' + 'a'.repeat(64), runtimeGeneration: null } } });
+        const before = [a.metadata!.bridge!, b.metadata!.bridge!];
+        expect(buildPathProjectGroups([a, b], toRow, isActive, 'happy')).toMatchObject([{ name: 'Antigravity · canonical', sessionCount: 2 }]);
+        for (const row of [a, b]) expect(isCodeLightSessionSource(row.metadata!.bridge!.source, row.metadata!.bridge!.controlMode)).toBe(false);
+        expect([a.metadata!.bridge!, b.metadata!.bridge!]).toEqual(before);
+    });
+    it('does not trust canonical native metadata under invalid app, kind, host or protocol identity', () => {
+        for (const change of [
+            (s: any) => { s.app = 'unknown-app'; }, (s: any) => { s.kind = 'window'; },
+            (s: any) => { s.hostId = 'local'; }, (s: any) => { s.protocol = 'unknown'; },
+            (s: any) => { Object.assign(s, { app: 'claude-desktop', appMode: 'code', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+                protocol: 'claude-desktop-native', nativeCollection: 'local-agent-mode-sessions' }); },
+        ]) {
+            const a = session({ id: 'a', path: '/tmp/tree-a' }), b = session({ id: 'b', path: '/tmp/tree-b' });
+            for (const row of [a, b]) {
+                Object.assign(row.metadata!, { nativeSession: { projectKey: 'canonical', projectPath: '/projects/canonical', projectLabel: 'canonical' },
+                    bridge: { controlMode: 'session', source: { app: 'antigravity', id: row.id, kind: 'session', protocol: 'antigravity-connect',
+                        hostId: 'local:antigravity:' + 'a'.repeat(64), runtimeGeneration: null } } });
+                change(row.metadata!.bridge!.source);
+            }
+            const groups = buildPathProjectGroups([a, b], toRow, isActive, 'happy');
+            expect(groups).toHaveLength(2); expect(groups.map(g => g.name)).toEqual(['tree-a', 'tree-b']);
+        }
+    });
+    it('keeps native desktop selectors isolated by app and host even when project and native IDs match', () => {
+        const codex = session({ id: 'codex', machineId: 'machine-1', path: '/projects/shared' });
+        const antigravity = session({ id: 'antigravity', machineId: 'machine-1', path: '/projects/shared' });
+        const remote = session({ id: 'other-host', machineId: 'machine-1', path: '/projects/shared' });
+        for (const row of [codex, antigravity, remote]) Object.assign(row.metadata!, {
+            nativeSession: { projectKey: 'same-project-key', projectLabel: 'shared', projectPath: '/projects/shared' },
+            bridge: { controlMode: 'session', source: { id: 'same-native-id', app: row.id === 'codex' ? 'codex' : 'antigravity',
+                hostId: row.id === 'codex' ? 'local' : 'local:antigravity:' + (row.id === 'other-host' ? 'b' : 'a').repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'verified-owner' } },
+        });
+        const groups = buildPathProjectGroups([codex, antigravity, remote], toRow, isActive, 'happy');
+        expect(groups).toHaveLength(3);
+        expect(new Set(groups.map(group => group.id)).size).toBe(3);
+        expect(groups.map(group => group.name)).toEqual(['Codex · shared', 'Antigravity · shared', 'Antigravity · shared']);
+        expect(groups.map(group => group.workspaces[0].sessions.map(row => row.id))).toEqual([['codex'], ['antigravity'], ['other-host']]);
+    });
+
     it('groups Happy sessions by machine and working directory', () => {
         const groups = buildPathProjectGroups([
             session({ id: 'a', machineId: 'machine-1', path: '/projects/happy' }),

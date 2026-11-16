@@ -55,6 +55,44 @@ function agentText(id: string, text: string, createdAt: number): NormalizedMessa
 
 const HOLD: ReducerOptions = { holdUserMessagesUntilAccepted: true };
 
+describe('native query admission without a run', () => {
+    const admission = () => normalizeRawMessage('wire-receipt', 'native:receipt', 4000, { role: 'session', content: {
+        id: 'stable-admission', time: 4000, role: 'agent', ev: { t: 'user-message-accepted', id: 'stable-admission', ref: 'server-input',
+            runId: null, nativeMessageId: 'original-uuid', disposition: 'queued' } }, meta: { sentFrom: 'noninvasive-observer' } } as any)!;
+
+    it.each([true, false])('settles queued input without a turn, including receipt-before-echo (%s)', (early) => {
+        const state = createReducer(), accepted = admission();
+        expect(accepted.turn).toBeUndefined();
+        expect(accepted.role === 'event' && accepted.content).toMatchObject({ type: 'user-message-accepted', runId: null,
+            nativeMessageId: 'original-uuid', disposition: 'queued' });
+        reducer(state, [optimistic('local-input', 'queued input', 1000)], null, HOLD);
+        if (early) reducer(state, [accepted], null, HOLD);
+        reducer(state, [echo('server-input', 'local-input', 'queued input', 1000)], null, HOLD);
+        if (!early) reducer(state, [accepted], null, HOLD);
+        const row = [...state.messages.values()][0];
+        expect(row.pending).toBe(false); expect(row.turn).toBeUndefined();
+        expect(row.nativeAdmission).toEqual({ nativeMessageId: 'original-uuid', disposition: 'queued' });
+        expect(state.messages.size).toBe(1);
+        expect(reducer(state, [accepted], null, HOLD).messages).toHaveLength(0);
+    });
+
+    it('clears the queue-admission hint only through explicit native UUID replacement and cannot regain it from a repeated receipt', () => {
+        const state = createReducer(), accepted = admission();
+        reducer(state, [optimistic('local-input', 'queued input', 1000), echo('server-input', 'local-input', 'queued input', 1000), accepted], null, HOLD);
+        const native: NormalizedMessage = { id: 'native-row-wire', localId: null, createdAt: 5000, role: 'event', isSidechain: false,
+            content: { type: 'native-row-upsert', sourceRowId: 'original-uuid', role: 'user', text: 'queued input', revision: 1, replaceIds: ['server-input'] },
+            meta: { sentFrom: 'noninvasive-observer' } };
+        reducer(state, [native], null, HOLD);
+        expect(state.messages.size).toBe(1);
+        const row = [...state.messages.values()][0];
+        expect(row.meta?.nativeRow?.id).toBe('original-uuid'); expect(row.nativeAdmission).toBeUndefined();
+        expect(row.pending).toBe(false); expect(row.turn).toBeUndefined();
+        const late = { ...accepted, id: 'late-admission-copy' };
+        expect(reducer(state, [late], null, HOLD).messages).toHaveLength(0);
+        expect([...state.messages.values()][0].nativeAdmission).toBeUndefined();
+    });
+});
+
 function userMessages(messages: Message[]) {
     return messages.filter((message) => message.kind === 'user-text');
 }

@@ -38,9 +38,9 @@ export function prefetchSession(router: Router, sessionId: string) {
     }
 }
 
-export function navigateToSession(router: Router, sessionId: string) {
+function openSessionRoute(router: Router, sessionId: string, selectSource: boolean) {
     perfMark(`session-open:${sessionId}`);
-    if (config.noninvasiveLocal) sync.onSessionSelected(sessionId);
+    if (config.noninvasiveLocal && selectSource) sync.onSessionSelected(sessionId);
     const session = storage.getState().sessions[sessionId];
     if (session) {
         trackSessionSwitched(session);
@@ -57,6 +57,15 @@ export function navigateToSession(router: Router, sessionId: string) {
         return;
     }
     router.push(sessionHref(sessionId));
+}
+
+export function navigateToSession(router: Router, sessionId: string) {
+    openSessionRoute(router, sessionId, true);
+}
+
+/** Child history/log navigation observes its original source without selecting Desktop. */
+export function navigateToObservedSession(router: Router, sessionId: string) {
+    openSessionRoute(router, sessionId, false);
 }
 
 /**

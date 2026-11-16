@@ -8,11 +8,12 @@ import { createBoundSource } from './bound-source.mjs';
 import { CommandReceipts } from '../commands.mjs';
 import { writeDurablePrivateJson, readOptionalPrivateJson } from './discovery-persistence.mjs';
 import { BridgeError } from '../errors.mjs';
-import { isCodeLightCodexSource } from './source-scope.mjs';
+import { isCodeLightNativeSource } from './source-scope.mjs';
+import { sourceArchived, sourceCatalogVisible } from './source-catalog-scope.mjs';
 import { NativeProjectActivityService } from './project-activity.mjs';
 
 /** @typedef {Record<string,any>} Value */
-/** @typedef {{directory:string,leaseDirectory?:string,account:Value,discovery:{discover:()=>Promise<{sources:Value[],errors?:string[]}>,adapter:(source:Value)=>Value,close?:()=>Promise<void>|void},registry?:Value,machineConnection?:(options:Value)=>Value,sourceFactory?:(options:Value)=>Promise<Value>,activityFactory?:(options:Value)=>Value,onRpc?:(method:string)=>void,viewedSessions?:()=>Set<string>,scanMs?:number,only?:(source:Value)=>boolean,maxActiveSources?:number,observeBackground?:boolean}} Options */
+/** @typedef {{directory:string,leaseDirectory?:string,account:Value,discovery:{discover:()=>Promise<{sources:Value[],errors?:string[],hiddenSources?:Value[],inventoryApps?:string[],activityInventoryApps?:string[]}>,adapter:(source:Value)=>Value,close?:()=>Promise<void>|void},registry?:Value,machineConnection?:(options:Value)=>Value,sourceFactory?:(options:Value)=>Promise<Value>,activityFactory?:(options:Value)=>Value,onRpc?:(method:string)=>void,viewedSessions?:()=>Set<string>,scanMs?:number,only?:(source:Value)=>boolean,maxActiveSources?:number,observeBackground?:boolean}} Options */
 const lockfile = createRequire(import.meta.url)('proper-lockfile');
 
 /** One process owns a profile; sources activate lazily and keep their original runtime owner. */
@@ -33,9 +34,14 @@ export class CodeLightMacDaemon extends EventEmitter {
   /** @type {Set<string>} */ restored = new Set();
   /** @type {Value|null} */ activity = null;
   inventoryAvailable = false;
-  cacheReconciled = false;
+  registrationAvailable = false;
+  inventoryApps = new Set();
+  activityInventoryApps = new Set();
+  activityInventoryAvailable = false;
+  cacheReconciledApps = new Set();
   /** @type {Map<string,number>} */ sourceUses = new Map();
   /** @type {Map<string,number>} */ lastUsed = new Map();
+  /** @type {Set<string>} */ archivedKeys = new Set();
   capacityTail = Promise.resolve();
   /** @param {Options} options */
   constructor(options) {
@@ -53,8 +59,9 @@ export class CodeLightMacDaemon extends EventEmitter {
       this.machine = await this.registry.machine();
       this.activity = (this.options.activityFactory ?? (options => new NativeProjectActivityService(/** @type {any} */ (options))))({
         sources: () => [...this.sources.values()].map(({ source, binding }) => ({ ...source, relayId: binding.happySessionId, controlMode: binding.metadata?.bridge?.controlMode,
-          available: binding.metadata?.nativeSession?.catalogueAvailable !== false })),
-        inventoryAvailable: () => this.inventoryAvailable && !this.closed && this.ownsLease,
+          available: sourceCatalogVisible(source, binding.metadata) })),
+        inventoryAvailable: (/** @type {string|undefined} */ app) => (app ? this.activityInventoryApps.has(app) : this.activityInventoryAvailable) && !this.closed && this.ownsLease,
+        nativeAdapter: (/** @type {Value} */ source) => this.options.discovery.adapter(source),
       });
       const saved = await readOptionalPrivateJson(join(this.directory, 'active-sources.json'));
       this.restored = new Set(Array.isArray(saved?.keys) ? saved.keys.filter((/** @type {unknown} */ key) => typeof key === 'string' && /^[a-f0-9]{64}$/u.test(key)) : []);
@@ -79,12 +86,30 @@ export class CodeLightMacDaemon extends EventEmitter {
         if (this.closed || !this.ownsLease) throw new BridgeError('source-unavailable', 'Project activity is unavailable.');
         return this.activity?.poll(params);
       });
-      await this.connection.waitForConnect(); await this.scan();
+      await this.connection.waitForConnect(); await this.restoreRegisteredSources(); await this.scan();
       this.timer = setInterval(() => { this.scan().catch(() => this.emit('diagnostic', { code: 'discovery-scan-pending' })); }, this.options.scanMs ?? 20000); this.timer.unref();
       this.emit('ready', this.status()); return this.status();
     } catch (error) { await this.close(); throw error; }
   }
   status() { return { service: 'CodeLight', running: !this.closed && this.ownsLease, machineId: this.machine?.id ?? null, sources: this.sources.size, activeSources: this.actors.size, modelRunnersStarted: 0 }; }
+  /** Account-bound saved registrations are data, not native activity/removal proof. */
+  async restoreRegisteredSources() {
+    this.registrationAvailable = false;
+    if (this.closed || !this.ownsLease || typeof this.machine?.id !== 'string' || !this.machine.id || !this.connection || typeof this.registry.savedBindings !== 'function') return;
+    const bindings = await this.registry.savedBindings();
+    if (!Array.isArray(bindings) || this.closed || !this.ownsLease || typeof this.machine?.id !== 'string' || !this.machine.id || !this.connection) throw new BridgeError('source-unavailable', 'The registered native source map is unavailable.', 503);
+    for (const binding of bindings) {
+      const source = binding?.source, metadata = binding?.metadata ?? {};
+      if (!source || binding.machineId !== this.machine.id || !isCodeLightNativeSource(source, metadata)
+        || !sourceCatalogVisible(source, metadata) || this.options.only && !this.options.only(source)) continue;
+      const native = metadata.nativeSession ?? {};
+      const restored = { ...source, title: native.title || metadata.summary?.text || source.app, updatedAt: native.updatedAt ?? 0,
+        workspace: metadata.path ?? '', parentId: native.parentId ?? null, agentName: native.agentName ?? '', isSubagent: native.isSubagent === true,
+        ...(native.projectKey && native.projectPath ? { project: { key: native.projectKey, path: native.projectPath, label: native.projectLabel ?? '' } } : {}) };
+      this.sources.set(sourceKey(source), { source: restored, binding });
+    }
+    this.registrationAvailable = true;
+  }
   scan() {
     if (this.scanFlight) return this.scanFlight;
     this.scanFlight = this.scanOnce().finally(() => { this.scanFlight = null; }); return this.scanFlight;
@@ -93,11 +118,31 @@ export class CodeLightMacDaemon extends EventEmitter {
     if (this.closed || !this.ownsLease || !this.machine || !this.connection) throw new BridgeError('source-unavailable', 'The CodeLight daemon is unavailable.');
     const connection = this.connection;
     const found = await this.options.discovery.discover();
-    this.inventoryAvailable = !(found.errors ?? []).includes('codex-index-unavailable');
+    this.inventoryApps = new Set(['codex', 'antigravity', ...(found.inventoryApps ?? [])].filter(app => !(found.errors ?? []).includes(`${app}-index-unavailable`)));
+    this.inventoryAvailable = this.inventoryApps.has('codex') && this.inventoryApps.has('antigravity')
+      && !(found.errors ?? []).some(error => error.endsWith('-index-unavailable'));
+    this.activityInventoryApps = new Set([...this.inventoryApps, ...(found.activityInventoryApps ?? [])]);
+    this.activityInventoryAvailable = this.activityInventoryApps.has('codex') && this.activityInventoryApps.has('antigravity');
     const seen = new Set();
     for (const error of found.errors ?? []) this.emit('diagnostic', { code: error });
+    const hidden = (found.hiddenSources ?? []).filter(source => isCodeLightNativeSource(source) && sourceArchived(source, source.metadata));
+    const hiddenKeys = new Set(hidden.map(source => sourceKey(source)));
+    for (const key of this.archivedKeys) if (!hiddenKeys.has(key)) this.archivedKeys.delete(key);
+    for (const source of hidden) {
+      const key = sourceKey(source);
+      const binding = this.sources.get(key)?.binding ?? (typeof this.registry.existingBinding === 'function' ? await this.registry.existingBinding(source, this.machine.id) : null);
+      if (binding && typeof this.registry.markArchived === 'function') {
+        try { await this.registry.markArchived(binding, connection.socket, source); }
+        catch { this.emit('diagnostic', { code: 'source-archive-update-pending' }); continue; }
+      }
+      this.sources.delete(key); this.archivedKeys.add(key);
+      const actor = this.actors.get(key);
+      if (actor && typeof actor.tryCloseIfIdle === 'function' && await actor.tryCloseIfIdle()) {
+        this.actors.delete(key); this.lastUsed.delete(key); this.restored.delete(key); await this.saveRestored();
+      }
+    }
     for (const source of found.sources) {
-      if (!isCodeLightCodexSource(source) || this.options.only && !this.options.only(source)) continue;
+      if (!isCodeLightNativeSource(source) || sourceArchived(source, source.metadata) || hiddenKeys.has(sourceKey(source)) || this.options.only && !this.options.only(source)) continue;
       const key = sourceKey(source); const previous = this.sources.get(key);
       seen.add(key);
       if (previous) {
@@ -113,15 +158,20 @@ export class CodeLightMacDaemon extends EventEmitter {
       catch { this.emit('diagnostic', { code: 'source-registration-pending', sourceKey: key }); }
     }
     // 完整索引才有删除证据；读取失败不能把缓存目录全标成已移除。
-    if (this.inventoryAvailable) {
-      if (!this.cacheReconciled && typeof this.registry.savedBindings === 'function') {
+    if (this.inventoryApps.size) {
+      const unreconciled = new Set([...this.inventoryApps].filter(app => !this.cacheReconciledApps.has(app)));
+      if (unreconciled.size && typeof this.registry.savedBindings === 'function' && typeof this.registry.markUnavailable === 'function') {
+        const failedApps = new Set();
         for (const binding of await this.registry.savedBindings()) {
-          if (binding.machineId !== this.machine.id || seen.has(sourceKey(binding.source))) continue;
-          await this.registry.markUnavailable(binding, connection.socket).catch(() => this.emit('diagnostic', { code: 'source-catalogue-update-pending' }));
+          const key = sourceKey(binding.source);
+          // Restored descriptors are reconciled by the normal source loop below.
+          if (binding.machineId !== this.machine.id || !unreconciled.has(binding.source.app) || seen.has(key) || this.sources.has(key)) continue;
+          try { await this.registry.markUnavailable(binding, connection.socket); }
+          catch { failedApps.add(binding.source.app); this.emit('diagnostic', { code: 'source-catalogue-update-pending' }); }
         }
-        this.cacheReconciled = true;
+        for (const app of unreconciled) if (!failedApps.has(app)) this.cacheReconciledApps.add(app);
       }
-      for (const [key, entry] of this.sources) if (!seen.has(key)) {
+      for (const [key, entry] of this.sources) if (this.inventoryApps.has(entry.source.app) && !seen.has(key)) {
         if (typeof this.registry.markUnavailable === 'function') await this.registry.markUnavailable(entry.binding, connection.socket).catch(() => this.emit('diagnostic', { code: 'source-catalogue-update-pending' }));
         this.sources.delete(key);
       }
@@ -133,8 +183,8 @@ export class CodeLightMacDaemon extends EventEmitter {
     for (const key of this.restored) if (!this.sources.has(key)) {
       const binding = await readOptionalPrivateJson(join(this.directory, 'sources', `${key}.json`));
       if (!binding?.happySessionId || binding.serverUrl !== this.options.account.serverUrl || binding.machineId !== this.machine.id ||
-        !isCodeLightCodexSource(binding.source, binding.metadata) || binding.metadata?.nativeSession?.catalogueAvailable === false ||
-        this.inventoryAvailable && !seen.has(key) || sourceKey(binding.source) !== key) continue;
+        !isCodeLightNativeSource(binding.source, binding.metadata) || !sourceCatalogVisible(binding.source, binding.metadata) || hiddenKeys.has(key) ||
+        this.inventoryApps.has(binding.source?.app) && !seen.has(key) || sourceKey(binding.source) !== key) continue;
       const source = { ...binding.source, kind: binding.metadata?.bridge?.controlMode === 'window' ? 'window' : 'session' };
       this.sources.set(key, { source, binding }); this.activate(key, null).catch(() => this.emit('diagnostic', { code: 'source-observation-pending', sourceKey: key }));
     }
@@ -176,8 +226,9 @@ export class CodeLightMacDaemon extends EventEmitter {
         this.restored.add(value.sourceKey); await this.saveRestored();
         if (this.latestSelection.get(input.selectionClient) !== input.selectionSeq) throw new BridgeError('selection-superseded', 'A newer phone selection superseded this request.');
         void this.startSource(value.sourceKey, actor).catch(() => this.emit('diagnostic', { code: 'source-observation-pending' }));
-        await actor.openDesktop(value.commandId);
-        return { sourceKey: value.sourceKey, desktopSwitchRequested: true, syncStarting: true };
+        const desktopSwitchRequested = actor.supportsDesktopNavigation !== false;
+        if (desktopSwitchRequested) await actor.openDesktop(value.commandId);
+        return { sourceKey: value.sourceKey, desktopSwitchRequested, syncStarting: true };
       })));
     return { ok: true, receipt };
   }
@@ -227,14 +278,14 @@ export class CodeLightMacDaemon extends EventEmitter {
     const existing = this.actors.has(key), actor = await this.prepareSource(key), entry = /** @type {Value} */ (this.sources.get(key));
     try {
       this.restored.add(key); await this.saveRestored();
-      if (commandId) await actor.openDesktop(commandId);
+      if (commandId && actor.supportsDesktopNavigation !== false) await actor.openDesktop(commandId);
       await this.startSource(key, actor); return { sourceKey: key, happySessionId: entry.binding.happySessionId, sourceStatus: actor.status().sourceStatus };
     } catch (error) { if (!existing && this.actors.get(key) === actor) { this.actors.delete(key); await actor.close(); } throw error; }
   }
   /** @param {string} key @returns {Promise<Value>} */
   prepareSource(key) {
     const entry = this.sources.get(key);
-    if (!entry || !isCodeLightCodexSource(entry.source, entry.binding.metadata) || this.closed || !this.ownsLease) return Promise.reject(new BridgeError('source-unavailable', 'This source is unavailable.'));
+    if (!entry || !isCodeLightNativeSource(entry.source, entry.binding.metadata) || this.closed || !this.ownsLease) return Promise.reject(new BridgeError('source-unavailable', 'This source is unavailable.'));
     const actor = this.actors.get(key); if (actor) { this.lastUsed.set(key, Date.now()); return Promise.resolve(actor); }
     const pending = this.preparing.get(key); if (pending) return pending;
     // 旧实现保留每次成功启动的 actor，第17次切换就永久撞容量；单飞预留并回收无用户/操作占用的旧 observer。

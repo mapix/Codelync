@@ -2,7 +2,8 @@ import React from 'react';
 // @ts-expect-error The native workspace has no react-test-renderer declarations.
 import { act, create } from 'react-test-renderer';
 import { expect, it, vi } from 'vitest';
-const { answer, cancel } = vi.hoisted(() => ({ answer: vi.fn(), cancel: vi.fn() }));
+const questionMock = vi.hoisted(() => ({ answer: vi.fn(), cancel: vi.fn(), connected: true }));
+const { answer, cancel } = questionMock;
 const pending = { id: 'native-communication-id', createdAt: 1, kind: 'form' as const, questions: [{ id: 'answer', header: '', question: 'Choose the CodeLight test option', options: [{ label: 'Alpha' }, { label: 'Beta' }], required: true, allowCustom: true }] };
 vi.mock('react-native', () => ({ ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View' }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -14,8 +15,9 @@ vi.mock('react-native-unistyles', () => {
 vi.mock('@/components/StyledText', () => ({ Text: 'Text' }));
 vi.mock('@/constants/Typography', () => ({ Typography: { default: () => ({}) } }));
 vi.mock('@/text', () => ({ t: (key: string) => key }));
-vi.mock('@/sync/storage', () => ({ useSessionPendingCommunications: () => [pending], useSession: () => ({ metadata: { client: { id: 'noninvasive-bridge' } } }), useSessionMessages: () => ({ messages: [] }) }));
-vi.mock('@/sync/ops', () => ({ sessionAnswerQuestion: answer, sessionCancelCommunication: cancel }));
+vi.mock('@/sync/storage', () => ({ storage: { getState: () => ({ sessions: {} }) }, useSocketStatus: () => ({ status: questionMock.connected ? 'connected' : 'error' }), useSessionPendingCommunications: () => [pending], useSession: () => ({ metadata: { client: { id: 'noninvasive-bridge' } } }), useSessionMessages: () => ({ messages: [] }) }));
+vi.mock('@/sync/ops', () => ({ sessionAnswerQuestion: questionMock.answer, sessionCancelCommunication: questionMock.cancel }));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { peerConnected: () => questionMock.connected } }));
 import { AgentQuestionBanner } from './AgentQuestionBanner';
 import { BridgeRpcUnconfirmedError } from '@/sync/noninvasiveRpcJournal';
 import { AgentQuestionModal } from './AgentQuestionModal';
@@ -66,4 +68,20 @@ it('a late earlier answer cannot close a newer question form', async () => {
     expect(earlierClose).not.toHaveBeenCalled(); expect(currentClose).not.toHaveBeenCalled();
     expect(renderer.root.findByType('Modal').props.visible).toBe(true);
     act(() => renderer.unmount());
+});
+it('offline native answers retain selected draft values and old Submit/Close callbacks send nothing', async () => {
+    answer.mockReset(); cancel.mockReset(); questionMock.connected = true;
+    let renderer!: ReturnType<typeof create>; const props = { sessionId: 'native-source-session' };
+    act(() => { renderer = create(React.createElement(AgentQuestionBanner, props)); });
+    const byId = (id: string) => renderer.root.findAll((node: any) => node.props.testID === id)[0];
+    act(() => byId('codelight-question-open').props.onPress()); act(() => byId('codelight-question-option-answer-1').props.onPress());
+    const submit = byId('codelight-question-submit').props.onPress;
+    questionMock.connected = false; await act(async () => submit());
+    expect(answer).not.toHaveBeenCalled(); act(() => renderer.update(React.createElement(AgentQuestionBanner, props)));
+    expect(byId('codelight-question-submit').props.disabled).toBe(true);
+    expect(byId('codelight-question-option-answer-1').props.accessibilityState.selected).toBe(true);
+    questionMock.connected = true; act(() => renderer.update(React.createElement(AgentQuestionBanner, props)));
+    expect(byId('codelight-question-submit').props.disabled).toBe(false); expect(answer).not.toHaveBeenCalled();
+    questionMock.connected = false; await act(async () => byId('codelight-question-close').props.onPress());
+    expect(cancel).not.toHaveBeenCalled(); act(() => renderer.unmount()); questionMock.connected = true;
 });

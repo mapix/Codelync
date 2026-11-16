@@ -58,7 +58,10 @@ test('large native content is discarded without reading or cloning tool/text fie
   native.requests.push({ get params() { throw Error('Request contents must not be read'); } });
   native.getUnused = { get content() { throw Error('Unrelated state must not be read'); } };
   ipc.snapshot(native, 22);
-  assert.deepEqual(observer.status(), { known: true, active: true, waiting: true, status: 'ready', observedAt: 101, generation: 'local:original', revision: 22 });
+  const { aggregateActivity, ownKnown, ownActive, ownWaiting, ...display } = /** @type {Value} */ (observer.status());
+  assert.deepEqual(display, { known: true, active: true, waiting: true, status: 'ready', observedAt: 101, generation: 'local:original', revision: 22 });
+  assert.deepEqual([ownKnown, ownActive, ownWaiting], [true, true, true]);
+  assert.equal(aggregateActivity.rosterComplete, false);
   const kept = JSON.stringify(observer.replica);
   assert.ok(kept.length < 500);
   assert.ok(!kept.includes('PRIVATE_'));
@@ -154,7 +157,8 @@ test('owner generation changes invalidate old cache until a new owner snapshot a
   assert.equal(observer.status().known, false); assert.equal(ipc.releases, 1);
   await observer.refresh(); assert.equal(ipc.subscriptions, 2);
   ipc.patch([], 9, 10); assert.equal(observer.status().known, false);
-  ipc.snapshot({ ...state(), threadRuntimeStatus: { type: 'idle', activeFlags: [] } }, 1);
+  ipc.snapshot({ ...state(), threadRuntimeStatus: { type: 'idle', activeFlags: [] }, turns: [],
+    turnHistory: { history: { entitiesByKey: {}, islands: [], isComplete: true } } }, 1);
   assert.equal(observer.status().known, true); assert.equal(observer.status().generation, 'local:replacement');
   assert.equal(observer.status().active, false);
 });
@@ -193,6 +197,31 @@ test('question title removal preserves other question indices and empty latest i
   ipc.patch([{ op: 'remove', path: ['turns', 0, 'items', 0, 'questions', 0, 'title'] }], 1, 2);
   assert.equal(observer.status().known, true); assert.equal(observer.status().waiting, false);
   native.turns[0].turnId = ''; ipc.snapshot(native, 3); assert.equal(observer.status().waiting, false);
+});
+
+test('native child lifecycle and explicit roster completeness update an idle parent through reduced patches', async t => {
+  const { ipc, observer } = await fixture(t);
+  const lifecycle = { type: 'subAgentActivity', id: 'native-event', agentThreadId: 'child', agentPath: '/root/child', kind: 'started',
+    get prompt() { throw Error('Child prompt must not be read'); }, get text() { throw Error('Child history must not be read'); } };
+  ipc.snapshot({ threadRuntimeStatus: { type: 'idle', activeFlags: [] }, requests: [],
+    turnHistory: { history: { entitiesByKey: { parent: { turnId: 'parent-turn', status: 'completed', items: [lifecycle] } },
+      islands: [{ entries: [{ value: 'parent' }] }], isComplete: true } } });
+  const initial = /** @type {Value} */ (observer.status());
+  assert.equal(initial.active, true); assert.equal(initial.ownActive, false); assert.equal(initial.aggregateActivity.childCount, 1);
+  ipc.patch([{ op: 'replace', path: ['turnHistory', 'history', 'entitiesByKey', 'parent', 'items', 0, 'kind'], value: 'completed' }], 1, 2);
+  assert.equal(observer.status().active, false); assert.equal(observer.status().known, true);
+  ipc.patch([{ op: 'replace', path: ['turnHistory', 'history', 'isComplete'], value: false }], 2, 3);
+  assert.equal(observer.status().known, false); assert.equal(/** @type {Value} */ (observer.status()).ownKnown, true);
+  ipc.patch([{ op: 'replace', path: ['turnHistory', 'history', 'isComplete'], value: true }], 3, 4);
+  assert.equal(observer.status().known, true);
+  assert.equal(ipc.refreshes, 0); assert.equal(ipc.subscriptions, 1);
+});
+
+test('idle own status without an explicit complete native roster stays unknown', async t => {
+  const { ipc, observer } = await fixture(t);
+  ipc.snapshot({ ...state(), threadRuntimeStatus: { type: 'idle', activeFlags: [] }, turns: [] });
+  const value = /** @type {Value} */ (observer.status());
+  assert.equal(value.ownKnown, true); assert.equal(value.known, false); assert.equal(value.aggregateActivity.status, 'unknown');
 });
 
 test('cold owner failures stay unconfirmed and closing before start prevents late subscriptions', async t => {

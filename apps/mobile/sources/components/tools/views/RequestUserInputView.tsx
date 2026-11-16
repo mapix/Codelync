@@ -1,7 +1,9 @@
 import * as React from 'react';
 
 import { sessionAnswerQuestion } from '@/sync/ops';
-import { useSessionAgentFormCommunication } from '@/sync/storage';
+import { storage, useSession, useSessionAgentFormCommunication, useSocketStatus } from '@/sync/storage';
+import { apiSocket } from '@/sync/apiSocket';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 import type { AgentQuestionAnswer } from '@/sync/storageTypes';
 import { ToolViewProps } from './_all';
 import {
@@ -10,7 +12,9 @@ import {
 } from './InlineQuestionForm';
 
 /** Inline renderer for Happy/Codex request_user_input communications. */
-export const RequestUserInputView = React.memo<ToolViewProps>(({ tool, sessionId }) => {
+export const RequestUserInputView = React.memo<ToolViewProps>(({ tool, sessionId, metadata }) => {
+    const session = useSession(sessionId ?? ''), sourceMetadata = session?.metadata ?? metadata;
+    const writesBlocked = nativeWriteConnectionBlocked(sourceMetadata, useSocketStatus().status === 'connected');
     const communication = useSessionAgentFormCommunication(sessionId ?? '', tool.callId ?? '');
 
     const submittedAnswers = React.useMemo<InlineQuestionAnswers | null>(() => {
@@ -27,6 +31,7 @@ export const RequestUserInputView = React.memo<ToolViewProps>(({ tool, sessionId
 
     const handleSubmit = React.useCallback(async (answers: InlineQuestionAnswers) => {
         if (!sessionId || !communication || communication.status !== 'pending') return;
+        if (nativeWriteConnectionBlocked(storage.getState().sessions[sessionId]?.metadata ?? sourceMetadata, apiSocket.peerConnected())) throw Object.assign(Error('The connection is unavailable'), { effectMayHaveOccurred: false });
 
         const communicationAnswers: Record<string, AgentQuestionAnswer> = {};
         for (const question of communication.questions) {
@@ -39,7 +44,7 @@ export const RequestUserInputView = React.memo<ToolViewProps>(({ tool, sessionId
             };
         }
         await sessionAnswerQuestion(sessionId, communication.id, communicationAnswers, communication.kind);
-    }, [communication, sessionId]);
+    }, [communication, sessionId, sourceMetadata]);
 
     if (!communication || communication.questions.some(question => question.options.length === 0)) {
         return null;
@@ -48,7 +53,7 @@ export const RequestUserInputView = React.memo<ToolViewProps>(({ tool, sessionId
     return (
         <InlineQuestionForm
             questions={communication.questions}
-            canInteract={tool.state === 'running' && communication.status === 'pending'}
+            canInteract={tool.state === 'running' && communication.status === 'pending' && !writesBlocked}
             submittedAnswers={submittedAnswers}
             onSubmit={handleSubmit}
         />

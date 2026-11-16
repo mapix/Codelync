@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { mergeMessageArray, selectCatalog } from './messageArray';
 import { isNoninvasiveBridge } from './noninvasiveBridge';
+import { applyNativeDirectoryAuthority } from './nativeDirectoryAuthority';
+import { isCodeLightSessionSource, type CodeLightSourceApp } from '@/utils/codeLightSourceScope';
 import { messagePlanMode } from './messagePlanMode';
 import { useShallow } from 'zustand/react/shallow'
 import equal from 'fast-deep-equal'
@@ -136,6 +138,8 @@ interface SessionMessages {
 
 // Display-only row data — all primitives, cheap to deep-equal
 export interface SessionRowData {
+    sourceApp?: CodeLightSourceApp;
+    isSubagent?: boolean;
     botId?: string | null;
     botUsername?: string | null;
     id: string;
@@ -221,6 +225,9 @@ function buildSessionRowData(
     const avatar = resolveSessionAvatar(session, projects);
     return {
         id: session.id,
+        isSubagent: session.metadata?.nativeSession?.isSubagent === true,
+        ...(isCodeLightSessionSource(session.metadata?.bridge?.source, session.metadata?.bridge?.controlMode)
+            ? { sourceApp: session.metadata!.bridge!.source.app as CodeLightSourceApp } : {}),
         botId: session.metadata?.bot?.id ?? null,
         botUsername: session.metadata?.bot?.username ?? null,
         name: getSessionName(session),
@@ -315,7 +322,7 @@ interface StorageState {
     socketLastDisconnectedAt: number | null;
     isDataReady: boolean;
     nativeUpdateStatus: { available: boolean; updateUrl?: string } | null;
-    applySessions: (sessions: (Omit<Session, 'presence'> & { presence?: "online" | number })[]) => void;
+    applySessions: (sessions: (Omit<Session, 'presence'> & { presence?: "online" | number })[], options?: { nativeCatalog?: boolean | 'cached' }) => void;
     applyMachines: (machines: Machine[], replace?: boolean) => void;
     applyProjects: (projects: Project[], replace?: boolean) => void;
     applyProjectAvatar: (projectId: string, avatar: Project['avatar']) => void;
@@ -559,7 +566,7 @@ export const storage = create<StorageState>()((set, get) => {
             const state = get();
             return Object.values(state.sessions).filter(s => s.active);
         },
-        applySessions: (sessions: (Omit<Session, 'presence'> & { presence?: "online" | number })[]) => {
+        applySessions: (sessions: (Omit<Session, 'presence'> & { presence?: "online" | number })[], options?: { nativeCatalog?: boolean | 'cached' }) => {
             const pendingComposerWrites: string[] = [];
             set((state) => {
             // Load drafts if sessions are empty (initial load)
@@ -572,6 +579,7 @@ export const storage = create<StorageState>()((set, get) => {
 
             // Update sessions with calculated presence using centralized resolver
             sessions.forEach(session => {
+                session = applyNativeDirectoryAuthority(session, state.sessions[session.id], options?.nativeCatalog ?? false);
                 // Use centralized resolver for consistent state management
                 const presence = resolveSessionOnlineState(session);
 
@@ -598,7 +606,7 @@ export const storage = create<StorageState>()((set, get) => {
                 // Local activity timestamp — preserve in-memory value, else restore from MMKV.
                 const resolvedLastMessageSentAt = state.sessions[session.id]?.lastMessageSentAt ?? savedLastMessageSentAt[session.id];
 
-                if (isRigMetadataV1(session.metadata)) {
+                if (isRigMetadataV1(session.metadata) && !isNoninvasiveBridge(session.metadata)) {
                     // Happy Agent syncs the whole composer through metadata.
                     // A later metadata version settles equal-stamped edits too.
                     // Only a strictly newer local draft stays ahead of the server.
@@ -642,7 +650,9 @@ export const storage = create<StorageState>()((set, get) => {
                 mergedSessions[session.id] = {
                     ...session,
                     presence,
-                    draft: existingDraft || savedDraft || session.draft || null,
+                    draft: isNoninvasiveBridge(session.metadata)
+                        ? state.sessions[session.id] ? existingDraft ?? null : savedDraft ?? session.draft ?? null
+                        : existingDraft || savedDraft || session.draft || null,
                     permissionMode: resolvedPermissionMode,
                     modelMode: resolvedModelMode,
                     effortLevel: resolvedEffortLevel,

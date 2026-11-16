@@ -15,12 +15,18 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
  * Must match the exact structure of the English translations
  */
 export const ca: TranslationStructure = {
+    codeLightHandoff: {
+        action: "Passa a…",
+        noTargets: "No hi ha cap altra sessió d’escriptori connectada en aquest Mac.",
+        unavailable: "La sessió d’origen o de destinació ja no està disponible.",
+    },
+
     codeLightSetup: {
         createFailed: "No s’ha pogut configurar la connexió. Comprova la connexió amb el Mac i torna-ho a provar.",
         storageFailed: "No s’ha pogut desar la connexió de manera segura. Comprova l’espai del dispositiu i torna-ho a provar.",
         reloadFailed: "Tanca i torna a obrir CodeLight per connectar amb la configuració desada.",
         pairFailed: "Aquest enllaç d’aparellament no està disponible. Escaneja un codi QR nou mostrat a CodeLight al Mac.",
-        macHelp: "Obre CodeLight al Mac i mantén les teves sessions de Codex existents en execució.",
+        macHelp: "Obre CodeLight al Mac i mantén les teves sessions de Codex / Antigravity / Claude Desktop existents en execució.",
         helpBody: "Obre CodeLight al Mac i mantén-lo en execució. Escaneja el seu codi QR amb aquest telèfon. Si canvia l’adreça de connexió, actualitza i escaneja el codi nou. No cal registre ni VPN.",
     },
 
@@ -33,23 +39,26 @@ export const ca: TranslationStructure = {
         network: "No s’ha pogut connectar amb el Mac. Mantén CodeLight en execució i torna-ho a provar.",
     },
 
+    codeLightCommands: { modelMenu: 'Tria el model d’aquesta conversa amb el botó de model al costat del camp de text.', unsupported: "Aquesta ordre de l’aplicació no està disponible a CodeLight. S’ha conservat l’esborrany.", busy: "Aquesta sessió està ocupada. S’ha conservat l’esborrany.", unconfirmed: "El resultat de l’ordre no està confirmat. Comprova el resultat." },
     codeLightModels: {
+        nextMessage: 'Missatge següent',
         default: "Predeterminat",
         check: "Comprova la configuració",
         saving: "S’està actualitzant la configuració del model al Mac…",
-        failed: "La configuració ha canviat o no s’ha pogut actualitzar. Comprova l’opció actual i torna a seleccionar.",
-        unconfirmed: "Actualització no confirmada. S’està comprovant la configuració original; no repeteixis el canvi.",
+        readFailed: "No s’han pogut llegir els ajustos del model. Comprova la connexió amb el Mac.",
+        failed: "No s’ha pogut actualitzar el model. Comprova la tria actual.",
+        unconfirmed: "El canvi no està confirmat. Comprova el resultat sense repetir-lo.",
     },
 
     codeLightChannels: {
         title: "Connexió",
         automatic: "Automàtica",
-        automaticDetail: "Utilitza una connexió disponible i verificada.",
+        automaticDetail: "Comprova les connexions desades i connecta amb aquest Mac.",
         local: "Xarxa local",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "Connectat",
-        available: "Disponible",
+        available: "Desada",
         probing: "Comprovant",
         failed: "No disponible",
         switching: "Connectant…",
@@ -57,16 +66,24 @@ export const ca: TranslationStructure = {
         current: "Ruta actual",
         latency: ({ ms }: { ms: number }) => "{ms} ms".replace("{ms}", String(ms)),
         latencyUnknown: "Latència desconeguda",
-        switchFailed: "No s’ha pogut canviar la connexió. Es manté la ruta actual.",
+        switchFailed: "No s’ha pogut connectar. S’ha conservat la tria anterior.",
+        connectingTitle: "Connectant amb el Mac…",
+        failedTitle: "No es pot connectar amb el Mac",
+        failedHelp: "Obre CodeLight al Mac i comprova la xarxa. Torna-ho a provar o tria una altra connexió.",
+        accessEndedTitle: "Connexió amb el Mac no verificada",
+        accessEndedHelp: "Escaneja el codi QR actual de CodeLight en aquell Mac. Es conserven els missatges i esborranys desats.",
+        retryConnection: "Torna a connectar",
+        scanMac: "Escaneja el codi del Mac",
     },
 
     codeLightLoading: {
-        titles: "S’estan carregant els títols de les sessions de Codex…",
-        discovered: ({ count }: { count: number }) => "Sessions de Codex trobades: {count} · es continua carregant…".replace("{count}", String(count)),
-        messages: "S’està sincronitzant aquesta sessió…",
+        titles: "Carregant sessions de Codex, Antigravity i Claude Desktop…",
+        discovered: ({ count }: { count: number }) => "{count} elements carregats · carregant-ne més…".replace("{count}", String(count)),
+        messages: "Carregant aquesta sessió…",
         older: "S’estan carregant els missatges anteriors…",
-        failed: "No s’ha pogut completar la sincronització. Torna-ho a provar per continuar.",
-        empty: "No s’han trobat sessions de Codex en aquest Mac.",
+        unavailable: "No disponible",
+        failed: "No s’han pogut actualitzar les sessions. Torna-ho a provar.",
+        empty: "No hi ha sessions disponibles de Codex, Antigravity o Claude Desktop en aquest Mac.",
     },
 
     codeLightProjects: {
@@ -89,10 +106,10 @@ export const ca: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "Lliurament no confirmat. S’està comprovant la sessió original de Codex; no ho tornis a enviar.",
-        waiting: "S’està esperant la sessió original de Codex a l’ordinador.",
+        deliveryUnconfirmed: "Lliurament no confirmat. S’està comprovant la sessió original; no ho tornis a enviar.",
+        waiting: "S’està esperant la sessió d’escriptori original.",
         openDesktop: "Obre a l’ordinador",
-        openFailed: "No s’ha pogut obrir la sessió original de Codex. Comprova que Codex estigui en execució.",
+        openFailed: "No s’ha pogut obrir la sessió original. Comprova que l’aplicació d’escriptori corresponent estigui en execució.",
     },
 
     voiceStatusBar: {
@@ -210,7 +227,7 @@ export const ca: TranslationStructure = {
         developer: 'Desenvolupador',
         developerTools: 'Eines de desenvolupador',
         about: 'Quant a',
-        aboutFooter: "CodeLight connecta el telèfon a sessions de Codex existents a l’ordinador amb sincronització xifrada d’extrem a extrem.",
+        aboutFooter: "CodeLight connecta amb les sessions de Codex, Antigravity i Claude Desktop al Mac. Claude Desktop utilitza Gateway; les accions disponibles depenen de la sessió.",
         whatsNew: 'Novetats',
         whatsNewSubtitle: 'Mira les últimes actualitzacions i millores',
         reportIssue: 'Informa d\'un problema',
@@ -957,14 +974,14 @@ export const ca: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "Les teves sessions de Codex,\nsiguis on siguis",
+        headline: "Les teves sessions de Codex / Antigravity / Claude Desktop,\nsiguis on siguis",
         propEncrypted: "Xifrat d’extrem a extrem",
         propNoPassword: "Sense registre ni VPN",
         propOpenSource: "Codi obert, llicència MIT",
         linkTitle: "Connecta amb el teu Mac",
         installStep: "Obre CodeLight al Mac",
-        openStep: "Mantén les sessions de Codex en execució",
-        openBody: "Obre CodeLight al Mac i mantén Codex en execució. A CodeLight apareixerà un codi QR d’aparellament.",
+        openStep: "Mantén les sessions de Codex / Antigravity / Claude Desktop en execució",
+        openBody: "Obre CodeLight al Mac i mantén Codex / Antigravity / Claude Desktop en execució. A CodeLight apareixerà un codi QR d’aparellament.",
         scanStep: "Escaneja el codi QR",
         scanButton: "Escaneja el codi QR",
         pasteLink: "No pots escanejar? Enganxa l’enllaç",
@@ -987,8 +1004,8 @@ export const ca: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "Codex al teu telèfon",
-        subtitle: "Connecta amb les teves sessions de Codex existents a l’ordinador amb xifrat d’extrem a extrem.",
+        title: "Codex / Antigravity / Claude Desktop al teu telèfon",
+        subtitle: "Connecta amb les teves sessions de Codex / Antigravity / Claude Desktop existents a l’ordinador amb xifrat d’extrem a extrem.",
         createAccount: 'Crea un compte',
         linkOrRestoreAccount: 'Enllaça o restaura un compte',
         loginWithMobileApp: 'Inicia sessió amb l\'aplicació mòbil',
@@ -1204,6 +1221,8 @@ export const ca: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "Descarrega la imatge",
+        downloadFailed: "No s’ha pogut desar la imatge. Torna-ho a provar.",
         open: 'Obrir la imatge',
         close: 'Tancar la imatge',
         zoomIn: 'Apropar',

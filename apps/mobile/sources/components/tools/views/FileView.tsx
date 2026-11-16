@@ -1,12 +1,4 @@
-/**
- * View for 'file' tool calls (image attachments sent by user).
- * Downloads and decrypts the encrypted blob via apiAttachments + sessionBlobKey,
- * then renders the full image inline with the thumbhash as placeholder.
- *
- * Always renders inline when a ref is present — if dimensions are missing
- * (older messages, iOS picker that didn't report w/h), a default 4:3 aspect
- * ratio is used until the actual image lands and contentFit shows it.
- */
+/** Metadata-only attachment cards. Bytes are loaded only by the opened preview. */
 import * as React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Image } from 'expo-image';
@@ -14,107 +6,75 @@ import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { ToolViewProps } from './_all';
 import { z } from 'zod';
-import { useAttachmentImage } from '@/hooks/useAttachmentImage';
 import { Modal } from '@/modal';
-import { AttachmentImagePreview } from '@/components/AttachmentImagePreview';
-import { t } from '@/text';
+import { t, getCurrentLanguage } from '@/text';
 import { thumbhashToDataUri } from '@/utils/thumbhash';
+import { NativeImagePreview } from '@/components/NativeImagePreview';
+import { AttachmentFilePreview } from '@/components/AttachmentFilePreview';
+import { attachmentMediaKind, attachmentByteLabel, MAX_VIDEO_PREVIEW_BYTES } from '@/utils/attachmentMedia';
+import { codeLightMediaLabels } from '@/text/codeLightMediaLabels';
 
 const fileInputSchema = z.object({
-    ref: z.string(),
-    name: z.string(),
-    size: z.number().optional(),
-    image: z.object({
-        width: z.number(),
-        height: z.number(),
-        thumbhash: z.string().optional(),
-    }).optional(),
+    ref: z.string().min(1).optional(), name: z.string(), size: z.number().nonnegative().optional(), mimeType: z.string().max(128).optional(),
+    image: z.object({ width: z.number(), height: z.number(), thumbhash: z.string().optional() }).optional(),
 });
 
-const BORDER_RADIUS = 8;
-const MAX_IMAGE_WIDTH = 280;
-const MAX_IMAGE_HEIGHT = 360;
-const DEFAULT_ASPECT = 4 / 3; // when wire-format omits image{} dimensions
+export const FileView = React.memo<ToolViewProps>(props => {
+    const marker = z.object({ nativeImageId: z.string().min(1), name: z.string() }).safeParse(props.tool.input);
+    if (marker.success) return <NativeImagePlaceholder sessionId={props.sessionId} imageId={marker.data.nativeImageId} name={marker.data.name} />;
+    return <AttachmentFileView {...props} />;
+});
 
-export const FileView = React.memo<ToolViewProps>(({ tool, sessionId }) => {
+function NativeImagePlaceholder({ sessionId, imageId, name }: { sessionId?: string; imageId: string; name: string }) {
     const { theme } = useUnistyles();
+    return <View style={styles.container}>
+        <Pressable testID={`codelight-native-image-${imageId}`} accessibilityRole="button" accessibilityLabel={t('imagePreview.open')} disabled={!sessionId}
+            onPress={() => { if (sessionId) Modal.show({ component: NativeImagePreview, props: { sessionId, imageId, name } }); }}
+            style={styles.media}>
+            <Ionicons name="image-outline" size={32} color={theme.colors.textSecondary} />
+            <Text style={styles.detail}>{t('imagePreview.open')}</Text>
+        </Pressable>
+        <Text style={styles.name} numberOfLines={1}>{name}</Text>
+    </View>;
+}
+
+function AttachmentFileView({ tool, sessionId }: ToolViewProps) {
+    const { theme } = useUnistyles(), labels = codeLightMediaLabels[getCurrentLanguage()];
+    const opening = React.useRef(false);
     const parsed = fileInputSchema.safeParse(tool.input);
     if (!parsed.success) return null;
+    const { name, size, image, ref, mimeType } = parsed.data;
+    const metadata = { name, size, image, mimeType }, kind = attachmentMediaKind(metadata);
+    const oversizedVideo = kind === 'video' && size !== undefined && size > MAX_VIDEO_PREVIEW_BYTES;
+    const readable = !!sessionId && !!ref && !oversizedVideo;
+    const thumbnail = image?.thumbhash ? thumbhashToDataUri(image.thumbhash) : undefined;
+    const open = () => {
+        if (!readable || !sessionId || !ref || opening.current) return;
+        opening.current = true;
+        try { Modal.show({ component: AttachmentFilePreview, props: { sessionId, refValue: ref, metadata, image: kind === 'image', onClosed: () => { opening.current = false; } } }); }
+        catch { opening.current = false; }
+    };
+    return <View style={styles.container}>
+        <Pressable testID={`codelight-attachment-${ref ?? 'unavailable'}`} accessibilityRole="button" accessibilityLabel={`${oversizedVideo ? labels.videoTooLarge : labels.open} · ${name}`}
+            accessibilityState={{ disabled: !readable }} disabled={!readable} onPress={open} style={kind === 'file' ? styles.file : styles.media}>
+            {kind === 'image' && thumbnail ? <Image source={{ uri: thumbnail }} style={styles.thumbnail} contentFit="cover" /> : null}
+            <Ionicons name={kind === 'video' ? 'play-circle-outline' : kind === 'image' ? 'image-outline' : 'document-text-outline'}
+                size={kind === 'file' ? 24 : 44} color={theme.colors.textSecondary} />
+            {kind === 'file' ? <View style={styles.identity}><Text style={styles.name} numberOfLines={1}>{name}</Text>
+                {attachmentByteLabel(size) ? <Text style={styles.detail}>{attachmentByteLabel(size)}</Text> : null}</View> : null}
+        </Pressable>
+        {kind !== 'file' ? <View style={styles.caption}><Text style={[styles.name, { flex: 1 }]} numberOfLines={1}>{name}</Text>
+            {attachmentByteLabel(size) ? <Text style={styles.detail}>{attachmentByteLabel(size)}</Text> : null}</View> : null}
+        {oversizedVideo ? <Text style={styles.detail}>{labels.videoTooLarge}</Text> : !readable ? <Text style={styles.detail}>{labels.unavailable}</Text> : null}
+    </View>;
+}
 
-    const { name, image, ref } = parsed.data;
-
-    const placeholder = React.useMemo(() => {
-        if (!image?.thumbhash) return undefined;
-        const uri = thumbhashToDataUri(image.thumbhash);
-        return uri ? { uri } : undefined;
-    }, [image?.thumbhash]);
-
-    const { uri, error } = useAttachmentImage(sessionId ?? '', sessionId ? ref : undefined);
-
-    // Pick display dimensions. Real w/h drives the aspect ratio when present,
-    // but a missing image{} block (older messages, iOS picker that didn't
-    // report dimensions) shouldn't downgrade to a compact filename row —
-    // the user attached an image, render it inline. Default to 4:3 at the
-    // bubble's max width; expo-image's contentFit="cover" handles the
-    // mismatch once the real image arrives.
-    const aspect = image && image.width > 0 && image.height > 0
-        ? image.width / image.height
-        : DEFAULT_ASPECT;
-    let displayW = Math.min(image?.width && image.width > 0 ? image.width : MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH);
-    let displayH = displayW / aspect;
-    if (displayH > MAX_IMAGE_HEIGHT) {
-        displayH = MAX_IMAGE_HEIGHT;
-        displayW = displayH * aspect;
-    }
-
-    return (
-        <View style={styles.inlineContainer}>
-            <Pressable testID={`happy-file-preview-${ref}`} accessibilityRole="button" accessibilityLabel={t('imagePreview.open')} disabled={!sessionId} onPress={() => { if (sessionId) Modal.show({ component: AttachmentImagePreview, props: { sessionId, refValue: ref, name, width: image?.width, height: image?.height } }); }} style={styles.inlineWrapper}>
-                <Image
-                    source={uri ? { uri } : undefined}
-                    placeholder={placeholder}
-                    style={[{ width: displayW, height: displayH }, styles.inlineImage]}
-                    contentFit="cover"
-                    transition={150}
-                />
-                {error && !uri && (
-                    <View style={[styles.errorOverlay, { backgroundColor: theme.colors.surfaceHigh }]}>
-                        <Ionicons name="alert-circle-outline" size={20} color={theme.colors.textSecondary} />
-                    </View>
-                )}
-            </Pressable>
-            <Text style={[styles.filename, { color: theme.colors.textSecondary }]} numberOfLines={1}>{name}</Text>
-        </View>
-    );
-});
-
-const styles = StyleSheet.create(() => ({
-    inlineContainer: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        gap: 4,
-    },
-    inlineWrapper: {
-        borderRadius: BORDER_RADIUS,
-        overflow: 'hidden',
-        alignSelf: 'flex-start',
-        position: 'relative',
-    },
-    inlineImage: {
-        borderRadius: BORDER_RADIUS,
-    },
-    errorOverlay: {
-        position: 'absolute',
-        top: 4,
-        right: 4,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    filename: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
+const styles = StyleSheet.create(theme => ({
+    container: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+    media: { width: 280, maxWidth: '100%', aspectRatio: 16 / 9, borderRadius: 8, backgroundColor: theme.colors.surfaceHigh,
+        overflow: 'hidden', gap: 10, alignItems: 'center', justifyContent: 'center' },
+    file: { minHeight: 60, maxWidth: 300, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8,
+        borderRadius: 8, backgroundColor: theme.colors.surfaceHigh }, identity: { flex: 1, gap: 4 },
+    caption: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: 280 }, name: { fontSize: 13, color: theme.colors.text },
+    detail: { color: theme.colors.textSecondary, fontSize: 12 }, thumbnail: { ...StyleSheet.absoluteFillObject },
 }));

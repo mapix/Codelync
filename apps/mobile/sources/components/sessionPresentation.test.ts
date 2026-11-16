@@ -4,6 +4,11 @@ import { act, create } from 'react-test-renderer';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@/sync/storageTypes';
 import type { Message, ToolCall } from '@/sync/typesMessage';
+vi.hoisted(() => vi.stubGlobal('__DEV__', false));
+vi.mock('expo-constants', () => ({ default: {} }));
+vi.mock('@/track', () => ({ tracking: null }));
+vi.mock('@/config', () => ({ config: { noninvasiveLocal: false } }));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { peerConnected: () => true } }));
 
 const state = vi.hoisted(() => ({
     platform: 'ios',

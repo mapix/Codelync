@@ -28,7 +28,8 @@ try {
         const previewText = String(row.first_user_message || '').replace(/\s+/gu, ' ').slice(0, 160);
         const name = String(row.title || '').trim() || [agentName, role].filter(Boolean).join(' · ') || previewText.slice(0, 80) || row.id.slice(0, 8);
         result.push({ app: 'codex', id: row.id, title: name, workspace: row.cwd, createdAt: row.created_at * 1000,
-          updatedAt: row.recency_at_ms || row.updated_at_ms || row.updated_at * 1000, provider: row.model_provider, parentId, agentName, preview: previewText, isPinned: row.is_pinned === 1 });
+          updatedAt: row.recency_at_ms || row.updated_at_ms || row.updated_at * 1000, provider: row.model_provider, parentId, agentName,
+          isSubagent: !!source.subagent?.thread_spawn, preview: previewText, isPinned: row.is_pinned === 1 });
       }
       if (rows.length < 200) break; offset += rows.length;
     }

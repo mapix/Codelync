@@ -26,12 +26,18 @@ function plural({ count, one, few, many }: { count: number; one: string; few: st
  * Must match the exact structure of the English translations
  */
 export const ru: TranslationStructure = {
+    codeLightHandoff: {
+        action: "Передать в…",
+        noTargets: "На этом Mac нет другой подключённой сессии приложения.",
+        unavailable: "Исходная или целевая сессия больше недоступна.",
+    },
+
     codeLightSetup: {
         createFailed: "Не удалось настроить соединение. Проверьте подключение к Mac и повторите попытку.",
         storageFailed: "Не удалось безопасно сохранить соединение. Проверьте свободное место на устройстве и повторите попытку.",
         reloadFailed: "Закройте и снова откройте CodeLight, чтобы подключиться с сохранёнными настройками.",
         pairFailed: "Ссылка для подключения недоступна. Отсканируйте новый QR-код в CodeLight на Mac.",
-        macHelp: "Откройте CodeLight на Mac и оставьте существующие сеансы Codex запущенными.",
+        macHelp: "Откройте CodeLight на Mac и оставьте существующие сеансы Codex / Antigravity / Claude Desktop запущенными.",
         helpBody: "Откройте CodeLight на Mac и оставьте его запущенным. Отсканируйте QR-код этим телефоном. Если адрес соединения изменится, обновите и отсканируйте новый код. Регистрация и VPN не нужны.",
     },
 
@@ -44,23 +50,26 @@ export const ru: TranslationStructure = {
         network: "Не удалось подключиться к Mac. Оставьте CodeLight запущенным и повторите попытку.",
     },
 
+    codeLightCommands: { modelMenu: 'Выберите модель этой сессии кнопкой модели рядом с полем ввода.', unsupported: "Эта команда приложения недоступна в CodeLight. Черновик сохранён.", busy: "Сеанс занят. Черновик сохранён.", unconfirmed: "Результат команды не подтверждён. Проверьте результат." },
     codeLightModels: {
+        nextMessage: 'Следующее сообщение',
         default: "По умолчанию",
         check: "Проверить настройки",
         saving: "Обновление настроек модели на Mac…",
-        failed: "Настройки изменились или не были обновлены. Проверьте текущий выбор и выберите снова.",
-        unconfirmed: "Обновление не подтверждено. Проверяем исходные настройки; не повторяйте изменение.",
+        readFailed: "Не удалось прочитать настройки модели. Проверьте подключение к Mac.",
+        failed: "Не удалось обновить настройку модели. Проверьте текущий выбор.",
+        unconfirmed: "Изменение не подтверждено. Проверьте результат, не повторяя изменение.",
     },
 
     codeLightChannels: {
         title: "Подключение",
         automatic: "Автоматически",
-        automaticDetail: "Использовать доступное проверенное подключение.",
+        automaticDetail: "Проверить сохранённые подключения и подключиться к этому Mac.",
         local: "Локальная сеть",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "Подключено",
-        available: "Доступно",
+        available: "Сохранено",
         probing: "Проверка",
         failed: "Недоступно",
         switching: "Подключение…",
@@ -68,16 +77,24 @@ export const ru: TranslationStructure = {
         current: "Текущий маршрут",
         latency: ({ ms }: { ms: number }) => "{ms} мс".replace("{ms}", String(ms)),
         latencyUnknown: "Задержка неизвестна",
-        switchFailed: "Не удалось сменить подключение. Текущий маршрут сохранён.",
+        switchFailed: "Не удалось подключиться. Предыдущий выбор сохранён.",
+        connectingTitle: "Подключение к Mac…",
+        failedTitle: "Не удаётся подключиться к Mac",
+        failedHelp: "Откройте CodeLight на Mac и проверьте сеть. Повторите подключение или выберите другое.",
+        accessEndedTitle: "Подключение к Mac не подтверждено",
+        accessEndedHelp: "Сканируйте текущий QR-код в CodeLight на этом Mac. Сохранённые сообщения и черновики останутся.",
+        retryConnection: "Повторить подключение",
+        scanMac: "Сканировать код Mac",
     },
 
     codeLightLoading: {
-        titles: "Загрузка названий сеансов Codex…",
-        discovered: ({ count }: { count: number }) => "Найдено сеансов Codex: {count} · загрузка продолжается…".replace("{count}", String(count)),
-        messages: "Синхронизация сеанса…",
+        titles: "Загрузка сеансов Codex, Antigravity и Claude Desktop…",
+        discovered: ({ count }: { count: number }) => "Загружено записей: {count} · загрузка продолжается…".replace("{count}", String(count)),
+        messages: "Загрузка этого сеанса…",
         older: "Загрузка предыдущих сообщений…",
-        failed: "Не удалось завершить синхронизацию. Повторите попытку, чтобы продолжить.",
-        empty: "На этом Mac не найдены сеансы Codex.",
+        unavailable: "Недоступно",
+        failed: "Не удалось обновить список сеансов. Повторите попытку.",
+        empty: "На этом Mac нет доступных сеансов Codex, Antigravity или Claude Desktop.",
     },
 
     codeLightProjects: {
@@ -100,10 +117,10 @@ export const ru: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "Доставка не подтверждена. Проверяем исходный сеанс Codex; не отправляйте повторно.",
-        waiting: "Ожидание исходного сеанса Codex на компьютере.",
+        deliveryUnconfirmed: "Доставка не подтверждена. Проверяем исходный сеанс; не отправляйте повторно.",
+        waiting: "Ожидание исходного сеанса на компьютере.",
         openDesktop: "Открыть на компьютере",
-        openFailed: "Не удалось открыть исходный сеанс Codex. Убедитесь, что Codex запущен.",
+        openFailed: "Не удалось открыть исходный сеанс. Убедитесь, что соответствующее приложение на компьютере запущено.",
     },
 
     voiceStatusBar: {
@@ -196,7 +213,7 @@ export const ru: TranslationStructure = {
         developer: 'Разработчик',
         developerTools: 'Инструменты разработчика',
         about: 'О программе',
-        aboutFooter: "CodeLight подключает телефон к существующим сеансам Codex на компьютере со сквозным шифрованием синхронизации.",
+        aboutFooter: "CodeLight подключается к сеансам Codex, Antigravity и Claude Desktop на Mac. Claude Desktop использует Gateway; доступные действия зависят от сеанса.",
         whatsNew: 'Что нового',
         whatsNewSubtitle: 'Посмотреть последние обновления и улучшения',
         reportIssue: 'Сообщить о проблеме',
@@ -963,14 +980,14 @@ export const ru: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "Ваши сеансы Codex,\nгде бы вы ни были",
+        headline: "Ваши сеансы Codex / Antigravity / Claude Desktop,\nгде бы вы ни были",
         propEncrypted: "Сквозное шифрование",
         propNoPassword: "Без регистрации и VPN",
         propOpenSource: "Открытый код, лицензия MIT",
         linkTitle: "Подключиться к Mac",
         installStep: "Откройте CodeLight на Mac",
-        openStep: "Оставьте сеансы Codex запущенными",
-        openBody: "Откройте CodeLight на Mac и оставьте Codex запущенным. В CodeLight появится QR-код для подключения.",
+        openStep: "Оставьте сеансы Codex / Antigravity / Claude Desktop запущенными",
+        openBody: "Откройте CodeLight на Mac и оставьте Codex / Antigravity / Claude Desktop запущенным. В CodeLight появится QR-код для подключения.",
         scanStep: "Отсканируйте QR-код",
         scanButton: "Сканировать QR-код",
         pasteLink: "Не получается сканировать? Вставьте ссылку",
@@ -993,8 +1010,8 @@ export const ru: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "Codex на вашем телефоне",
-        subtitle: "Подключайтесь к существующим сеансам Codex на компьютере со сквозным шифрованием.",
+        title: "Codex / Antigravity / Claude Desktop на вашем телефоне",
+        subtitle: "Подключайтесь к существующим сеансам Codex / Antigravity / Claude Desktop на компьютере со сквозным шифрованием.",
         createAccount: 'Создать аккаунт',
         linkOrRestoreAccount: 'Связать или восстановить аккаунт',
         loginWithMobileApp: 'Войти через мобильное приложение',
@@ -1235,6 +1252,8 @@ export const ru: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "Скачать изображение",
+        downloadFailed: "Не удалось сохранить изображение. Повторите попытку.",
         open: 'Открыть изображение',
         close: 'Закрыть изображение',
         zoomIn: 'Увеличить',

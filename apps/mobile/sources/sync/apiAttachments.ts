@@ -19,6 +19,7 @@ import {
 import { getServerUrl, rewriteLoopbackHost } from './serverConfig';
 import { appendFormFile } from './uploadFormFile';
 import { credentialHeaders } from './peerNetwork';
+import { fetchAttachmentBlob } from './attachmentDownloadFetch';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -231,7 +232,10 @@ export async function downloadEncryptedAttachment(
     credentials: AuthCredentials,
     sessionId: string,
     ref: string,
+    options: { signal?: AbortSignal; maxBytes?: number; requireStreaming?: boolean; requireSizeGate?: boolean } = {},
 ): Promise<Uint8Array> {
+    const maxBytes = options.maxBytes ?? MAX_FILE_SIZE + 40;
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 40 || maxBytes > 64 * 1024 * 1024 + 40) throw Error('Invalid attachment read limit');
     const API_ENDPOINT = getServerUrl();
     const requestUrl = `${API_ENDPOINT}/v1/sessions/${sessionId}/attachments/request-download`;
 
@@ -243,7 +247,8 @@ export async function downloadEncryptedAttachment(
                 ...credentialHeaders(credentials,requestUrl,'POST',API_ENDPOINT),
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ ref }),
+            body: JSON.stringify({ ref, ...(options.requireSizeGate ? { maxBytes } : {}) }),
+            signal: options.signal,
         });
     } catch (err) {
         const message = errorMessageFromUnknown(err);
@@ -262,11 +267,13 @@ export async function downloadEncryptedAttachment(
             url: requestUrl,
             serverUrl: API_ENDPOINT,
             response: requestRes,
+            ...(options.requireSizeGate && requestRes.status === 413 ? { reason: 'read-limit-exceeded' } : {}),
         });
     }
     let rawDownloadUrl: string;
+    let provenMaxBytes: unknown, encryptedSize: unknown;
     try {
-        ({ downloadUrl: rawDownloadUrl } = await requestRes.json() as { downloadUrl: string });
+        ({ downloadUrl: rawDownloadUrl, maxBytes: provenMaxBytes, encryptedSize } = await requestRes.json() as { downloadUrl: string; maxBytes?: unknown; encryptedSize?: unknown });
     } catch (err) {
         const message = errorMessageFromUnknown(err);
         throw createAttachmentDiagnosticError(formatNetworkErrorMessage('request-download response parse error', message), {
@@ -277,15 +284,32 @@ export async function downloadEncryptedAttachment(
             message,
         });
     }
+    if (options.requireSizeGate) {
+        let urlCap = false;
+        try { const values = new URL(rawDownloadUrl, API_ENDPOINT).searchParams.getAll('maxBytes'); urlCap = values.length === 1 && values[0] === String(maxBytes); } catch { /* Invalid URLs have no size proof. */ }
+        const validSize = typeof encryptedSize === 'number' && Number.isSafeInteger(encryptedSize) && encryptedSize >= 40;
+        const oversized = typeof encryptedSize === 'number' && validSize && encryptedSize > maxBytes;
+        if (provenMaxBytes !== maxBytes || !validSize || oversized || !urlCap) {
+            throw createAttachmentDiagnosticError(oversized ? 'Attachment exceeds the read limit' : 'Attachment size gate unavailable', {
+                leg: 'request-download', method: 'POST', url: requestUrl, serverUrl: API_ENDPOINT,
+                reason: oversized ? 'read-limit-exceeded' : 'size-gate-unavailable',
+            });
+        }
+    }
     const downloadUrl = rewriteLoopbackHost(rawDownloadUrl);
 
     const isServerUrl = isSameServerEndpoint(downloadUrl, API_ENDPOINT);
     const headers: Record<string, string> = {};
     if (isServerUrl || credentials.peer) Object.assign(headers,credentialHeaders(credentials,downloadUrl,'GET',API_ENDPOINT));
+    const controller = new AbortController(), abort = () => controller.abort();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) controller.abort();
+    const releaseAbort = () => options.signal?.removeEventListener('abort', abort);
     let blobRes: Response;
     try {
-        blobRes = await fetch(downloadUrl, { headers, redirect: 'error' });
+        blobRes = await fetchAttachmentBlob(downloadUrl, { headers, redirect: 'error', signal: controller.signal });
     } catch (err) {
+        releaseAbort();
         const message = errorMessageFromUnknown(err);
         throw createAttachmentDiagnosticError(formatNetworkErrorMessage('Attachment download network error', message), {
             leg: 'blob-download',
@@ -296,6 +320,7 @@ export async function downloadEncryptedAttachment(
         });
     }
     if (!blobRes.ok) {
+        controller.abort(); releaseAbort();
         throw createAttachmentDiagnosticError(`Attachment download failed: ${blobRes.status} ${blobRes.statusText}`, {
             leg: 'blob-download',
             method: 'GET',
@@ -305,9 +330,41 @@ export async function downloadEncryptedAttachment(
         });
     }
     let buffer: ArrayBuffer;
+    let limitExceeded = false;
     try {
-        buffer = await blobRes.arrayBuffer();
+        const declared = Number(blobRes.headers.get('content-length'));
+        if (Number.isFinite(declared) && declared > maxBytes) {
+            limitExceeded = true; controller.abort();
+            await blobRes.body?.cancel?.().catch(() => {});
+            throw Error('Attachment exceeds the read limit');
+        }
+        const reader = blobRes.body?.getReader?.();
+        if (reader) {
+            const chunks: Uint8Array[] = []; let total = 0;
+            try {
+                while (true) {
+                    if (options.signal?.aborted) throw Error('Attachment read cancelled');
+                    const part = await reader.read(); if (part.done) break;
+                    total += part.value.length;
+                    if (total > maxBytes) { limitExceeded = true; throw Error('Attachment exceeds the read limit'); }
+                    chunks.push(part.value);
+                }
+            } catch (error) { controller.abort(); await reader.cancel().catch(() => {}); throw error; }
+            finally { reader.releaseLock?.(); }
+            const joined = new Uint8Array(total); let offset = 0;
+            for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.length; }
+            buffer = joined.buffer;
+        } else {
+            if (options.requireStreaming) {
+                controller.abort(); await blobRes.body?.cancel?.().catch(() => {});
+                throw Error('Attachment streaming unavailable');
+            }
+            buffer = await blobRes.arrayBuffer();
+            if (buffer.byteLength > maxBytes) { limitExceeded = true; throw Error('Attachment exceeds the read limit'); }
+        }
+        if (options.signal?.aborted) throw Error('Attachment read cancelled');
     } catch (err) {
+        controller.abort();
         const message = errorMessageFromUnknown(err);
         throw createAttachmentDiagnosticError(formatNetworkErrorMessage('Attachment download body read error', message), {
             leg: 'blob-download',
@@ -315,8 +372,9 @@ export async function downloadEncryptedAttachment(
             url: downloadUrl,
             serverUrl: API_ENDPOINT,
             message,
+            ...(limitExceeded ? { reason: 'read-limit-exceeded' } : {}),
         });
-    }
+    } finally { releaseAbort(); }
     return new Uint8Array(buffer);
 }
 

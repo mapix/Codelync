@@ -1,11 +1,20 @@
-# CodeLight Mac 的 Codex 发现与配对
+# CodeLight Mac 的 Desktop 发现与配对
 
-2026-10-31 当前发行只发现和控制 Codex 的原生会话。其他 harness、窗口库存和 AX 控制属于保留的延期研究，参见 [当前产品合同](codelight-product.md)。
+2026-11-16 当前范围为 Codex、Antigravity Desktop 和 Claude Desktop（Gateway）。
+三种来源仅绑定已运行的原生 owner，按各来源已确认能力开放操作；CLI/TUI
+运行器与窗口控制继续延期。高级 daemon 的 `--only` 接受三种 Desktop 的
+非空 native ID；Claude 的 `--claude-runtime` 或既有环境变量仅指向显式安装
+并核验的原生桥接 manifest，不启用独立 Claude CLI。
+
+2026-11-13 当前接入扩展到 Codex 与经原 owner/协议校验的 Antigravity 原生会话。
+Antigravity 使用 `antigravity-connect` 与稳定实例 namespace，原应用和 probe
+不可合并身份。其他 harness、窗口库存和 AX 控制仍属延期研究，参见
+[当前产品合同](codelight-product.md) 与 [远控合同](antigravity-remote-control.md)。
 
 ## 入口与数据所有者
 
 - 正常入口是 CodeLight Mac App：它启动自身的内置加密 API、Connector 和出站隧道，显示手机扫码所需的临时邀请。正常手机流程不要求服务器选择、账号注册或 VPN，详见 [一次扫码合同](codelight-one-scan.md)。
-- `node scripts/codelight-daemon.mjs` 是高级自建服务/诊断入口。它接受显式 `--server=https://your-server`、`--profile=/private/profile` 和可选 `--only=codex:native-id`；`--inspect` 只做发现检查。该入口保持与发行 App 相同的 Codex-only 范围，不启动 model runner。
+- `node scripts/codelight-daemon.mjs` 是高级自建服务/诊断入口。它接受显式 `--server=https://your-server`、`--profile=/private/profile` 和可选 `--only=codex:native-id|antigravity:native-id|claude-desktop:native-id`；`--inspect` 只做发现检查。该入口保持与发行 App 相同的 Desktop 范围，不启动 model runner。
 - Mac App 的数据库、配对身份、设备注册表、source binding、观察检查点和回执保存在独立 application-support 目录；高级 CLI profile 默认位于 `~/.codelight`。这些状态不写入原 Codex 配置。
 - 服务内部固定 loopback origin 是本地数据库和回执的身份边界；临时公网隧道地址只用于手机传输。切换服务器/账号不能把旧凭据发送到新 origin。
 - 配对初始化和运行 profile 均持独占 lease，账号 fingerprint 与服务器身份一起验证。重复启动拒绝第二个 daemon，不能覆盖现有配对或生成第二个 native writer。
@@ -13,8 +22,8 @@
 ## 发现与激活
 
 - 原 Codex 持久化索引只读提供会话标题、时间、父/子会话、项目归属、路径和置顶信息。source 身份保留 `(app, hostId, nativeId)`，工作路径只用于展示和文件定位。
-- 当前发行注册和恢复 Codex 原生 session 描述符。其他 harness 或旧 window-mode 记录不能因已存在于 profile 就重新激活；窗口 ID、截图和 AX 控件不计为 Codex 会话支持。
-- 默认 `LocalSourceDiscovery` 只读 Codex 索引，不扫描本地窗口；窗口研究只能由代码显式传入 `allowDeferredSources=true`，产品 CLI 不开放该开关。`--only` 的非 Codex 或空身份在读取 profile、配对或写入之前拒绝。
+- 当前发行注册和恢复 Codex、明确协议/实例身份的 Antigravity，以及显式安装 manifest 的 Claude Desktop 原生 session 描述符。其他 harness 或旧 window-mode 记录不能因已存在于 profile 就重新激活；窗口 ID、截图和 AX 控件不计为原生会话支持。
+- 默认 `LocalSourceDiscovery` 只读 Desktop 原生索引，不扫描本地窗口；窗口研究只能由代码显式传入 `allowDeferredSources=true`，产品 daemon 不开放该开关。`--only` 的不支持来源或空身份在读取 profile、配对或写入之前拒绝。语法通过后仍须验证真实 source、mode 与 owner，字符串本身不能证明原生身份。
 - `isCodeLightCodexSource(source,metadata?)` 是共享产品来源判断：`app='codex'`、`kind` 不是 `window`，control mode 为 `session` 或缺失。显式 window、null 或未知 mode 不能被旧记录恢复为原生会话；该判断不代替 owner/lease/native admission 校验。
 - 一个 machine-scoped socket 提供 CodeLight presence、会话选择/观察与回执 RPC，不提供新建 Agent、任意 shell 或文件写入入口。
 - source metadata 的 `bridge.controller='machine'`、`bridge.sourceKey` 与 `machineId` 引导手机通过 machine RPC 激活；原生 session ID 与加密同步记录 ID 分开。
@@ -68,6 +77,15 @@ sequenceDiagram
 ## 验证
 
 回归覆盖配对密钥和 origin 校验、同源激活单飞、重复 RPC called-once、
-unknown 恢复不重放、source lease 冲突、Codex-only 发现/恢复、原索引失败隔离
+unknown 恢复不重放、source lease 冲突、三种 Desktop 发现/恢复、原索引失败隔离
 和注册 ACK loss 保留原 DEK。项目状态、消息流和 UI 原生验收分别记录；
 fixture 不发往真实工作会话，也不运行新模型测试输入。
+# Explicit installed native desktop manifests (2026-11-15)
+
+The Mac service may read a private `native-desktops.json` under its own state
+directory. Version1 accepts only an absolute `claudeRuntimePath` referring to an
+explicitly installed original-owner bridge manifest. It is passed to the native
+Claude adapters, whose process/profile/artifact and read-only guards remain
+mandatory. This is not app/window/CLI discovery and contains no credential or
+pairing data. Missing configuration leaves Claude unconfigured; malformed
+configuration emits a fixed diagnostic and does not authorize a fallback runner.

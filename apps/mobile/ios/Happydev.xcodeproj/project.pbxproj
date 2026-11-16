@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0DEC0DEC0DEC0DE00000003 /* CodeLightCodec.mm in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */; };
+		C0DEC0DEC0DEC0DE00000005 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C0DEC0DEC0DEC0DE00000004 /* libz.tbd */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3DB9E63F75713EE5033852FB /* libPods-Happydev.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B358BC14738A7F8D5FDD1878 /* libPods-Happydev.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
@@ -17,6 +19,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CodeLightCodec.mm; sourceTree = "<group>"; };
+		C0DEC0DEC0DEC0DE00000002 /* CodeLightCodec.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CodeLightCodec.h; sourceTree = "<group>"; };
+		C0DEC0DEC0DEC0DE00000004 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.text-based-dylib-definition; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		0864D7EB14893F1638932DD0 /* Pods-Happydev.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Happydev.release.xcconfig"; path = "Target Support Files/Pods-Happydev/Pods-Happydev.release.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Happydev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Happydev.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Happydev/Images.xcassets; sourceTree = "<group>"; };
@@ -38,6 +43,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3DB9E63F75713EE5033852FB /* libPods-Happydev.a in Frameworks */,
+				C0DEC0DEC0DEC0DE00000005 /* libz.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -57,6 +63,8 @@
 		13B07FAE1A68108700A75B9A /* Happydev */ = {
 			isa = PBXGroup;
 			children = (
+				C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */,
+				C0DEC0DEC0DEC0DE00000002 /* CodeLightCodec.h */,
 				F11748412D0307B40044C1D9 /* AppDelegate.swift */,
 				F11748442D0722820044C1D9 /* Happydev-Bridging-Header.h */,
 				BB2F792B24A3F905000567C9 /* Supporting */,
@@ -71,6 +79,7 @@
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				C0DEC0DEC0DEC0DE00000004 /* libz.tbd */,
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				B358BC14738A7F8D5FDD1878 /* libPods-Happydev.a */,
 			);
@@ -384,6 +393,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0DEC0DEC0DEC0DE00000003 /* CodeLightCodec.mm in Sources */,
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				7DBBEC3AE25EC05A87759230 /* ExpoModulesProvider.swift in Sources */,
 			);
@@ -400,7 +410,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Happydev/Happydev.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "$(SRCROOT)/../../../native/codelight-simulator.entitlements";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2026111605;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -412,7 +422,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.8.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -437,7 +447,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Happydev/Happydev.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "$(SRCROOT)/../../../native/codelight-simulator.entitlements";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2026111605;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Happydev/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -445,7 +455,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.8.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -519,7 +529,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_CPLUSPLUSFLAGS = "$(inherited)";
-				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../../node_modules/.pnpm/react-native@0.83.1_@babel+core@7.28.6_@types+react@19.1.17_react@19.2.0/node_modules/react-native";
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../../node_modules/.pnpm/react-native@0.83.1_@babel+core@7.29.6_@types+react@19.1.17_react@19.2.0/node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
@@ -577,7 +587,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				OTHER_CFLAGS = "$(inherited)";
 				OTHER_CPLUSPLUSFLAGS = "$(inherited)";
-				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../../node_modules/.pnpm/react-native@0.83.1_@babel+core@7.28.6_@types+react@19.1.17_react@19.2.0/node_modules/react-native";
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../../node_modules/.pnpm/react-native@0.83.1_@babel+core@7.29.6_@types+react@19.1.17_react@19.2.0/node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;

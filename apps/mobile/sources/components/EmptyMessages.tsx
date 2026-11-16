@@ -9,6 +9,9 @@ import { t } from '@/text';
 import { RoundButton } from './RoundButton';
 import { useSessionMessages } from '@/sync/storage';
 import { sync } from '@/sync/sync';
+import { useCodeLightMessageProgress } from '@/sync/codeLightLoadingProgress';
+import { canReadFromNoninvasiveSource, isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
+import { nativeParentControl } from '@/utils/nativeParentControl';
 
 const MAX_INVISIBLE_OLDER_PAGES = 5;
 
@@ -89,7 +92,11 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 export function EmptyMessages({ session }: EmptyMessagesProps) {
-    const { hasMoreOlder, isLoadingOlder } = useSessionMessages(session.id);
+    const { hasMoreOlder, isLoadingOlder, isLoaded } = useSessionMessages(session.id);
+    const progress = useCodeLightMessageProgress(session.id);
+    const historyConfirmed = !isNoninvasiveBridge(session.metadata)
+        || isLoaded && progress.phase === 'complete' && (canReadFromNoninvasiveSource(session.metadata)
+            || session.metadata?.bridge?.sourceStatus === 'connected' && !!nativeParentControl(session));
     // SessionView unmounts this placeholder when any messages enter the store.
     // Until then, page back subject to the invisible-page budget and errors.
     const [blocked, setBlocked] = React.useState<'error' | 'limit' | null>(null);
@@ -104,7 +111,7 @@ export function EmptyMessages({ session }: EmptyMessagesProps) {
         return () => { pendingRef.current = null; };
     }, [session.id]);
     React.useEffect(() => {
-        if (!hasMoreOlder || isLoadingOlder || blocked || pendingRef.current) return;
+        if (!historyConfirmed || !hasMoreOlder || isLoadingOlder || blocked || pendingRef.current) return;
         const request = sync.loadOlderMessages(session.id);
         pendingRef.current = request;
         request.then(
@@ -121,12 +128,13 @@ export function EmptyMessages({ session }: EmptyMessagesProps) {
             },
             () => { if (pendingRef.current === request) { pendingRef.current = null; setBlocked('error'); } },
         );
-    }, [session.id, hasMoreOlder, isLoadingOlder, blocked, settled]);
+    }, [session.id, historyConfirmed, hasMoreOlder, isLoadingOlder, blocked, settled]);
     const { theme } = useUnistyles();
     const styles = stylesheet;
     const osIcon = getOSIcon(session.metadata?.os);
     const sessionStatus = useSessionStatus(session);
-    const startedTime = formatRelativeTime(session.createdAt);
+    const startedTime = Number.isFinite(session.createdAt) && session.createdAt > 0 ? formatRelativeTime(session.createdAt) : null;
+    if (!historyConfirmed) return null;
     
     return (
         <View style={styles.container}>
@@ -162,9 +170,9 @@ export function EmptyMessages({ session }: EmptyMessagesProps) {
                 <ActivityIndicator size="small" color={theme.colors.textSecondary} style={{ marginBottom: 8 }} />
             )}
             
-            <Text style={styles.createdText}>
+            {startedTime ? <Text style={styles.createdText}>
                 Created {startedTime}
-            </Text>
+            </Text> : null}
         </View>
     );
 }

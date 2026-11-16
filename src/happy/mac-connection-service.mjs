@@ -1,6 +1,7 @@
 import { EventEmitter, once } from 'node:events';
 import { createHash } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
+import { isIP } from 'node:net';
 import { isPrivateHost, peerMaterial } from '@slopus/happy-wire/codelight';
 import { BridgeError } from '../errors.mjs';
 import { ConnectionChannelsManager } from '../network/connection-channels.mjs';
@@ -8,19 +9,21 @@ import { DeviceProofVerifier } from '../network/device-proof.mjs';
 import { EntryProbes } from '../network/public-access.mjs';
 import { createPairingGateway } from './pairing-gateway.mjs';
 import { CodeLightRecentService } from './recent-data.mjs';
+import { isCodeLightNativeSource } from './source-scope.mjs';
+import { readLanListenerPorts, writeLanListenerPorts } from './lan-listener-ports.mjs';
 
 /** @typedef {Record<string,any>} Value */
 /** @typedef {'local'|'cloudflare'|'relay'} Kind */
 /** @typedef {ConstructorParameters<typeof ConnectionChannelsManager>[0]} ManagerOptions */
 /** @typedef {Record<string,{address:string,family:string|number,internal:boolean}[]|undefined>} Interfaces */
-/** @typedef {{state:string,cloudflared:string,upstream:string,account:Value,devices:import('./device-registry.mjs').DeviceRegistry,invitations:import('./pairing-gateway.mjs').PairingInvitations,daemon:import('./mac-daemon.mjs').CodeLightMacDaemon,metrics?:Pick<import('./gateway-metrics.mjs').GatewayMetrics,'request'|'trackSocket'>,notificationsAvailable?:boolean,interfaces?:()=>Interfaces,gatewayFactory?:typeof createPairingGateway,managerFactory?:(options:ManagerOptions)=>ConnectionChannelsManager}} Options */
+/** @typedef {{state:string,cloudflared:string,upstream:string,account:Value,devices:import('./device-registry.mjs').DeviceRegistry,invitations:import('./pairing-gateway.mjs').PairingInvitations,daemon:import('./mac-daemon.mjs').CodeLightMacDaemon,metrics?:Pick<import('./gateway-metrics.mjs').GatewayMetrics,'request'|'trackSocket'>,notificationsAvailable?:boolean,interfaces?:()=>Interfaces,networkWatchMs?:number,gatewayFactory?:typeof createPairingGateway,managerFactory?:(options:ManagerOptions)=>ConnectionChannelsManager}} Options */
 
 /** Only real private IPv4 interfaces become LAN listeners; the public entries have separate gateways.
  * @param {Interfaces} [interfaces] */
 export function privateLANAddresses(interfaces = networkInterfaces()) {
   const addresses = new Set();
   for (const rows of Object.values(interfaces)) for (const row of rows ?? []) {
-    if (row.internal || !['IPv4', '4'].includes(String(row.family)) || !isPrivateHost(row.address)
+    if (!row || row.internal || !['IPv4', '4'].includes(String(row.family)) || isIP(row.address) !== 4 || !isPrivateHost(row.address)
       || row.address === '127.0.0.1' || row.address === 'localhost') continue;
     addresses.add(row.address);
   }
@@ -37,6 +40,13 @@ export class MacConnectionService extends EventEmitter {
     this.gatewayClosures = /** @type {WeakMap<ReturnType<typeof createPairingGateway>,Promise<void>>} */ (new WeakMap());
     this.probes = new Map(/** @type {Kind[]} */ (['local', 'cloudflare', 'relay']).map(kind => [kind, new EntryProbes()]));
     this.started = /** @type {Promise<Value>|null} */ (null); this.lastPairing = /** @type {string|null} */ (null);
+    this.closing = /** @type {Promise<void>|null} */ (null);
+    this.lanPortWrites = Promise.resolve();
+    this.networkWatchMs = options.networkWatchMs ?? 3000;
+    if (!Number.isSafeInteger(this.networkWatchMs) || this.networkWatchMs !== 0 && this.networkWatchMs < 1000) throw Error('invalid-network-watch-interval');
+    this.networkFingerprint = '';
+    this.networkTimer = /** @type {ReturnType<typeof setInterval>|null} */ (null);
+    this.networkRefresh = /** @type {Promise<boolean>|null} */ (null);
     const managerOptions = /** @type {ManagerOptions} */ ({ state: options.state, cloudflared: options.cloudflared,
       upstreamFor: kind => { const gateway = this.publicGateways.get(kind); if (!gateway) throw Error('connection-gateway-unavailable'); return gateway.origin; },
       probesFor: kind => /** @type {EntryProbes} */ (this.probes.get(kind)), startLocal: signal => this.startLocal(signal) });
@@ -46,7 +56,7 @@ export class MacConnectionService extends EventEmitter {
     const publicKey = Buffer.from(options.invitations.pair.publicKey).toString('base64url');
     this.peerIdentity = createHash('sha256').update(peerMaterial(publicKey, options.account.secret)).digest('hex');
     this.recent = new CodeLightRecentService({ sources: () => this.sources(), resolveSource: id => this.resolveSource(id),
-      available: () => this.available() });
+      available: () => this.catalogueAvailable(), readAvailable: () => this.readAvailable(), machineId: () => this.options.daemon.machine?.id ?? null });
     this.manager.on('configuration', value => { if (!this.closed) this.emit('configuration', value); });
     this.manager.on('channels', value => { if (!this.closed) this.emit('channels', value); });
   }
@@ -63,7 +73,33 @@ export class MacConnectionService extends EventEmitter {
       } catch { if (!this.closed) this.emit('diagnostic', { code: 'connection-gateway-unavailable', kind }); }
     }));
     if (this.closed) throw Error('connection-service-cancelled');
-    return this.manager.load();
+    const configuration = await this.manager.load();
+    this.networkFingerprint = JSON.stringify(privateLANAddresses(this.options.interfaces?.()));
+    if (!this.closed && this.networkWatchMs) {
+      this.networkTimer = setInterval(() => {
+        void this.refreshNetwork().catch(() => { if (!this.closed) this.emit('diagnostic', { code: 'local-network-refresh-unavailable', kind: 'local' }); });
+      }, this.networkWatchMs);
+      this.networkTimer.unref();
+    }
+    return configuration;
+  }
+
+  /** A cheap interface scan owns local listener reconciliation. Existing peer,
+   * public tunnels and original runtime state are untouched. */
+  refreshNetwork() {
+    if (this.networkRefresh) return this.networkRefresh;
+    const refreshing = (async () => {
+      if (this.closed || !this.manager.initialized) return false;
+      const hosts = privateLANAddresses(this.options.interfaces?.()), fingerprint = JSON.stringify(hosts);
+      const changed = fingerprint !== this.networkFingerprint; this.networkFingerprint = fingerprint;
+      if (!this.manager.saved.enabledChannels.includes('local')) return false;
+      const entry = this.manager.entries.get('local');
+      const bound = this.manager.candidates().filter(row => row.kind === 'local').map(row => new URL(row.url).hostname).sort();
+      const complete = JSON.stringify(bound) === fingerprint && (!hosts.length || entry?.state === 'ready');
+      if (!changed && complete && !entry?.transport?.needsRefresh?.(hosts)) return false;
+      return this.manager.refreshLocal();
+    })().finally(() => { if (this.networkRefresh === refreshing) this.networkRefresh = null; });
+    this.networkRefresh = refreshing; return refreshing;
   }
 
   candidates() { return this.closed ? [] : this.manager.candidates(); }
@@ -83,12 +119,15 @@ export class MacConnectionService extends EventEmitter {
   }
 
   available() { const daemon = this.options.daemon; return !this.closed && !daemon.closed && daemon.ownsLease && daemon.inventoryAvailable; }
+  catalogueAvailable() { const daemon = this.options.daemon; return !this.closed && !daemon.closed && daemon.ownsLease
+    && daemon.registrationAvailable === true && typeof daemon.machine?.id === 'string' && !!daemon.machine.id; }
+  readAvailable() { const daemon = this.options.daemon; return !this.closed && !daemon.closed && daemon.ownsLease; }
   sources() { return [...this.options.daemon.sources].map(([key, entry]) => ({ ...entry, actor: this.options.daemon.actors.get(key) })); }
 
   /** @param {string} id */
   source(id) {
     const match = [...this.options.daemon.sources].find(([, entry]) => entry.binding.happySessionId === id);
-    if (!match || match[1].source.app !== 'codex' || match[1].binding.metadata?.nativeSession?.catalogueAvailable === false) throw new BridgeError('source-unavailable', 'The selected native source is unavailable.', 503);
+    if (!match || !isCodeLightNativeSource(match[1].source, match[1].binding.metadata) || match[1].binding.metadata?.nativeSession?.catalogueAvailable === false) throw new BridgeError('source-unavailable', 'The selected native source is unavailable.', 503);
     return { key: match[0], entry: match[1] };
   }
 
@@ -110,32 +149,38 @@ export class MacConnectionService extends EventEmitter {
     if (!path.startsWith('/api/peer/') || url.origin !== 'http://127.0.0.1') throw new BridgeError('invalid-peer-route', 'The peer route is invalid.', 400);
     if (url.pathname === '/api/peer/channels' && method === 'GET') return { version: 2, channels: this.candidates() };
     const params = Object.fromEntries(url.searchParams);
-    if (Object.keys(params).some(key => !['limit', 'cursor'].includes(key))) throw new BridgeError('invalid-peer-request', 'The peer query is invalid.', 400);
-    if (url.pathname === '/api/peer/catalog' && method === 'GET') return this.recent.catalog(params);
+    const catalog = url.pathname === '/api/peer/catalog' && method === 'GET';
+    if (Object.keys(params).some(key => !(catalog ? ['limit', 'cursor', 'catalogVersion', 'since'] : ['limit', 'cursor']).includes(key))) throw new BridgeError('invalid-peer-request', 'The peer query is invalid.', 400);
+    if (catalog) return this.recent.catalog(params);
     const selected = url.pathname.match(/^\/api\/peer\/sessions\/([^/]+)\/(recent|history)$/u);
     if (!selected || selected[2] === 'recent' && method !== 'POST' || selected[2] === 'history' && method !== 'GET') throw new BridgeError('unsupported-peer-route', 'The peer route is unavailable.', 404);
     const id = decodeURIComponent(selected[1]);
     if (!id || id.length > 200 || id.includes('/')) throw new BridgeError('invalid-session', 'A selected native session is required.');
-    if (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => key !== 'limit')) throw new BridgeError('invalid-peer-request', 'The recent request is invalid.');
+    if (selected[2] === 'recent' && (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => key !== 'limit'))) throw new BridgeError('invalid-peer-request', 'The recent request is invalid.');
+    if (selected[2] === 'history' && body != null && (Array.isArray(body) || typeof body !== 'object' || Object.keys(body).length > 0)) throw new BridgeError('invalid-peer-request', 'History reads use query parameters only.');
     const { key } = this.source(id);
     // resolveSource 的准备阶段结束后仍需保留 pin；否则另一手机的容量回收会在实际 readRecent 前关闭 observer。
     return this.options.daemon.useSource(key, () => selected[2] === 'recent' ? this.recent.recent(id, body) : this.recent.history(id, params));
   }
 
-  /** @param {Kind} kind @param {string} host @param {()=>string|null} origin @param {AbortSignal} signal */
-  async gateway(kind, host, origin, signal) {
+  /** @param {Kind} kind @param {string} host @param {()=>string|null} origin @param {AbortSignal} signal @param {number} [port] */
+  async gateway(kind, host, origin, signal, port = 0) {
     if (this.closed || signal.aborted) throw Error('connection-service-cancelled');
     const options = { upstream: this.options.upstream, invitations: this.options.invitations, devices: this.options.devices,
       metrics: this.options.metrics, notificationsAvailable: this.options.notificationsAvailable,
       entryProbe: (/** @type {unknown} */ challenge) => this.probes.get(kind)?.response(challenge) ?? null,
-      proof: this.proof, requireProof: kind === 'local', expectedOrigin: () => origin() ?? 'https://unavailable.invalid',
+      proof: this.proof, expectedOrigin: () => origin() ?? 'https://unavailable.invalid',
       onVerified: () => { const value = origin(); if (value) this.manager.confirm(kind, value); },
       peerApi: (/** @type {string} */ path, /** @type {string} */ method, /** @type {Value} */ body, /** @type {string} */ device) => this.peerApi(path, method, body, device),
       peerId: () => this.peerId() };
     const gateway = (this.options.gatewayFactory ?? createPairingGateway)(options); this.gateways.add(gateway);
-    gateway.on('error', () => { if (!this.closed) this.emit('diagnostic', { code: 'connection-gateway-unavailable', kind }); });
+    gateway.on('error', error => {
+      // Occupied saved ports are an expected local fallback, not a loss of the
+      // complete channel. The occupying process never becomes our gateway.
+      if (!this.closed && !(kind === 'local' && port > 0 && /** @type {NodeJS.ErrnoException} */ (error).code === 'EADDRINUSE')) this.emit('diagnostic', { code: 'connection-gateway-unavailable', kind });
+    });
     try {
-      const listening = once(gateway, 'listening', { signal }); gateway.listen(0, host); await listening;
+      const listening = once(gateway, 'listening', { signal }); gateway.listen(port, host); await listening;
       if (this.closed || signal.aborted) throw Error('connection-service-cancelled');
       return gateway;
     } catch (error) { await this.closeGateway(gateway); throw error; }
@@ -143,23 +188,81 @@ export class MacConnectionService extends EventEmitter {
 
   /** @param {AbortSignal} signal */
   async startLocal(signal) {
-    const hosts = privateLANAddresses(this.options.interfaces?.()), gateways = /** @type {ReturnType<typeof createPairingGateway>[]} */ ([]);
-    const channels = /** @type {{id:string,kind:'local',url:string,label:string}[]} */ ([]);
-    const cancel = AbortSignal.any([signal, this.cancel.signal]);
-    await Promise.allSettled(hosts.map(async host => {
-      let origin = '';
-      try {
-        const gateway = await this.gateway('local', host, () => origin, cancel), address = gateway.address();
-        if (!address || typeof address === 'string') { await this.closeGateway(gateway); throw Error('local-network-unavailable'); }
-        gateways.push(gateway); origin = `http://${host}:${address.port}`;
-        channels.push({ id: 'lan_' + createHash('sha256').update(host).digest('hex').slice(0, 16), kind: 'local', url: origin, label: 'Local network' });
-      } catch { if (!cancel.aborted) this.emit('diagnostic', { code: 'local-network-unavailable', kind: 'local' }); }
-    }));
-    if (cancel.aborted || this.closed || !channels.length) {
-      await Promise.allSettled(gateways.map(gateway => this.closeGateway(gateway))); throw Error('local-network-unavailable');
-    }
-    channels.sort((a, b) => a.id.localeCompare(b.id));
-    return { channels, close: async () => { await Promise.allSettled(gateways.map(gateway => this.closeGateway(gateway))); } };
+    /** @type {Map<string,{gateway:ReturnType<typeof createPairingGateway>,origin:string,port:number}>} */ const listeners = new Map();
+    let closed = false;
+    /** @type {Promise<Value>|null} */ let refreshFlight = null;
+    /** @type {Promise<void>|null} */ let closeFlight = null;
+    const currentChannels = () => [...listeners].filter(([, entry]) => entry.gateway.listening)
+      .map(([host, entry]) => ({ id: 'lan_' + createHash('sha256').update(host).digest('hex').slice(0, 16), kind: /** @type {'local'} */ ('local'), url: entry.origin, label: 'Local network' })).sort((a, b) => a.id.localeCompare(b.id));
+    const transport = Object.assign(new EventEmitter(), { channels: /** @type {{id:string,kind:'local',url:string,label:string}[]} */ ([]),
+      needsRefresh: (/** @type {string[]} */ hosts) => hosts.some(host => !listeners.get(host)?.gateway.listening) || [...listeners].some(([host]) => !hosts.includes(host)),
+      refresh: (/** @type {AbortSignal} */ refreshSignal) => {
+        if (refreshFlight) return refreshFlight;
+        const refreshing = (async () => {
+          const cancel = AbortSignal.any([signal, refreshSignal, this.cancel.signal]);
+          const hosts = privateLANAddresses(this.options.interfaces?.());
+          if (cancel.aborted || this.closed || closed) throw Error('local-network-unavailable');
+          // Retire only departed/dead interfaces; retained owned sockets and
+          // their exact advertised ports continue serving existing phones.
+          await Promise.allSettled([...listeners].filter(([host, entry]) => !hosts.includes(host) || !entry.gateway.listening).map(async ([host, entry]) => {
+            listeners.delete(host); await this.closeGateway(entry.gateway);
+          }));
+          await this.lanPortWrites.catch(() => {});
+          const saved = await readLanListenerPorts(this.options.state);
+          await Promise.allSettled(hosts.filter(host => !listeners.has(host)).map(async host => {
+            let origin = '';
+            try {
+              const preferred = saved.get(host) ?? 0;
+              let gateway;
+              try { gateway = await this.gateway('local', host, () => origin, cancel, preferred); }
+              catch (error) {
+                if (!preferred || cancel.aborted || this.closed || closed || /** @type {NodeJS.ErrnoException} */ (error).code !== 'EADDRINUSE') throw error;
+                gateway = await this.gateway('local', host, () => origin, cancel);
+              }
+              const address = gateway.address();
+              if (cancel.aborted || this.closed || closed || !address || typeof address === 'string') { await this.closeGateway(gateway); throw Error('local-network-unavailable'); }
+              origin = `http://${host}:${address.port}`; listeners.set(host, { gateway, origin, port: address.port });
+              const owned = gateway;
+              owned.once('close', () => {
+                if (this.closed || closed || signal.aborted || listeners.get(host)?.gateway !== owned) return;
+                listeners.delete(host); transport.channels = currentChannels(); transport.emit('channels', transport.channels);
+              });
+            } catch { if (!cancel.aborted && !this.closed && !closed) this.emit('diagnostic', { code: 'local-network-unavailable', kind: 'local' }); }
+          }));
+          if (cancel.aborted || this.closed || closed) throw Error('local-network-unavailable');
+          // A network can change again while sockets are binding. Never promote
+          // a late listener for an interface already absent from the fresh scan.
+          const currentHosts = privateLANAddresses(this.options.interfaces?.());
+          await Promise.allSettled([...listeners].filter(([host]) => !currentHosts.includes(host)).map(async ([host, entry]) => {
+            listeners.delete(host); await this.closeGateway(entry.gateway);
+          }));
+          transport.channels = currentChannels();
+          // With no interface, dormant owned-port hints can help the same host
+          // return. They never supply a bind or an advertised route by themselves.
+          if (listeners.size) {
+            const saving = this.lanPortWrites.catch(() => {}).then(async () => {
+              if (!cancel.aborted && !this.closed && !closed) await writeLanListenerPorts(this.options.state, [...listeners].map(([host, entry]) => ({ host, port: entry.port })));
+            });
+            this.lanPortWrites = saving;
+            await saving.catch(() => { if (!cancel.aborted && !this.closed && !closed) this.emit('diagnostic', { code: 'lan-listener-state-unavailable', kind: 'local' }); });
+          }
+          if (cancel.aborted || this.closed || closed) throw Error('local-network-unavailable');
+          return { channels: transport.channels };
+        })().finally(() => { if (refreshFlight === refreshing) refreshFlight = null; });
+        refreshFlight = refreshing; return refreshing;
+      },
+      close: () => {
+        if (!closeFlight) {
+          closed = true;
+          closeFlight = (async () => {
+            await refreshFlight?.catch(() => {});
+            await Promise.allSettled([...listeners.values()].map(entry => this.closeGateway(entry.gateway))); listeners.clear(); transport.channels = [];
+          })();
+        }
+        return closeFlight;
+      } });
+    try { await transport.refresh(signal); if (!transport.channels.length) throw Error('local-network-unavailable'); return transport; }
+    catch (error) { await transport.close(); throw error; }
   }
 
   /** @param {ReturnType<typeof createPairingGateway>} gateway */
@@ -170,9 +273,15 @@ export class MacConnectionService extends EventEmitter {
     this.gatewayClosures.set(gateway, closing); return closing;
   }
 
-  async close() {
-    if (this.closed) return; this.closed = true; this.cancel.abort();
-    await this.manager.close(); await Promise.allSettled([...this.gateways].map(gateway => this.closeGateway(gateway)));
-    this.publicGateways.clear(); this.proof.seen.clear();
+  close() {
+    if (this.closing) return this.closing; this.closed = true; this.cancel.abort();
+    if (this.networkTimer) clearInterval(this.networkTimer); this.networkTimer = null;
+    this.closing = (async () => {
+      await this.manager.close(); await Promise.allSettled([...this.gateways].map(gateway => this.closeGateway(gateway)));
+      await this.networkRefresh?.catch(() => {});
+      await this.lanPortWrites.catch(() => {});
+      this.publicGateways.clear(); this.proof.seen.clear();
+    })();
+    return this.closing;
   }
 }

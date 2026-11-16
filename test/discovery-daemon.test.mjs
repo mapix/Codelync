@@ -4,12 +4,14 @@ import { mkdtemp, rm, readFile, stat, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { Socket } from 'node:net';
 import nacl from 'tweetnacl';
 import { pairCodeLight } from '../src/happy/discovery-pairing.mjs';
 import { CodeLightMacDaemon } from '../src/happy/mac-daemon.mjs';
 import { createBoundSource } from '../src/happy/bound-source.mjs';
 import { sourceKey } from '../src/happy/source-registry.mjs';
 import { BridgeError } from '../src/errors.mjs';
+import { DeviceRegistry } from '../src/happy/device-registry.mjs';
 
 /** @typedef {Record<string,any>} Value */
 test('pairing uses an ephemeral public key, decrypts the approved account and preserves server identity', async () => {
@@ -64,6 +66,37 @@ test('without background notification observation, remembered quiescent history 
     await daemon.start(); await Promise.all([...daemon.activating.values()]);
     assert.equal(f.counts().created, 1); assert.equal(f.counts().opened, 0);
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('fresh HTTP foreground keeps an idle Antigravity observer across socket loss and releases it only after expiry or revocation', async () => {
+  const f = await daemonFixture();
+  const source = { app: 'antigravity', id: 'fixture-native-antigravity', hostId: 'local:antigravity:' + 'a'.repeat(64),
+    kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'fixture-owner' }, key = sourceKey(source);
+  const binding = { happySessionId: 'fixture-antigravity-projection', source, sessionKey: randomBytes(32).toString('base64'), metadata: { bridge: { source, controlMode: 'session' } } };
+  const devices = new DeviceRegistry(join(f.directory, 'devices.json'), [{ id: 'fixture-device', publicKey: 'fixture-only', revoked: false }]);
+  const socket = new Socket(); devices.connected('fixture-device', socket);
+  let retired = 0, starts = 0;
+  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, viewedSessions: () => devices.viewedSessions(),
+    discovery: { discover: async () => ({ sources: [source] }), adapter: () => ({}) },
+    registry: { ...f.options.registry, register: async () => binding },
+    sourceFactory: async () => ({ supportsDesktopNavigation: false, start: async () => { starts++; }, close: async () => {},
+      status: () => ({ sourceStatus: 'connected' }), tryCloseIfIdle: async () => { retired++; return true; } }) });
+  try {
+    await daemon.start(); await daemon.observeSource({ sourceKey: key, commandId: 'fixture-observe-http-foreground' }); await Promise.all([...daemon.starts.values()]);
+    devices.viewingPresence('fixture-device', { active: true, sessionId: binding.happySessionId, sequence: 7 });
+    daemon.lastUsed.set(key, Date.now() - 31000); socket.emit('close');
+    assert.equal(devices.list()[0].connected, false); assert.deepEqual([...devices.viewedSessions()], [binding.happySessionId]);
+    await daemon.retireUnviewed(); assert.equal(retired, 0); assert.equal(daemon.actors.has(key), true);
+    assert.equal(devices.viewingPresence('fixture-device', { active: false, sessionId: 'old-screen', sequence: 6 }), false);
+    await daemon.retireUnviewed(); assert.equal(retired, 0);
+    devices.rows[0].presence.at = Date.now() - 45001;
+    await daemon.retireUnviewed(); assert.equal(retired, 1); assert.equal(daemon.actors.has(key), false);
+    devices.viewingPresence('fixture-device', { active: true, sessionId: binding.happySessionId, sequence: 8 });
+    await daemon.observeSource({ sourceKey: key, commandId: 'fixture-observe-new-http-foreground' }); await Promise.all([...daemon.starts.values()]);
+    daemon.lastUsed.set(key, Date.now() - 31000); await devices.revoke('fixture-device');
+    await daemon.retireUnviewed(); assert.equal(retired, 2); assert.equal(daemon.actors.has(key), false);
+    assert.equal(starts, 2); assert.equal(daemon.status().modelRunnersStarted, 0);
+  } finally { socket.destroy(); await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
 });
 
 test('discovery stays lazy, repeated machine RPC dispatches one original open and unknown receipt never replays', async () => {
@@ -157,6 +190,84 @@ test('failed inventory preserves sources; a complete empty inventory marks only 
     result = { sources: [], errors: [] }; await daemon.scan();
     assert.equal(daemon.sources.size, 0); assert.equal(unavailable, 1); assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('three-app completeness and cold reconciliation respect configured native application authority', async () => {
+  const f = await daemonFixture();
+  const claude = { app: 'claude-desktop', kind: 'session', id: 'native', hostId: 'local:claude-desktop:' + 'a'.repeat(64), protocol: 'claude-desktop-native',
+    runtimeGeneration: 'owner', appMode: 'code', nativeCollection: 'claude-code-sessions' };
+  const savedClaude = { happySessionId: 'cached-claude', machineId: 'fixture-machine', source: claude, metadata: { nativeSession: { catalogueAvailable: true } } };
+  let result = /** @type {{sources:Value[],errors:string[],inventoryApps:string[]}} */ ({ sources: [f.source], errors: [], inventoryApps: [] });
+  const removed = /** @type {string[]} */ ([]);
+  const daemon = new CodeLightMacDaemon({ ...f.options, discovery: { ...f.options.discovery, discover: async () => result },
+    registry: { ...f.options.registry, savedBindings: async () => [savedClaude], markUnavailable: async (/** @type {Value} */ binding) => { removed.push(binding.source.app); } } });
+  try {
+    await daemon.start(); assert.equal(daemon.inventoryAvailable, true); assert.equal(daemon.registrationAvailable, true); assert.deepEqual(removed, []);
+    result = { sources: [], errors: ['claude-desktop-index-unavailable'], inventoryApps: [] }; await daemon.scan();
+    assert.equal(daemon.inventoryAvailable, false); assert.equal(daemon.inventoryApps.has('claude-desktop'), false);
+    assert.equal(daemon.sources.has(sourceKey(claude)), true); assert.equal(savedClaude.metadata.nativeSession.catalogueAvailable, true);
+    assert.equal(removed.filter(app => app === 'claude-desktop').length, 0); assert.equal(daemon.registrationAvailable, true);
+    result = { sources: [], errors: [], inventoryApps: ['claude-desktop'] }; await daemon.scan();
+    assert.equal(daemon.inventoryAvailable, true); assert.equal(daemon.inventoryApps.size, 3);
+    assert.equal(removed.filter(app => app === 'claude-desktop').length, 1);
+    await daemon.scan(); assert.equal(removed.filter(app => app === 'claude-desktop').length, 1);
+  } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('registered descriptors load before native discovery without observers or runtime-state authority', async () => {
+  const f = await daemonFixture();
+  const child = { app: 'antigravity', id: 'native-child', hostId: 'local:antigravity:' + 'b'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'fixture-owner' };
+  const metadata = { path: '/fixture/child', nativeSession: { title: 'Child reader', updatedAt: 12345, parentId: 'native-parent', agentName: 'Auditor', isSubagent: true,
+    projectKey: 'fixture-project', projectPath: '/fixture', projectLabel: 'Fixture', catalogueAvailable: true } };
+  const binding = { happySessionId: 'registered-child', source: child, machineId: 'fixture-machine', metadata };
+  const saved = [binding,
+    { ...binding, source: { ...child, id: 'foreign-machine' }, machineId: 'other-machine' },
+    { ...binding, source: { ...child, id: 'archived' }, metadata: { nativeSession: { archived: true } } },
+    { ...binding, source: { ...child, id: 'unavailable' }, metadata: { nativeSession: { catalogueAvailable: false } } },
+    { ...binding, source: { app: 'zcode', hostId: 'local', id: 'deferred-window', kind: 'window' } },
+    { ...binding, source: { ...child, id: 'filtered' } }];
+  let finish = (/** @type {Value[]} */ _bindings) => {}, entered = () => {}, discoveryCalls = 0;
+  const loaded = new Promise(/** @param {(value:Value[])=>void} resolve */ resolve => { finish = resolve; });
+  const loading = new Promise(resolve => { entered = () => resolve(undefined); });
+  const daemon = new CodeLightMacDaemon({ ...f.options, only: source => source.id !== 'filtered',
+    registry: { ...f.options.registry, savedBindings: async () => { entered(); return loaded; } },
+    discovery: { ...f.options.discovery, discover: async () => { discoveryCalls++; assert.equal(daemon.registrationAvailable, true);
+      return { sources: [], errors: ['codex-index-unavailable', 'antigravity-index-unavailable', 'claude-desktop-index-unavailable'] }; } } });
+  const starting = daemon.start();
+  try {
+    await loading; assert.equal(daemon.registrationAvailable, false); assert.equal(daemon.sources.size, 0); assert.equal(discoveryCalls, 0);
+    finish(saved); await starting;
+    assert.equal(daemon.registrationAvailable, true); assert.equal(daemon.inventoryAvailable, false); assert.equal(daemon.sources.size, 1);
+    assert.deepEqual(daemon.sources.get(sourceKey(child)), { binding, source: { ...child, title: 'Child reader', updatedAt: 12345, workspace: '/fixture/child',
+      parentId: 'native-parent', agentName: 'Auditor', isSubagent: true, project: { key: 'fixture-project', path: '/fixture', label: 'Fixture' } } });
+    assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
+    assert.equal(daemon.activityInventoryAvailable, false); assert.equal(daemon.actors.size, 0);
+  } finally { finish(saved); await starting.catch(() => {}); await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('missing registration loading leaves catalog authority unavailable even after healthy discovery', async () => {
+  const f = await daemonFixture(), daemon = new CodeLightMacDaemon(f.options);
+  try {
+    await daemon.start(); assert.equal(daemon.registrationAvailable, false); assert.equal(daemon.inventoryAvailable, true);
+    assert.equal(daemon.sources.size, 1); assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
+  } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('invalid registration results and lease loss during loading cannot publish a source map', async t => {
+  for (const failure of ['invalid-map', 'lost-lease']) await t.test(failure, async () => {
+    const f = await daemonFixture(); let finish = () => {}, entered = () => {};
+    const loading = new Promise(resolve => { entered = () => resolve(undefined); });
+    const saved = new Promise(resolve => { finish = () => resolve(failure === 'invalid-map' ? null : [{ source: f.source, machineId: 'fixture-machine' }]); });
+    const daemon = new CodeLightMacDaemon({ ...f.options, registry: { ...f.options.registry, savedBindings: async () => { entered(); return saved; } } });
+    const starting = daemon.start();
+    try {
+      await loading; assert.equal(daemon.registrationAvailable, false);
+      if (failure === 'lost-lease') daemon.ownsLease = false;
+      finish(); await assert.rejects(starting, { code: 'source-unavailable' });
+      assert.equal(daemon.registrationAvailable, false); assert.equal(daemon.sources.size, 0); assert.equal(daemon.closed, true);
+      assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
+    } finally { finish(); await starting.catch(() => {}); await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+  });
 });
 
 test('restored foreign harness and explicit Codex window bindings cannot start current product observers', async () => {

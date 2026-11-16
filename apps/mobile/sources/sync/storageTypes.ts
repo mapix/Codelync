@@ -1,8 +1,14 @@
 import { z } from "zod";
+import { NativeInputSchema } from '@/utils/nativeParentControl';
+import { NativeSavedHistorySchema } from '@/utils/nativeSavedHistory';
+import { NativeQuerySchema } from '@/utils/nativeQuery';
+import { NativeTaskSignalSchema, NativeTasksSchema } from './nativeTasks';
+import { NativeObservedModelSchema } from '@/utils/nativeObservedModel';
 import { NoninvasiveBridgeSchema } from './noninvasiveBridge';
 import { RigBotSchema } from '@slopus/happy-wire';
 import type { SessionAvatarDescriptor } from './sessionAvatarTypes';
 import type { ProjectAvatar } from './projectTypes';
+import { NativeSubagentSchema, NativeAggregateActivitySchema } from './nativeSubagents';
 
 //
 // Agent states
@@ -23,11 +29,27 @@ export const RigComposerDraftSchema = RigComposerModeSchema.extend({
 export type RigComposerMode = z.infer<typeof RigComposerModeSchema>;
 export type RigComposerDraft = z.infer<typeof RigComposerDraftSchema>;
 
+const nativeControlIdentity = z.string().min(1).max(512).refine(value => !!value.trim() && !/[\x00-\x1f\x7f]/.test(value));
+export const NativeModelControlScopeSchema = z.object({
+    app: z.literal('claude-desktop'), appMode: z.enum(['code', 'chat']),
+    nativeCollection: z.enum(['claude-code-sessions', 'local-agent-mode-sessions']),
+    nativeConversationId: nativeControlIdentity, hostId: nativeControlIdentity.max(256),
+    ownerGeneration: nativeControlIdentity.max(2048), runtimeGeneration: nativeControlIdentity.max(2048),
+    queryToken: nativeControlIdentity, cliSessionId: nativeControlIdentity, settingsToken: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+export type NativeModelControlScope = z.infer<typeof NativeModelControlScopeSchema>;
+
 export const MetadataSchema = z.object({
-    nativeControls: z.object({ model: z.object({ available: z.boolean(), current: z.object({ model: z.string(), reasoningEffort: z.string().nullable(), modelProvider: z.string().nullable().optional() }).nullable(),
-        models: z.array(z.object({ id: z.string(), label: z.string(), reasoningEfforts: z.array(z.string()), defaultReasoningEffort: z.string().nullable().optional() })), catalogSource: z.string().optional(), reason: z.string().optional() }) }).optional(),
+    nativeDesktopRuntimeGeneration: nativeControlIdentity.max(2048).optional().catch(undefined),
+    nativeObservedModel: NativeObservedModelSchema.nullable().optional().catch(undefined),
+    nativeSavedHistory: NativeSavedHistorySchema.nullable().optional(),
+    nativeControls: z.object({ scope: NativeModelControlScopeSchema.optional().catch(undefined), model: z.object({ available: z.boolean(), current: z.object({ model: z.string(), reasoningEffort: z.string().nullable(), modelProvider: z.string().nullable().optional() }).nullable(),
+        models: z.array(z.object({ id: z.string(), label: z.string(), nativeResolvedModel: z.string().optional(), reasoningEfforts: z.array(z.string()), defaultReasoningEffort: z.string().nullable().optional(), canUnsetReasoningEffort: z.boolean().optional() })), catalogAvailable: z.boolean().optional(), catalogComplete: z.boolean().optional(), currentConfirmed: z.boolean().optional(), complete: z.boolean().optional(), catalogSource: z.string().optional(), reason: z.string().optional(),
+        selectionMode: z.enum(['original-owner', 'next-message']).optional(), selectionState: z.enum(['native', 'staged']).optional(), observedCurrent: z.object({ model: z.string(), reasoningEffort: z.string().nullable(), modelProvider: z.string().nullable().optional() }).nullable().optional() }),
+        compatibility: z.object({ app: z.string(), appVersion: z.string().nullable(), protocol: z.string(), protocolVersion: z.union([z.string(), z.number()]), supported: z.boolean() }).optional(),
+        commands: z.object({ available: z.boolean(), source: z.string(), complete: z.boolean().optional(), skillsAvailable: z.boolean().optional(), reason: z.string().optional(), items: z.array(z.object({ name: z.string(), description: z.string().optional(), type: z.enum(['skill', 'system']).optional(), execution: z.enum(['native-action', 'native-item', 'model-picker', 'unsupported']).optional(), requiresIdle: z.boolean().optional() })) }).optional() }).optional(),
     nativeSession: z.object({ title: z.string(), updatedAt: z.number(), parentId: z.string().nullable(), agentName: z.string(), preview: z.string(), isPinned: z.boolean(),
-        projectKey: z.string().optional(), projectPath: z.string().optional(), projectLabel: z.string().optional(), catalogueAvailable: z.boolean().optional() }).optional(),
+        projectKey: z.string().optional(), projectPath: z.string().optional(), projectLabel: z.string().optional(), catalogueAvailable: z.boolean().optional(), archived: z.boolean().optional(), isSubagent: z.boolean().optional() }).optional(),
     bridge: NoninvasiveBridgeSchema.optional(),
     bot: RigBotSchema.optional(),
     models: z.array(z.object({
@@ -130,6 +152,13 @@ export const MetadataSchema = z.object({
         rpcMethods: z.array(z.string()),
         shell: z.boolean(),
         steering: z.boolean(),
+        send: z.boolean().optional(),
+        readOnly: z.boolean().optional(),
+        nativeTaskControls: z.object({
+            version: z.literal(1),
+            outputTaskTypes: z.array(z.string().min(1).max(128)).max(8),
+            stopTaskTypes: z.array(z.string().min(1).max(128)).max(8),
+        }).optional().catch(undefined),
     }).passthrough().optional(),
     activity: z.object({
         subagents: z.object({
@@ -372,6 +401,17 @@ export type AgentQuestionAnswer = z.infer<typeof AgentQuestionAnswerSchema>;
 export type CompletedAgentCommunication = z.infer<typeof CompletedAgentCommunicationSchema>;
 
 export const AgentStateSchema = z.object({
+    nativeTasks: NativeTasksSchema.optional().catch(undefined),
+    nativeTaskSignal: NativeTaskSignalSchema.optional().catch(undefined),
+    nativeQuery: NativeQuerySchema.optional().catch(undefined),
+    nativeDesktopRuntimeGeneration: nativeControlIdentity.max(2048).optional().catch(undefined),
+    nativeInput: NativeInputSchema.optional().catch(undefined),
+    aggregateActivity: NativeAggregateActivitySchema.optional().catch(undefined),
+    subagents: z.array(NativeSubagentSchema).max(256).optional().catch(undefined),
+    subagentsAvailable: z.boolean().optional().catch(undefined),
+    subagentsComplete: z.boolean().optional().catch(undefined),
+    subagentsTruncated: z.boolean().optional().catch(undefined),
+    subagentsTotal: z.number().int().nonnegative().max(20000).nullable().optional().catch(null),
     windowObservation: z.object({
         imageRef: z.string().nullable().optional(),
         controls: z.array(z.object({ nodeId: z.string(), role: z.string().optional(), enabled: z.boolean().optional(), text: z.record(z.string(), z.string()).optional() }).passthrough()).default([]),
@@ -465,6 +505,8 @@ export interface Session {
     projectId?: string | null,
     metadata: Metadata | null,
     metadataVersion: number,
+    /** Device-local catalog authority; never uploaded as owner/session metadata. */
+    nativeDirectory?: { identity: string; header: NonNullable<Metadata['nativeSession']> },
     agentState: AgentState | null,
     agentStateVersion: number,
     thinking: boolean,

@@ -3,7 +3,8 @@ import { readFile, mkdir, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { writeDurablePrivateJson as writePrivateJson } from './discovery-persistence.mjs';
 import { deriveContentKeyPair, encryptRecord, sealDataKey, unsealDataKey, decryptRecord } from './session-transport.mjs';
-import { isCodeLightCodexSource } from './source-scope.mjs';
+import { isCodeLightNativeSource } from './source-scope.mjs';
+import { sourceArchived } from './source-catalog-scope.mjs';
 
 /** @typedef {Record<string,any>} Value */
 export const SOURCE_APPS = Object.freeze(['codex', 'zcode', 'claude-desktop', 'cursor', 'antigravity', 'windsurf', 'vscode', 'zed', 'trae', 'terminal', 'iterm', 'warp']);
@@ -25,7 +26,7 @@ export class SourceRegistry {
   }
   /** @param {Value} source @param {unknown} [metadata] */
   assertScope(source, metadata) {
-    if (!this.allowDeferredSources && !isCodeLightCodexSource(source, metadata)) throw Object.assign(Error('Only native Codex session sources are supported.'), { code: 'unsupported-source' });
+    if (!this.allowDeferredSources && !isCodeLightNativeSource(source, metadata)) throw Object.assign(Error('Only supported native desktop session sources are supported.'), { code: 'unsupported-source' });
   }
   fingerprint() { const key = Buffer.from(this.account.secret ?? '', 'base64url'); if (key.length !== 32) throw Error('The CodeLight account key is invalid.'); return createHash('sha256').update(key).digest('hex'); }
   /** Read-only cold-start candidates; the caller confirms current machine ownership.
@@ -47,9 +48,9 @@ export class SourceRegistry {
             typeof saved.machineId !== 'string' || !saved.machineId ||
             typeof saved.sessionKey !== 'string' || Buffer.from(saved.sessionKey, 'base64').length !== 32 ||
             (saved.metadataVersion !== undefined && (!Number.isSafeInteger(saved.metadataVersion) || saved.metadataVersion < 0)) ||
-            !isCodeLightCodexSource(saved.source, saved.metadata) || sourceKey(saved.source) !== key) return null;
+            !isCodeLightNativeSource(saved.source, saved.metadata) || sourceKey(saved.source) !== key) return null;
           const metadata = this.checkedMetadata(saved, saved.metadata);
-          if (!isCodeLightCodexSource(metadata.bridge.source, metadata) || sourceKey(metadata.bridge.source) !== key ||
+          if (!isCodeLightNativeSource(metadata.bridge.source, metadata) || sourceKey(metadata.bridge.source) !== key ||
             (metadata.bridge.sourceKey !== undefined && metadata.bridge.sourceKey !== key)) return null;
           return { ...saved, bindingPath };
         } catch { return null; }
@@ -72,7 +73,7 @@ export class SourceRegistry {
     const accountFingerprint = this.fingerprint(); if (saved.accountFingerprint && saved.accountFingerprint !== accountFingerprint) throw Error('This machine profile belongs to another CodeLight account.');
     const metadata = { host: 'CodeLight Mac', platform: process.platform, arch: process.arch, happyCliVersion: 'codelight/0.2.0',
       happyHomeDir: this.directory, homeDir: this.directory, machineKind: 'noninvasive-bridge', displayName: 'CodeLight Mac',
-      codeLight: { codexOnly: true, projectActivityVersion: 1 },
+      codeLight: { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 },
       cliAvailability: { codex: false, claude: false, gemini: false, openclaw: false, rig: false, detectedAt: Date.now() } };
     // Stable machine identity is durable before the first network attempt.
     await writePrivateJson(path, { ...saved, accountFingerprint, metadata });
@@ -83,6 +84,7 @@ export class SourceRegistry {
   /** @param {Value} source @param {string} machineId @returns {Promise<Value>} */
   register(source, machineId) {
     this.assertScope(source, source.metadata);
+    if (sourceArchived(source, source.metadata)) throw Object.assign(Error('Archived native sources are not part of the default directory.'), { code: 'source-archived' });
     const key = sourceKey(source);
     if (this.flights.has(key)) return /** @type {Promise<Value>} */ (this.flights.get(key));
     const flight = this.registerSource(source, machineId).finally(() => this.flights.delete(key)); this.flights.set(key, flight); return flight;
@@ -101,11 +103,13 @@ export class SourceRegistry {
     }
     const tag = `codelight:${machineId}:${sourceKey(source)}`;
     const metadata = saved?.metadata ?? { path: source.workspace ?? '', host: 'CodeLight Mac', flavor: source.app, machineId,
-      summary: { text: source.title || source.app, updatedAt: source.updatedAt ?? Date.now() }, nativeSession: { title: source.title || source.app, updatedAt: source.updatedAt ?? Date.now(), parentId: source.parentId ?? null, agentName: source.agentName ?? '', preview: source.preview ?? '', isPinned: source.isPinned ?? false, catalogueAvailable: true, ...projectMetadata(source) }, client: { id: 'noninvasive-bridge', name: 'CodeLight', version: '0.2.0' },
+      summary: { text: source.title || source.app, updatedAt: source.updatedAt ?? Date.now() }, nativeSession: { title: source.title || source.app, updatedAt: source.updatedAt ?? Date.now(), parentId: source.parentId ?? null, agentName: source.agentName ?? '', isSubagent: source.isSubagent === true, preview: source.preview ?? '', isPinned: source.isPinned ?? false, archived: false, catalogueAvailable: true, ...projectMetadata(source) }, client: { id: 'noninvasive-bridge', name: 'CodeLight', version: '0.2.0' },
       capabilities: { abort: false, attachments: { enabled: false, maxBytes: 0, mediaTypes: [] }, files: { browse: false, read: false, search: false, write: false }, messageReceipts: true,
         modelSelection: false, reasoningSelection: false, permissionModeSelection: false, resume: false, rpcMethods: [], shell: false, steering: false },
-      bridge: { version: 1, source: { app: source.app, id: source.id, hostId: source.hostId, runtimeGeneration: source.runtimeGeneration ?? null, windowGeneration: source.windowGeneration ?? null },
-        currentTurnId: null, controlMode: source.kind === 'window' || source.app !== 'codex' ? 'window' : 'session', sourceStatus: 'owner-unavailable',
+      bridge: { version: 1, source: { app: source.app, id: source.id, hostId: source.hostId, ...(source.kind ? { kind: source.kind } : {}), runtimeGeneration: source.runtimeGeneration ?? null, windowGeneration: source.windowGeneration ?? null, ...(source.protocol ? { protocol: source.protocol } : {}),
+        ...(source.app === 'claude-desktop' ? { appMode: source.appMode, nativeCollection: source.nativeCollection,
+          ...(typeof source.appVersion === 'string' && source.appVersion.length <= 64 ? { appVersion: source.appVersion } : {}) } : {}) },
+        currentTurnId: null, controlMode: source.kind === 'window' || !isCodeLightNativeSource(source, source.metadata) ? 'window' : 'session', sourceStatus: 'owner-unavailable',
         controller: 'machine', sourceKey: sourceKey(source) } };
     const pending = saved ?? { version: 1, tag, serverUrl: this.account.serverUrl, machineId, source: metadata.bridge.source, metadata, sessionKey: randomBytes(32).toString('base64') };
     this.assertScope(pending.source, metadata);
@@ -132,15 +136,39 @@ export class SourceRegistry {
     return this.queueMetadata(binding, socket, metadata => {
       const nativeSession = { ...metadata.nativeSession, title: source.title || source.app, updatedAt: source.updatedAt ?? 0,
         parentId: source.parentId ?? null, agentName: source.agentName ?? '', preview: source.preview ?? '', isPinned: source.isPinned ?? false,
-        catalogueAvailable: true, ...projectMetadata(source) };
+        isSubagent: source.isSubagent === true,
+        archived: sourceArchived(source, source.metadata), catalogueAvailable: !sourceArchived(source, source.metadata), ...projectMetadata(source) };
       if (!source.project) for (const field of ['projectKey', 'projectPath', 'projectLabel']) delete nativeSession[field];
-      return { ...metadata, path: source.workspace ?? '', summary: { ...metadata.summary, text: nativeSession.title, updatedAt: nativeSession.updatedAt }, nativeSession };
+      const nativeSource = { ...metadata.bridge.source, ...(source.kind ? { kind: source.kind } : {}), ...(source.protocol ? { protocol: source.protocol } : {}),
+        ...(source.app === 'claude-desktop' ? { appMode: source.appMode, nativeCollection: source.nativeCollection,
+          ...(typeof source.appVersion === 'string' && source.appVersion.length <= 64 ? { appVersion: source.appVersion } : {}) } : {}),
+        archived: sourceArchived(source, source.metadata), ...(source.runtimeGeneration ? { runtimeGeneration: source.runtimeGeneration } : {}) };
+      return { ...metadata, bridge: { ...metadata.bridge, source: nativeSource }, path: source.workspace ?? '', summary: { ...metadata.summary, text: nativeSession.title, updatedAt: nativeSession.updatedAt }, nativeSession };
     });
   }
   /** Confirmed index absence hides the catalog entry while retaining its owner/history evidence.
    * @param {Value} binding @param {import('socket.io-client').Socket} socket @returns {Promise<void>} */
   markUnavailable(binding, socket) {
     return this.queueMetadata(binding, socket, metadata => ({ ...metadata, nativeSession: { ...metadata.nativeSession, catalogueAvailable: false } }));
+  }
+  /** Explicit archive evidence hides an existing mirror without deleting its
+   * keys/history or journal. @param {Value} binding @param {import('socket.io-client').Socket} socket @param {Value} [source] */
+  markArchived(binding, socket, source) {
+    if (source) return this.refreshMetadata(binding, { ...source, archived: true }, socket);
+    return this.queueMetadata(binding, socket, metadata => ({ ...metadata,
+      bridge: { ...metadata.bridge, source: { ...metadata.bridge.source, archived: true } },
+      nativeSession: { ...metadata.nativeSession, archived: true, catalogueAvailable: false } }));
+  }
+  /** Reads a previously registered binding only; never registers a hidden ID.
+   * @param {Value} source @param {string} machineId @returns {Promise<Value|null>} */
+  async existingBinding(source, machineId) {
+    const key = sourceKey(source), path = join(this.directory, `${key}.json`);
+    try {
+      const saved = /** @type {Value} */ (JSON.parse(await readFile(path, 'utf8')));
+      if (!saved.happySessionId || saved.machineId !== machineId || saved.serverUrl !== this.account.serverUrl ||
+          saved.accountFingerprint !== this.fingerprint() || sourceKey(saved.source) !== key) return null;
+      this.assertScope(saved.source, saved.metadata); return { ...saved, bindingPath: path };
+    } catch { return null; }
   }
   /** @param {Value} binding @param {import('socket.io-client').Socket} socket @param {(metadata:Value)=>Value} update @returns {Promise<void>} */
   queueMetadata(binding, socket, update) {
@@ -164,8 +192,8 @@ export class SourceRegistry {
   /** @param {Value} binding @param {Value} metadata @param {number} version */
   async saveMetadata(binding, metadata, version) {
     // 服务端 ACK 后仍可能持久化失败；先保存再推进内存，重试可从 CAS 冲突恢复最新证据。
-    await writePrivateJson(binding.bindingPath, { ...binding, metadata, metadataVersion: version });
-    binding.metadata = metadata; binding.metadataVersion = version;
+    await writePrivateJson(binding.bindingPath, { ...binding, source: metadata.bridge.source, metadata, metadataVersion: version });
+    binding.source = metadata.bridge.source; binding.metadata = metadata; binding.metadataVersion = version;
   }
   /** @param {Value} binding @param {import('socket.io-client').Socket} socket @param {(metadata:Value)=>Value} update */
   async updateMetadata(binding, socket, update) {

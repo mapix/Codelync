@@ -7,6 +7,8 @@ import * as Notifications from 'expo-notifications';
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AuthCredentials, TokenStorage } from '@/auth/tokenStorage';
+import { retainedConnectionBootstrap } from '@/auth/retainedConnectionBootstrap';
+import { NativeStoredConnectionUnavailable } from '@/components/NativeStoredConnectionUnavailable';
 import { AuthProvider } from '@/auth/AuthContext';
 import { CodeLightPairingProvider } from '@/auth/CodeLightPairingProvider';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
@@ -280,13 +282,17 @@ export default function RootLayout() {
     // Init sequence
     //
     const [initState, setInitState] = React.useState<{ credentials: AuthCredentials | null } | null>(null);
-    React.useEffect(() => {
-        (async () => {
+    const [storageUnavailable, setStorageUnavailable] = React.useState(false);
+    const [initBusy, setInitBusy] = React.useState(true);
+    const initialize = React.useMemo(() => retainedConnectionBootstrap(async () => {
+            setInitBusy(true);
             try {
                 await loadFonts();
                 await sodium.ready;
 
-                let credentials = await TokenStorage.getCredentials();
+                const stored = await TokenStorage.readCredentials();
+                if (stored.status === 'unavailable') { setStorageUnavailable(true); return; }
+                let credentials = stored.credentials;
                 const devCredentials = getDevWebQueryCredentials() ?? getDevEnvironmentCredentials();
 
                 if (hasHarnessDevCredentials() && !isHarnessDevStartup()) {
@@ -324,17 +330,19 @@ export default function RootLayout() {
                 setInitState({ credentials });
             } catch (error) {
                 console.error('Error initializing:', error);
+            } finally {
+                setInitBusy(false);
             }
-        })();
-    }, []);
+        }), []);
+    React.useEffect(() => { void initialize(); }, [initialize]);
 
     React.useEffect(() => {
-        if (initState) {
+        if (initState || storageUnavailable) {
             setTimeout(() => {
                 SplashScreen.hideAsync();
             }, 100);
         }
-    }, [initState]);
+    }, [initState, storageUnavailable]);
 
     const handledNotificationIds = React.useRef<Set<string>>(new Set());
     const handleNotificationResponse = React.useCallback(async (response: Notifications.NotificationResponse | null) => {
@@ -443,6 +451,7 @@ export default function RootLayout() {
     //
 
     if (!initState) {
+        if (storageUnavailable) return <SafeAreaProvider initialMetrics={initialWindowMetrics}><NativeStoredConnectionUnavailable busy={initBusy} onRetry={() => { void initialize(); }} /></SafeAreaProvider>;
         return null;
     }
 

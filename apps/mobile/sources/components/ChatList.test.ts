@@ -9,10 +9,12 @@ const state = vi.hoisted(() => ({
     messages: [] as any[],
     hasMoreOlder: false,
     isLoadingOlder: false,
+    isLoaded: true,
     session: null as any,
     platform: 'ios',
     native: false,
     scrollNode: null as any,
+    scrollToOffset: vi.fn(),
 }));
 vi.hoisted(() => {
     vi.stubGlobal('__DEV__', false);
@@ -20,6 +22,8 @@ vi.hoisted(() => {
 });
 
 vi.mock('@/config', () => ({ config: { get noninvasiveLocal() { return state.native; } } }));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { peerIdentity: () => 'peer:synthetic', onStatusChange: () => () => {} } }));
+vi.mock('@/sync/serverConfig', () => ({ getServerUrl: () => 'https://synthetic.invalid' }));
 vi.mock('react-native', async () => {
     const ReactModule = await import('react');
     const host = (name: string) => (props: any) => ReactModule.createElement(name, props, props.children);
@@ -52,7 +56,7 @@ vi.mock('@shopify/flash-list', async () => {
             const node = state.scrollNode;
             ReactModule.useImperativeHandle(props.ref, () => ({
                 getScrollableNode: () => node,
-                scrollToOffset: vi.fn(),
+                scrollToOffset: state.scrollToOffset,
             }), [node]);
             return ReactModule.createElement(
             'FlashList',
@@ -97,7 +101,7 @@ vi.mock('@expo/vector-icons', async () => {
 });
 vi.mock('@/sync/storage', () => ({
     useSession: () => state.session,
-    useSessionMessages: () => ({ messages: state.messages, hasMoreOlder: state.hasMoreOlder, isLoadingOlder: state.isLoadingOlder }),
+    useSessionMessages: () => ({ messages: state.messages, hasMoreOlder: state.hasMoreOlder, isLoadingOlder: state.isLoadingOlder, isLoaded: state.isLoaded }),
     useSetting: () => true,
 }));
 vi.mock('@/sync/storageTypes', () => ({}));
@@ -105,7 +109,7 @@ vi.mock('@/sync/typesMessage', () => ({}));
 vi.mock('@/components/tools/knownTools', () => ({ knownTools: {} }));
 vi.mock('@/utils/toolDisplay', () => ({ isInteractiveQuestionToolName: () => false }));
 vi.mock('@/sync/sync', () => ({ sync: { loadOlderMessages: vi.fn() } }));
-vi.mock('@/text', () => ({ t: (key: string) => key }));
+vi.mock('@/text', () => ({ t: (key: string) => key, getCurrentLanguage: () => 'en' }));
 vi.mock('@/modal', () => ({ Modal: { alert: vi.fn() } }));
 vi.mock('@/utils/sessionUtils', () => ({ useSessionStatus: () => ({}), formatPathRelativeToHome: (path: string) => path }));
 vi.mock('./RoundButton', async () => {
@@ -130,6 +134,10 @@ vi.mock('./AgentWorkGroupHeader', async () => {
         AgentWorkGroupHeader: (props: any) => ReactModule.createElement('AgentWorkGroupHeader', props),
     };
 });
+vi.mock('./ToolsGroupHeader', async () => {
+    const ReactModule = await import('react');
+    return { ToolsGroupHeader: (props: any) => ReactModule.createElement('ToolsGroupHeader', props) };
+});
 vi.mock('./ChatFooter', async () => {
     const ReactModule = await import('react');
     return { ChatFooter: (props: any) => ReactModule.createElement('ChatFooter', props) };
@@ -139,6 +147,8 @@ import { ChatList } from './ChatList';
 import { sync } from '@/sync/sync';
 import { Modal } from '@/modal';
 import { EmptyMessages } from './EmptyMessages';
+import { codeLightLoadingProgress } from '@/sync/codeLightLoadingProgress';
+import { requestCodeLightLatestViewport } from '@/utils/codeLightSubagentActivityIntent';
 
 const renderers: ReturnType<typeof create>[] = [];
 
@@ -223,17 +233,112 @@ afterEach(() => {
     vi.mocked(Modal.alert).mockClear();
 });
 
-it('pins the 120-row phone window without expanding again on the anchor commit or live updates', () => {
+describe('native adjacent tool groups', () => {
+    it('keeps the final text independent and Latest returns to it without losing retained tool IDs', () => {
+        state.native = true; state.session = { id: 'tools-final-latest', metadata: {}, thinking: false };
+        state.messages = [agentMessage('original-final-text', 4), toolMessage('tool-two', 2), toolMessage('tool-one', 1)];
+        const renderer = renderChat(undefined);
+        expect(messageIds(renderer)).toEqual(['original-final-text']);
+        act(() => {
+            const list = renderer.root.findByType('FlashList'); list.props.onScrollBeginDrag();
+            list.props.onScroll({ nativeEvent: { contentOffset: { y: 60 }, contentSize: { height: 600 }, layoutMeasurement: { height: 600 } } }); list.props.onScrollEndDrag();
+        });
+        const group = renderer.root.findByType('ToolsGroupHeader');
+        expect(messageIds(renderer)).toContain('original-final-text');
+        act(() => group.props.onToggle());
+        expect(messageIds(renderer)).toEqual(['original-final-text', 'tool-two', 'tool-one']);
+        act(() => requestCodeLightLatestViewport(state.session.id));
+        expect(messageIds(renderer)).toEqual(['original-final-text']);
+        expect(state.messages.map(message => message.id)).toEqual(['original-final-text', 'tool-two', 'tool-one']);
+        expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
+    });
+
+    it('mounts only a collapsed summary, then virtualizes original tool IDs on explicit expansion', () => {
+        state.native = true; state.session = { id: 'native-tool-group', metadata: { client: { id: 'noninvasive-bridge' } }, thinking: true };
+        state.messages = [toolMessage('newest-tool', 3), toolMessage('middle-tool', 2), toolMessage('oldest-tool', 1)];
+        state.hasMoreOlder = true;
+        const generation = codeLightLoadingProgress.beginSession(state.session.id); codeLightLoadingProgress.endSession(state.session.id, generation);
+        const renderer = renderChat(undefined);
+        const summary = renderer.root.findByType('ToolsGroupHeader');
+        expect(summary.props.expanded).toBe(false); expect(summary.props.group.messages).toHaveLength(3);
+        expect(summary.props.metadata).toBe(state.session.metadata);
+        expect(messageIds(renderer)).toEqual([]);
+        act(() => {
+            const list = renderer.root.findByType('FlashList');
+            list.props.onLayout({ nativeEvent: { layout: { height: 600 } } }); list.props.onContentSizeChange(390, 44);
+        });
+        expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
+        act(() => summary.props.onToggle());
+        expect(messageIds(renderer)).toEqual(['newest-tool', 'middle-tool', 'oldest-tool']);
+        expect(renderer.root.findAllByType('ToolsGroupHeader')).toHaveLength(2);
+        expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
+    });
+
+    it('retains explicit expansion when a run grows, closes locally, and does not carry it to another session', () => {
+        state.native = true; state.session = { id: 'first-tools-session', metadata: {}, thinking: true };
+        state.messages = [toolMessage('tool-two', 2), toolMessage('tool-one', 1)];
+        const renderer = renderChat(undefined), first = renderer.root.findByType('ToolsGroupHeader');
+        const id = first.props.group.id;
+        act(() => first.props.onToggle());
+        state.messages = [toolMessage('tool-three', 3), ...state.messages]; renderChat(renderer);
+        expect(messageIds(renderer)).toContain('tool-three');
+        expect(renderer.root.findAllByType('ToolsGroupHeader')[0].props.group.id).toBe(id);
+        state.messages = [...state.messages, toolMessage('earlier-tool', 0)]; renderChat(renderer);
+        expect(renderer.root.findAllByType('ToolsGroupHeader')[0].props.group.id).toBe(id);
+        expect(messageIds(renderer)).toContain('earlier-tool');
+        state.session = { ...state.session, id: 'second-tools-session' }; renderChat(renderer);
+        expect(messageIds(renderer)).toEqual([]);
+        const next = renderer.root.findByType('ToolsGroupHeader');
+        act(() => next.props.onToggle());
+        act(() => renderer.root.findAllByType('ToolsGroupHeader')[0].props.onToggle());
+        expect(messageIds(renderer)).toEqual([]);
+    });
+});
+
+it('pins the latest single native row without a whole-turn allowance and retains that anchor for live updates', () => {
     state.native = true;
     state.session = { id: 'a', metadata: {}, thinking: true };
     state.messages = Array.from({ length: 10000 }, (_, i) => agentMessage(`m${i}`, 10000 - i));
     const renderer = renderChat(undefined);
-    expect(messageIds(renderer)).toHaveLength(120);
+    expect(messageIds(renderer)).toEqual(['m0']);
     state.messages = [agentMessage('new-live', 10001), ...state.messages];
     renderChat(renderer);
-    expect(messageIds(renderer)).toHaveLength(121);
-    expect(messageIds(renderer)).toContain('m119');
-    expect(messageIds(renderer)).not.toContain('m120');
+    expect(messageIds(renderer)).toHaveLength(2);
+    expect(messageIds(renderer)).toContain('m0');
+    expect(messageIds(renderer)).not.toContain('m1');
+});
+it('Messages and tools latest intent changes only the visible native window, without fetching or clearing old cache', () => {
+    state.native = true; state.session = { id: 'activity-latest', metadata: {}, thinking: true };
+    state.messages = Array.from({ length: 50 }, (_, index) => agentMessage(`activity-${index}`, 100 - index));
+    const renderer = renderChat(undefined);
+    act(() => {
+        const list = renderer.root.findByType('FlashList'); list.props.onScrollBeginDrag();
+        list.props.onScroll({ nativeEvent: { contentOffset: { y: 60 }, contentSize: { height: 600 }, layoutMeasurement: { height: 600 } } }); list.props.onScrollEndDrag();
+    });
+    expect(messageIds(renderer).length).toBeGreaterThan(1);
+    act(() => requestCodeLightLatestViewport('activity-latest'));
+    expect(messageIds(renderer)).toEqual(['activity-0']); expect(state.messages).toHaveLength(50);
+    expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
+});
+
+it('names the Latest button and returns only the viewport to newest without fetching or clearing retained native rows', () => {
+    state.native = true; state.session = { id: 'accessible-latest', metadata: {}, thinking: false };
+    state.messages = Array.from({ length: 50 }, (_, index) => agentMessage(`retained-${index}`, 100 - index));
+    state.hasMoreOlder = false; state.scrollToOffset.mockClear();
+    const renderer = renderChat(undefined);
+    act(() => {
+        const list = renderer.root.findByType('FlashList'); list.props.onScrollBeginDrag();
+        list.props.onScroll({ nativeEvent: { contentOffset: { y: 600 }, contentSize: { height: 3000 }, layoutMeasurement: { height: 600 } } });
+        list.props.onScrollEndDrag();
+    });
+    const button = renderer.root.findByProps({ accessibilityLabel: 'Latest' });
+    expect(button.props.accessibilityRole).toBe('button');
+    const buttonStyle = Object.assign({}, ...button.props.style({ pressed: false }));
+    expect(buttonStyle.width).toBe(44); expect(buttonStyle.height).toBe(44);
+    act(() => button.props.onPress());
+    expect(state.scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: true });
+    expect(state.messages).toHaveLength(50);
+    expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
 });
 
 describe('ChatList automatic history', () => {
@@ -263,7 +368,7 @@ describe('ChatList automatic history', () => {
     }
     it('CodeLight layout cannot load older history and one gesture cannot walk further pages after settling', async () => {
         state.native = true;
-        const renderer = open(history(50)); const page = pendingPage();
+        const renderer = open(history(1)); const page = pendingPage();
         layout(renderer); expect(page.started()).toBe(0);
         act(() => {
             const list = renderer.root.findByType('FlashList');
@@ -272,7 +377,7 @@ describe('ChatList automatic history', () => {
             list.props.onScrollEndDrag();
         });
         expect(page.started()).toBe(1);
-        await settle(renderer, history(50), true, page.finish);
+        await settle(renderer, history(1), true, page.finish);
         expect(page.started()).toBe(1);
         act(() => {
             const list = renderer.root.findByType('FlashList'); list.props.onScrollBeginDrag();
@@ -280,6 +385,25 @@ describe('ChatList automatic history', () => {
             list.props.onScrollEndDrag();
         });
         expect(page.started()).toBe(2);
+    });
+    it('native measured fill extends one complete row at a time and cannot continue on later layouts once a viewport is covered', () => {
+        state.native = true;
+        const generation = codeLightLoadingProgress.beginSession('session'); codeLightLoadingProgress.endSession('session', generation);
+        const renderer = open(history(600)); expect(renderer.root.findByType('FlashList').props.data).toHaveLength(1);
+        layout(renderer, { content: 120, viewport: 600 }); expect(renderer.root.findByType('FlashList').props.data.length).toBeLessThanOrEqual(2);
+        layout(renderer, { content: 350, viewport: 600 }); expect(renderer.root.findByType('FlashList').props.data.length).toBeLessThanOrEqual(3);
+        layout(renderer, { content: 640, viewport: 600 }); const covered = renderer.root.findByType('FlashList').props.data.length;
+        layout(renderer, { content: 640, viewport: 1000 }); expect(renderer.root.findByType('FlashList').props.data).toHaveLength(covered);
+        expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled(); expect(state.messages).toHaveLength(600);
+    });
+    it('native first viewport fetches only one older row and a settled page cannot walk unseen history without measurement', async () => {
+        state.native = true;
+        const generation = codeLightLoadingProgress.beginSession('session'); codeLightLoadingProgress.endSession('session', generation);
+        const renderer = open(history(1)); const page = pendingPage(); layout(renderer, { content: 100, viewport: 600 });
+        expect(page.started()).toBe(1); expect(vi.mocked(sync.loadOlderMessages)).toHaveBeenCalledWith('session', { limit: 1 });
+        await settle(renderer, history(2), true, page.finish); expect(page.started()).toBe(1);
+        layout(renderer, { content: 700, viewport: 600 }); expect(page.started()).toBe(1);
+        layout(renderer, { content: 700, viewport: 1200 }); expect(page.started()).toBe(1);
     });
     // FlashList's own measurements, in the order they arrive on a real mount.
     // onLoad never fires for zero rows, so it is only emitted when rows exist.
@@ -554,6 +678,10 @@ describe('ChatList automatic history', () => {
         await act(async () => page.fail(new Error('503'), 0));
         expect(page.started()).toBe(1);
         expect(renderer.root.findByType('RoundButton').props.title).toBe('common.retry');
+        expect(renderer.root.findByType('RoundButton').props.size).toBe('normal');
+        let slot = renderer.root.findByType('RoundButton').parent;
+        while (slot && slot.props.style?.height !== 44) slot = slot.parent;
+        expect(slot?.props.style.height).toBe(44);
         scroll(renderer, 10); scroll(renderer, 20);
         expect(page.started()).toBe(1);
         act(() => renderer.root.findByType('RoundButton').props.onPress());
@@ -624,6 +752,43 @@ describe('ChatList automatic history', () => {
         state.messages = []; renderChat(renderer);
         scroll(renderer, 10);
         expect(page.started()).toBe(1);
+    });
+
+    it('does not call cached native history empty before a current read is confirmed', () => {
+        state.messages = []; state.hasMoreOlder = true; state.isLoaded = true;
+        const session: any = { id: 'native-empty-unconfirmed', createdAt: 0, metadata: {
+            client: { id: 'noninvasive-bridge' }, capabilities: { steering: true },
+            bridge: { controlMode: 'session', sourceStatus: 'connected', source: { app: 'codex', id: 'native-child', hostId: 'local', kind: 'session', runtimeGeneration: 'native-owner' } },
+        } };
+        const page = pendingPage();
+        let renderer!: ReturnType<typeof create>;
+        act(() => { renderer = create(React.createElement(EmptyMessages, { session })); });
+        renderers.push(renderer);
+        expect(page.started()).toBe(0);
+        expect(renderer.root.findAllByType('Text')).toHaveLength(0);
+        act(() => {
+            const revision = codeLightLoadingProgress.beginSession(session.id);
+            codeLightLoadingProgress.endSession(session.id, revision, true);
+        });
+        expect(page.started()).toBe(0);
+        expect(renderer.root.findAllByType('Text')).toHaveLength(0);
+        state.hasMoreOlder = false;
+        act(() => {
+            const revision = codeLightLoadingProgress.beginSession(session.id);
+            codeLightLoadingProgress.endSession(session.id, revision);
+            renderer.update(React.createElement(EmptyMessages, { session }));
+        });
+        expect(renderer.root.findAllByType('Text').some((node: any) => node.props.children === 'No messages yet')).toBe(true);
+        expect(renderer.root.findAllByType('Text').some((node: any) => String(node.props.children).includes('Created'))).toBe(false);
+    });
+
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('does not show an epoch age for unknown creation time %s', (createdAt) => {
+        state.messages = []; state.hasMoreOlder = false;
+        const session: any = { id: 'unknown-created-time', createdAt, metadata: null };
+        let renderer!: ReturnType<typeof create>;
+        act(() => { renderer = create(React.createElement(EmptyMessages, { session })); });
+        renderers.push(renderer);
+        expect(renderer.root.findAllByType('Text').some((node: any) => String(node.props.children).includes('Created'))).toBe(false);
     });
 
     it('pages the truly empty placeholder automatically and offers retry on failure', async () => {

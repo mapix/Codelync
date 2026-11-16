@@ -13,7 +13,7 @@ const temp = await mkdtemp(join(tmpdir(), 'codelight-source-')), stage = join(te
 try {
   const copied = await copyPublicSourceSnapshot(root, stage, files);
   const archive = join(output, 'CodeLight-Source.zip'); await rm(archive, { force: true });
-  await run('ditto', ['-c', '-k', '--keepParent', stage, archive]);
+  await run('ditto', ['-c', '-k', '--keepParent', '--norsrc', '--noextattr', '--noqtn', stage, archive]);
   await writeFile(join(output, 'source-manifest.json'), JSON.stringify({ product: 'CodeLight', sourceFiles: copied.length, files: copied, archive, privateStateExcluded: true }, null, 2));
   console.log(JSON.stringify({ archive, sourceFiles: copied.length }));
 } finally { await rm(temp, { recursive: true, force: true }); }

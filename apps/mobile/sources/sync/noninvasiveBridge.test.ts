@@ -14,6 +14,20 @@ const metadata = MetadataSchema.parse({
 });
 
 describe('non-invasive desktop source capability seam', () => {
+    it('allows only the explicitly verified Antigravity session protocol through the existing composer seam', () => {
+        const connected = { ...metadata, capabilities: { ...metadata.capabilities!, steering: true }, bridge: { ...metadata.bridge!,
+            source: { ...metadata.bridge!.source, app: 'antigravity' as const, hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session' as const, protocol: 'antigravity-connect' } } };
+        const parsed = MetadataSchema.parse(connected);
+        expect(parsed.bridge?.source).toMatchObject({ protocol: 'antigravity-connect', kind: 'session' });
+        expect(canSendToNoninvasiveSource(parsed)).toBe(true);
+        expect(getNoninvasiveTurnId(parsed)).toBe('native-current-turn');
+        for (const patch of [{ protocol: undefined }, { kind: undefined }, { protocol: 'agy-cli' }, { runtimeGeneration: null }]) {
+            const unknown = { ...parsed, bridge: { ...parsed.bridge!, source: { ...parsed.bridge!.source, ...patch } } };
+            expect(canSendToNoninvasiveSource(unknown)).toBe(false);
+            expect(getNoninvasiveTurnId(unknown)).toBe(null);
+        }
+        expect(canSendToNoninvasiveSource({ ...parsed, bridge: { ...parsed.bridge!, sourceStatus: 'disconnected' } })).toBe(false);
+    });
     it('requires a truly connected session runtime before allowing submit, independent of machine/HTTP liveness', () => {
         const connected = { ...metadata, capabilities: { ...metadata.capabilities!, steering: true } };
         expect(canSendToNoninvasiveSource(connected)).toBe(true);

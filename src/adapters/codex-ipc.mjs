@@ -20,6 +20,7 @@ const VERSIONS = Object.freeze({
   'thread-follower-steer-turn': 1,
   'thread-follower-read-model-settings': 1,
   'thread-follower-load-complete-history': 1,
+  'thread-follower-compact-thread': 1,
   'thread-follower-update-thread-settings': 2,
   'thread-follower-interrupt-turn': 4,
   'thread-follower-command-approval-decision': 1,
@@ -327,6 +328,12 @@ export class CodexIpcAdapter {
     if (!owner) throw new BridgeError('codex-owner-unavailable', 'The original history owner is unavailable.', 409);
     if (expectedGeneration != null && this.generation(sessionId) !== expectedGeneration) throw new BridgeError('source-epoch-changed', 'The original history owner changed.', 409);
     return this.request('thread-follower-load-complete-history', { conversationId: sessionId }, owner.ownerClientId);
+  }
+
+  /** The existing owner requests manual context compaction. It is never a text
+   * prompt or a replacement runner. @param {string} sessionId @param {string} commandId @param {string|null} [expectedGeneration] */
+  compact(sessionId, commandId, expectedGeneration) {
+    return this.command(sessionId, 'thread-follower-compact-thread', { conversationId: sessionId }, commandId, expectedGeneration);
   }
 
   /** @param {Owner} owner @param {boolean} following */

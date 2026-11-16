@@ -8,14 +8,15 @@ import { Typography } from '@/constants/Typography';
 import { t } from '@/text';
 
 /** One bounded control; the platform owns the scrollable list of conversations. */
-export const ProjectSessionSelect = React.memo(({ options, selectedId, onSelect }: {
+export const ProjectSessionSelect = React.memo(({ options, selectedId, selectedLabel, onSelect }: {
     options: NativeOptionsPickerOption[];
     selectedId: string;
+    selectedLabel?: string;
     onSelect: (id: string) => void;
 }) => {
     const styles = stylesheet;
     const { theme } = useUnistyles();
-    const label = options.find(option => option.key === selectedId)?.label ?? t('session.newChat');
+    const label = options.find(option => option.key === selectedId)?.label ?? selectedLabel ?? t('session.newChat');
     const sections = React.useMemo(() => [{ key: 'sessions', options }], [options]);
     return (
         <View style={styles.container} testID="project-session-select">

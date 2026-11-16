@@ -13,7 +13,7 @@ vi.mock('@/encryption/blob', () => ({
         cipher.setAuthTag(bytes.subarray(-16)); return Buffer.concat([cipher.update(bytes.subarray(12, -16)), cipher.final()]);
     },
 }));
-import { loadCodeLightPeerCatalog, saveCodeLightPeerCatalog } from './codeLightPeerCatalogCache';
+import { loadCodeLightPeerCatalog, loadCodeLightPeerCatalogState, saveCodeLightPeerCatalog } from './codeLightPeerCatalogCache';
 const credentials: any = { secret: Buffer.alloc(32, 1).toString('base64url'), peer: { id: 'peer-one' } };
 const descriptor: any = { id: 'cached-session', nativeUpdatedAt: 100, createdAt: 1, activeAt: 100, active: true,
     metadataVersion: 1, agentStateVersion: 1, seq: 1, agentState: {}, metadata: { title: 'Private session title' } };
@@ -32,4 +32,10 @@ it('different peers, wrong keys and damaged data cannot restore another catalog'
 it('a changed account cannot commit a late catalog', async () => {
     await saveCodeLightPeerCatalog(credentials, [descriptor], () => false);
     expect(cache.value.peerCatalogCiphertext).toBeUndefined();
+});
+it('opaque catalog watermark stays inside encrypted current-peer cache', async () => {
+    await saveCodeLightPeerCatalog(credentials, [descriptor], () => true, 'private-epoch:4');
+    expect(JSON.stringify(cache.value)).not.toContain('private-epoch:4');
+    expect((await loadCodeLightPeerCatalogState(credentials)).watermark).toBe('private-epoch:4');
+    expect((await loadCodeLightPeerCatalogState({ ...credentials, peer: { id: 'foreign' } })).watermark).toBeNull();
 });

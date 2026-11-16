@@ -6,8 +6,12 @@ import ts from 'typescript';
 import { expect, it, vi } from 'vitest';
 import type { PendingAgentCommunication } from '@/sync/agentCommunications';
 
-const state = vi.hoisted(() => ({ pending: [] as PendingAgentCommunication[], answer: vi.fn() }));
+const state = vi.hoisted(() => ({
+    pending: [] as PendingAgentCommunication[], answer: vi.fn(),
+    session: { id: 'original-source-session', metadata: { client: { id: 'noninvasive-bridge' } } },
+}));
 vi.hoisted(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { peerConnected: () => true } }));
 vi.mock('react-native', () => ({ ActivityIndicator: 'ActivityIndicator', Modal: 'Modal', Pressable: 'Pressable', ScrollView: 'ScrollView', TextInput: 'TextInput', View: 'View' }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
@@ -18,7 +22,11 @@ vi.mock('react-native-unistyles', () => {
 vi.mock('@/components/StyledText', () => ({ Text: 'Text' }));
 vi.mock('@/constants/Typography', () => ({ Typography: { default: () => ({}) } }));
 vi.mock('@/text', () => ({ t: (key: string) => key }));
-vi.mock('@/sync/storage', () => ({ useSessionPendingCommunications: () => state.pending, useSession: () => ({ metadata: { client: { id: 'noninvasive-bridge' } } }), useSessionMessages: () => ({ messages: [] }) }));
+vi.mock('@/sync/storage', () => ({
+    storage: { getState: () => ({ sessions: { [state.session.id]: state.session } }) },
+    useSessionPendingCommunications: () => state.pending, useSession: () => state.session,
+    useSessionMessages: () => ({ messages: [] }), useSocketStatus: () => ({ status: 'connected' }),
+}));
 vi.mock('@/sync/ops', () => ({ sessionAnswerQuestion: state.answer, sessionCancelCommunication: vi.fn() }));
 import { AgentQuestionBanner } from './AgentQuestionBanner';
 
@@ -35,7 +43,7 @@ if (!loadedScreen) throw new Error('The loaded session screen is missing.');
 visit(loadedScreen);
 if (!inputExpression) throw new Error('The loaded session input composition is missing.');
 const fixtureCode = ts.transpileModule(`function SessionInputFixture({sessionId, showBottomDockDetails}) {
-    const inactiveHint = null, visibleAgentGoal = null, sessionInputHorizontalPadding = 0, session = null;
+    const inactiveHint = null, visibleAgentGoal = null, sessionInputHorizontalPadding = 0, session = null, savedHistoryOnly = false;
     const composer = React.createElement('Composer', { testID: 'unchanged-composer' });
     return ${inputExpression.getText(source)};
 }`, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } }).outputText;

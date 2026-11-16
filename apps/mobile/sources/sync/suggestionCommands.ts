@@ -5,6 +5,8 @@
 
 import Fuse from 'fuse.js';
 import { storage } from './storage';
+import { isNoninvasiveBridge } from './noninvasiveBridge';
+import { codeLightSourceCommands } from '@/utils/codeLightNativeCommands';
 
 export interface CommandItem {
     command: string;        // The command without slash (e.g., "compact")
@@ -84,6 +86,9 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
 function getCommandsFromSession(sessionId: string): CommandItem[] {
     const state = storage.getState();
     const session = state.sessions[sessionId];
+    if (isNoninvasiveBridge(session?.metadata)) {
+        return codeLightSourceCommands(session?.metadata).filter(command => command.execution !== 'unsupported' && command.execution !== 'model-picker' && (!command.requiresIdle || session?.metadata?.bridge?.currentTurnId === null)).map(command => ({ command: command.name, description: command.description }));
+    }
     if (!session || !session.metadata) {
         return DEFAULT_COMMANDS;
     }

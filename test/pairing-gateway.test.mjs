@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import nacl from 'tweetnacl';
 import WebSocket, { WebSocketServer } from 'ws';
 import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
+import { gatewayProof } from './fixtures/gateway-proof.mjs';
 
 /** @typedef {Record<string,any>} Value */
 /** @param {Value} grant @param {ReturnType<typeof nacl.box.keyPair>} device */
@@ -68,6 +69,10 @@ test('gateway forwards HTTP only to its declared loopback API and keeps invitati
   const gatewayAddress = gateway.address(); assert.ok(gatewayAddress && typeof gatewayAddress !== 'string');
   const origin = `http://127.0.0.1:${gatewayAddress.port}`;
   assert.deepEqual(await (await fetch(origin + '/health')).json(), { path: '/health' });
+  assert.equal((await fetch(origin + '/v1/sessions')).status, 401);
+  assert.equal((await fetch(origin + '/v1/sessions', { headers: { Authorization: 'Bearer fixture-token' } })).status, 401);
+  const unverified = new WebSocket(origin.replace(/^http/u, 'ws') + '/v1/updates', { headers: { Authorization: 'Bearer fixture-token' } });
+  await assert.rejects(once(unverified, 'open')); unverified.terminate();
   assert.equal((await fetch(origin + '/codelight/pairing/code')).status, 404);
   assert.equal((await fetch(origin + '/codelight/pairing/exchange')).status, 405);
   const grant = f.invitations.issue('https://fixture.example');
@@ -87,11 +92,21 @@ test('gateway preserves the actual v1 realtime upgrade path and duplex frames', 
   upstream.on('upgrade', (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => ws.on('message', data => ws.send(data))));
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
   const address = upstream.address(); assert.ok(address && typeof address !== 'string');
-  const f = fixture(), gateway = createPairingGateway({ upstream: `http://127.0.0.1:${address.port}`, invitations: f.invitations });
+  const f = fixture(), device = gatewayProof(f.invitations);
+  const gateway = createPairingGateway({ upstream: `http://127.0.0.1:${address.port}`, invitations: f.invitations, proof: device.proof });
   gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
   const local = gateway.address(); assert.ok(local && typeof local !== 'string');
-  const ws = new WebSocket(`ws://127.0.0.1:${local.port}/v1/updates/?EIO=4&transport=websocket`);
+  const url = `ws://127.0.0.1:${local.port}/v1/updates/?EIO=4&transport=websocket`;
+  for (const headers of [{}, { Authorization: 'Bearer synthetic-device-token' }]) {
+    const rejected = new WebSocket(url, { headers });
+    await assert.rejects(once(rejected, 'open'));
+    rejected.terminate();
+  }
+  const headers = device.headers('/v1/updates/');
+  const ws = new WebSocket(url, { headers });
   t.after(async () => { ws.terminate(); gateway.closeAllConnections(); await new Promise(r => gateway.close(r)); wss.close(); await new Promise(r => upstream.close(r)); });
   await once(ws, 'open'); const reply = once(ws, 'message'); ws.send('fixture realtime frame');
   assert.equal((await reply)[0].toString(), 'fixture realtime frame');
+  const replay = new WebSocket(url, { headers });
+  await assert.rejects(once(replay, 'open')); replay.terminate();
 });

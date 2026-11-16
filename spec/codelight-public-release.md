@@ -37,6 +37,17 @@ the legacy network access/identity files. A public source test must exercise
 this filename with a private sentinel, not assume all JSON is publishable.
 Use the same selection when creating the clean initial public Git snapshot.
 
+`docs/tasks/` contains private implementation diaries and device acceptance
+notes. Keep these files in the original workspace, outside both source archives
+and canonical publication checkouts. Current product contracts belong in `spec/`;
+only curated, privacy-reviewed documentation is included in public source.
+
+Source ZIPs contain the selected regular file bytes only. Omit resource forks,
+extended attributes, quarantine data and AppleDouble/`__MACOSX` sidecars, which
+are outside the source manifest and may contain publisher-specific metadata.
+Check raw ZIP members before extracting. This rule is specific to source exports;
+the signed Mac application archive retains its separate notarization rules.
+
 ## CI publication
 
 The current GitHub publisher lacks the OAuth `workflow` scope. Publish the
@@ -87,17 +98,103 @@ sequenceDiagram
 
 ## Website and platform truth
 
-Use the existing CodeLight brand with Chinese and English copy. The primary
-action downloads the Mac release, with source/build instructions visible.
-State gateway-mode-only Codex support, macOS 14+ on Apple Silicon, preview status,
-and that the iPhone app currently needs source building rather than a public
-device-bound IPA. Explain trusted-device access and temporary tunnel renewal.
+Use the existing CodeLight brand and layout with compact Chinese and English
+copy. The primary action downloads only the currently verified public Mac
+release; its displayed version, bytes and SHA-256 come from that release's
+accepted, stapled and Gatekeeper-checked metadata. The 2026-11-16 release update
+publishes Mac 0.6.1/build 2026111605 only after its actual Apple Accepted result,
+stapling, Gatekeeper and artifact privacy gates. Retain the immutable 0.5.8
+download and checksum while the landing page points to the verified 0.6.1 file.
+The iPhone source build remains distinct from the public Mac download.
+
+The current product supports Codex, Antigravity Desktop and Claude Desktop
+(Gateway). State this three-Desktop scope consistently in the website, README
+and Mac headline/scope localization. Available operations depend on the original
+desktop's current state and confirmed native capabilities; support for an app
+does not mean every operation is identical across apps. Project/session browsing, available child logs,
+bounded incremental reading and local tool-group expansion do not imply that
+every app/mode has working input, stop, approval, model or effort controls.
+Claude Desktop Gateway's complete formal controls remain unaccepted and must
+not be described as complete support. CLI families and historical window
+adapters remain deferred and are not promoted. State macOS 14+ on Apple Silicon,
+preview status, and that the iPhone app currently needs source building rather
+than a public App Store/TestFlight release or device-bound IPA. Explain
+trusted-device access and temporary tunnel renewal.
 Explain both public-access providers: Cloudflare Quick Tunnel addresses can
 renew on restart; an authenticated Relay preserves its independent route across
 reconnections. Phone setup remains the same QR flow, with no provider settings.
 Performance numbers must identify host benchmarks; do not promise cool phones.
 Use no analytics, external fonts or third-party scripts. Respect keyboard focus,
 reduced motion and narrow phone layouts.
+
+Recovery copy follows [error and recovery rules](codelight-error-recovery.md).
+Explain a Mac connection failure separately from an original Desktop app being
+offline. Users can open CodeLight on Mac, check their network, retry or choose a
+saved connection; when the original app is unavailable they can open that app
+and retry while saved messages remain readable. Unconfirmed actions offer
+Check result and must not be submitted automatically again. Use familiar words
+such as connection, original app, messages and result; do not expose internal
+protocol names, URLs, private paths or raw exceptions. Loading/retry behavior
+must not be described as successful live acceptance without current evidence.
+
+Attachment copy says that content loads only after a click. A readable video is
+limited to 1,000,000 plaintext bytes (1 MB); an oversized video stays blocked.
+Metadata or a card's presence does not establish readable native-file access.
+The website must not promise playback/save for every native attachment or
+publish private phone packages, profiles, keys or QA fixtures.
+
+The existing publication route is `codelight.novarock.io` through the dedicated
+`codelight/codelight-website` Kubernetes deployment. Copy-only updates use a
+fresh immutable image, preserve the current verified release metadata and all
+existing versioned download bytes, and leave ingress, TLS, service and other
+workloads intact. Record selected page hashes and deployment inputs before
+publication; validate the deployment change server-side and verify rollout,
+HTTPS language/FAQ controls, narrow layouts and the retained download metadata.
+The HTML script reference carries a content-derived revision so an existing
+browser cache cannot pair new Chinese HTML with an older English dictionary.
+Verify ordinary page loading as well as explicit uncached resource hashes.
+
+The existing GitHub repository currently requires access permission and keeps
+its current visibility. Link to it as the source repository, not as publicly
+accessible source. Source-build instructions state the access requirement; MIT
+license text does not imply that every visitor can clone the repository. A public
+Mac download does not change source-repository visibility.
+
+## Release preparation — 2026-11-16
+
+The next candidate uses Mac 0.6.1, iPhone 1.8.1 and the shared build
+`2026111603`. Build 1601 remains a prior private phone install; build 1602
+remains the QA/SIM descendant-activity candidate. The 1603 candidate adds the
+necessary child read-entry and unavailable-layout recovery corrections.
+Record that build in source metadata and allow an explicit
+`CODELIGHT_MAC_BUILD` override for the Mac builder; validate the numeric build
+before packaging. Device and simulator packages consume one frozen Hermes
+bundle and preserve the verified native iOS base, existing signing/profile,
+application identity and framework bytes. Marketing/build metadata changes do
+not enable additional native controls or change the saved Gateway setup.
+
+Freeze and build App runtime inputs only after the mobile/backend freeze,
+Root's joint tests and runtime privacy checks pass. Source-only archive flags,
+specification and website edits may finish separately; they do not invalidate
+the App runtime freeze. Record their final overall source manifest after the
+strict archive/privacy gate completes. Before each
+installation capture fresh current data, rather than restoring an older draft
+or receipt baseline. Preserve all keys, pairing/configuration, drafts and prior
+operation IDs. Restart only CodeLight's owned service when required; original
+Codex, Antigravity and Claude Desktop sessions, queries, drafts and Gateway stay
+untouched. Native error/recovery observations remain separate from component
+tests and health checks. Public Mac 0.6.1 replaces the legacy 0.5.8 download only
+after actual Apple Accepted, stapling validation, strict signature/Gatekeeper,
+archive/privacy checks and the external version/size/SHA-256 download gate pass.
+
+Generated Prisma clients in the Mac runtime must not retain the publisher's
+absolute generation paths. Normalize only `config.generator.output.value` and
+`config.generator.sourceFilePath` to portable provenance (`.` and
+`schema.prisma`). Preserve the generated schema/data model, engine type,
+relative schema locator, inline schema hash and `config.dirname` behavior.
+Validate the normalized metadata and exercise the packaged client/database in
+an isolated directory before signing; no production database or native desktop
+session is used by that check.
 
 ## Distribution gates
 

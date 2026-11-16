@@ -1,10 +1,12 @@
-import { mkdir, readFile, writeFile, cp, symlink, realpath, access } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, cp, symlink, access } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { productionPackageRoot as packageRoot } from './package-root.mjs';
+import { portablePrismaMetadata } from './portable-prisma-metadata.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,26 +16,16 @@ const happy = root;
 const require = createRequire(join(happy, 'package.json'));
 const inspect = promisify(execFile);
 const packageMetadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+const bundleId = process.env.CODELIGHT_MAC_BUNDLE_ID ?? 'com.learnings.codelight.mac';
+if (!/^[A-Za-z0-9]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId)) throw Error('A valid Mac bundle identifier is required.');
 if (!/^\d+\.\d+\.\d+$/u.test(packageMetadata.version)) throw Error('Mac releases require a numeric three-part version.');
-const appBuild = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+const appBuild = process.env.CODELIGHT_MAC_BUILD ?? packageMetadata.codelightBuild ?? new Date().toISOString().slice(0, 10).replaceAll('-', '');
+if (typeof appBuild !== 'string' || !/^\d{8,14}$/u.test(appBuild)) throw Error('Mac build numbers require 8–14 numeric digits.');
 /** @param {string} command @param {string[]} args @param {string} [cwd] */
 async function run(command, args, cwd = root) {
   const process = spawn(command, args, { cwd, stdio: 'inherit' });
   const code = await new Promise((resolveDone, reject) => { process.once('error', reject); process.once('exit', resolveDone); });
   if (code !== 0) throw Error(`${command} exited ${code}`);
-}
-/** @param {string} name @param {string} from */
-async function packageRoot(name, from) {
-  const req = createRequire(join(from, 'package.json'));
-  let entry;
-  try { entry = req.resolve(name + '/package.json'); }
-  catch { entry = req.resolve(name); }
-  let folder = dirname(await realpath(entry));
-  while (folder !== dirname(folder)) {
-    try { const data = JSON.parse(await readFile(join(folder, 'package.json'), 'utf8')); if (data.name === name) return { folder, data }; } catch { /* keep walking to the owning manifest */ }
-    folder = dirname(folder);
-  }
-  throw Error(`Cannot resolve production dependency ${name}`);
 }
 /** @type {Map<string,string>} */ const copied = new Map();
 /** @param {string} name @param {string} from @param {string} target */
@@ -45,7 +37,8 @@ async function copyPackage(name, from, target) {
     await cp(source.folder, destination, { recursive: true, dereference: true, filter: path => !relative(source.folder, path).split('/').includes('node_modules') });
     for (const dependency of Object.keys(source.data.dependencies ?? {})) await copyPackage(dependency, source.folder, join(destination, 'node_modules', dependency));
     for (const dependency of Object.keys(source.data.optionalDependencies ?? {})) {
-      try { await copyPackage(dependency, source.folder, join(destination, 'node_modules', dependency)); } catch { /* uninstalled foreign-platform optional dependency */ }
+      try { await copyPackage(dependency, source.folder, join(destination, 'node_modules', dependency)); }
+      catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'MODULE_NOT_FOUND') throw error; /* Only uninstalled optional dependencies are omitted. */ }
     }
   }
   await mkdir(dirname(target), { recursive: true });
@@ -74,16 +67,22 @@ const relayRequire = createRequire(join(root, 'packages/relay/package.json'));
 const prismaManifest = relayRequire.resolve('@prisma/client/package.json');
 const generatedPrisma = dirname(relayRequire.resolve('.prisma/client/default', { paths: [prismaManifest] }));
 await cp(generatedPrisma, join(runtime, 'node_modules/.prisma/client'), { recursive: true });
+for (const name of ['index.js', 'edge.js', 'wasm.js']) {
+  const path = join(runtime, 'node_modules/.prisma/client', name);
+  await writeFile(path, portablePrismaMetadata(await readFile(path, 'utf8')));
+}
 await writeFile(join(runtime, 'package.json'), JSON.stringify({ name: 'codelight-mac-runtime', private: true, type: 'module' }));
 await cp(join(root, 'assets/branding/CodeLight.icns'), join(resources, 'CodeLight.icns'));
 await cp(join(root, 'assets/branding/app-icon-v1.png'), join(resources, 'brand-icon.png'));
 await run('xcrun', ['swiftc', '-parse-as-library', '-O', '-target', 'arm64-apple-macosx14.0', join(root, 'apps/mac/CodeLight.swift'), '-o', join(output, 'Contents/MacOS/CodeLight')]);
 await writeFile(join(output, 'Contents/Info.plist'), `<?xml version="1.0"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.learnings.codelight.mac</string><key>CFBundleName</key><string>CodeLight</string><key>CFBundleDisplayName</key><string>CodeLight</string>
+<key>CFBundleIdentifier</key><string>${bundleId}</string><key>CFBundleName</key><string>CodeLight</string><key>CFBundleDisplayName</key><string>CodeLight</string>
 <key>CFBundleIconFile</key><string>CodeLight.icns</string><key>CFBundleExecutable</key><string>CodeLight</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${packageMetadata.version}</string><key>CFBundleVersion</key><string>${appBuild}</string>
 <key>NSLocalNetworkUsageDescription</key><string>Connect your paired phone to CodeLight on the local network.</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>`);
 const chinese = {
+  "Codex, Antigravity and Claude Desktop on your phone": "在手机上使用 Codex、Antigravity 和 Claude Desktop",
+  "Native sessions from Codex, Antigravity Desktop and Claude Desktop (Gateway). Available actions follow the desktop's current state.": "连接 Codex、Antigravity Desktop 和 Claude Desktop（Gateway）原生会话，当前可用操作依桌面状态而定。",
   "Start": "开始",
   "Pause": "暂停",
   "Paused": "已暂停",
@@ -109,9 +108,8 @@ const chinese = {
   "Validating Relay…": "正在校验 Relay…",
   "Could not validate the Relay connection. Check address, access key and network.": "Relay 连接校验失败，请检查地址、访问密钥和网络。",
   "The phone keeps all enabled addresses. If addresses change and reconnection fails, scan the current QR code.": "手机会保存所有已启用地址。地址改变且无法重连时，请扫描当前二维码。",
- 'Starting CodeLight…': '正在启动 CodeLight…', 'Connecting from anywhere…': '正在连接公网入口…', 'Ready to scan': '可以扫码连接', 'Connection unavailable': '连接暂不可用', 'Your existing Codex sessions on your phone': '在手机上使用电脑已有的 Codex 会话', 'Open CodeLight on your phone and scan this code. No registration or VPN needed.': '打开手机 CodeLight 扫描二维码，无需注册或安装 VPN。', 'Copy pairing link': '复制配对链接', 'Refresh QR': '刷新二维码', 'Retry': '重试', 'Paired devices': '连接的设备', 'No devices yet': '尚未连接设备', 'Disconnect': '解除连接', 'Connected': '已连接', 'Offline': '离线', 'Access removed': '已解除连接', 'Notifications configured': '已配置通知', 'Notifications need setup': '通知尚未配置', 'Copied': '已复制', 'Could not update device. Try again.': '设备操作暂未成功，请重试。',
+ 'Starting CodeLight…': '正在启动 CodeLight…', 'Connecting from anywhere…': '正在连接公网入口…', 'Ready to scan': '可以扫码连接', 'Connection unavailable': '连接暂不可用', 'Open CodeLight on your phone and scan this code. No registration or VPN needed.': '打开手机 CodeLight 扫描二维码，无需注册或安装 VPN。', 'Copy pairing link': '复制配对链接', 'Refresh QR': '刷新二维码', 'Retry': '重试', 'Paired devices': '连接的设备', 'No devices yet': '尚未连接设备', 'Disconnect': '解除连接', 'Connected': '已连接', 'Offline': '离线', 'Access removed': '已解除连接', 'Notifications configured': '已配置通知', 'Notifications need setup': '通知尚未配置', 'Copied': '已复制', 'Could not update device. Try again.': '设备操作暂未成功，请重试。',
   "Connection ready": "连接已就绪",
-  "Only desktop Codex connected through gateway mode is supported.": "只支持使用网关模式接入的桌面Codex",
   "View": "视图",
   "Statistics": "统计",
   "Pairing": "扫码配对",

@@ -24,6 +24,9 @@ import {
 } from '@/sync/agentCommunications';
 import { sessionAnswerQuestion, sessionCancelCommunication } from '@/sync/ops';
 import { BridgeRpcUnconfirmedError } from '@/sync/noninvasiveRpcJournal';
+import { storage, useSession, useSocketStatus } from '@/sync/storage';
+import { apiSocket } from '@/sync/apiSocket';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 
 interface AgentQuestionModalProps {
     pending: PendingAgentForm;
@@ -38,6 +41,9 @@ interface AgentQuestionModalProps {
  * an answer it did not think of.
  */
 export function AgentQuestionModal({ pending, sessionId, visible, onClose }: AgentQuestionModalProps) {
+    const session = useSession(sessionId), socketConnected = useSocketStatus().status === 'connected';
+    const writesBlocked = nativeWriteConnectionBlocked(session?.metadata, socketConnected);
+    const blockedNow = () => nativeWriteConnectionBlocked(storage.getState().sessions[sessionId]?.metadata ?? session?.metadata, apiSocket.peerConnected());
     const styles = stylesheet;
     const { theme } = useUnistyles();
     const safeArea = useSafeAreaInsets();
@@ -82,7 +88,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
     const ready = canSubmit(pending.questions, drafts);
 
     const handleSubmit = React.useCallback(async () => {
-        if (!ready || submittingRef.current) return;
+        if (!ready || submittingRef.current || blockedNow()) return;
         submittingRef.current = true;
         const owner = generation.current;
         setSubmitting(true);
@@ -104,18 +110,18 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
         } finally {
             if (owner === generation.current) { submittingRef.current = false; setSubmitting(false); }
         }
-    }, [drafts, onClose, pending, ready, sessionId, submitting]);
+    }, [drafts, onClose, pending, ready, sessionId, submitting, session?.metadata]);
 
     const handleDismiss = React.useCallback(async () => {
         if (submitting) return;
         onClose();
-        if (unconfirmed) return;
+        if (unconfirmed || blockedNow()) return;
         try {
             await sessionCancelCommunication(sessionId, pending.id, pending.kind);
         } catch {
             // The agent re-asks if the dismissal never lands; nothing to show here.
         }
-    }, [onClose, pending.id, pending.kind, sessionId, submitting, unconfirmed]);
+    }, [onClose, pending.id, pending.kind, sessionId, submitting, unconfirmed, session?.metadata]);
 
     return (
         <Modal
@@ -216,7 +222,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
                         accessibilityRole="button"
                         style={[styles.submit, (!ready || submitting) && styles.submitDisabled]}
                         onPress={handleSubmit}
-                        disabled={!ready || submitting}
+                        disabled={!ready || submitting || writesBlocked}
                     >
                         {submitting ? (
                             <ActivityIndicator color="#fff" />

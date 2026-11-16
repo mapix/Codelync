@@ -17,12 +17,18 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
 }
 
 export const zhHant: TranslationStructure = {
+    codeLightHandoff: {
+        action: "交給…",
+        noTargets: "此 Mac 上沒有其他已連線的桌面對話。",
+        unavailable: "來源或目標對話已無法使用。",
+    },
+
     codeLightSetup: {
         createFailed: "無法建立連線，請檢查 Mac 連線後重試。",
         storageFailed: "無法安全儲存連線，請檢查裝置儲存空間後重試。",
         reloadFailed: "請關閉並重新開啟 CodeLight，以使用已儲存的設定重新連線。",
         pairFailed: "此配對連結無法使用，請掃描 Mac CodeLight 目前顯示的新 QR Code。",
-        macHelp: "請在 Mac 開啟 CodeLight，並保持現有 Codex 會話執行。",
+        macHelp: "請在 Mac 開啟 CodeLight，並保持現有 Codex / Antigravity / Claude Desktop 會話執行。",
         helpBody: "請在 Mac 開啟並保持 CodeLight 執行，用此手機掃描它的 QR Code。如果連線位址變更，請重新整理並掃描新 QR Code。無需註冊或 VPN。",
     },
 
@@ -35,23 +41,26 @@ export const zhHant: TranslationStructure = {
         network: "暫時無法連線到 Mac，請保持 CodeLight 執行後重試。",
     },
 
+    codeLightCommands: { modelMenu: '請使用輸入框旁的模型按鈕選擇本會話的模型。', unsupported: "CodeLight 暫不支援此應用程式的這個命令，已保留草稿。", busy: "此會話正在忙碌，已保留草稿。", unconfirmed: "命令結果尚未確認，請檢查執行結果。" },
     codeLightModels: {
+        nextMessage: '下一則訊息',
         default: "預設",
         check: "核對設定",
         saving: "正在更新 Mac 上的模型設定…",
-        failed: "設定已變更或暫未更新成功，請檢查目前選項後重新選擇。",
-        unconfirmed: "更新結果尚未確認，正在核對原設定，請勿重複修改。",
+        readFailed: "暫時無法讀取模型設定，請檢查與 Mac 的連線。",
+        failed: "模型設定未能更新，請核對目前選項。",
+        unconfirmed: "修改結果尚未確認，請檢查結果，不要重複修改。",
     },
 
     codeLightChannels: {
         title: "連線通道",
         automatic: "自動選擇",
-        automaticDetail: "使用已驗證的可用連線。",
+        automaticDetail: "檢查已儲存的連接並連接到這台 Mac。",
         local: "區域網路",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "已連線",
-        available: "可用",
+        available: "已儲存",
         probing: "正在檢查",
         failed: "暫不可用",
         switching: "正在連線…",
@@ -59,16 +68,24 @@ export const zhHant: TranslationStructure = {
         current: "目前通道",
         latency: ({ ms }: { ms: number }) => "{ms} 毫秒".replace("{ms}", String(ms)),
         latencyUnknown: "延遲未確認",
-        switchFailed: "通道切換未完成，目前連線保持不變。",
+        switchFailed: "連接未完成，已保留先前的選擇。",
+        connectingTitle: "正在連接 Mac…",
+        failedTitle: "暫時無法連接 Mac",
+        failedHelp: "請在 Mac 開啟 CodeLight，檢查網路後重試，或選擇其他連接。",
+        accessEndedTitle: "目前 Mac 連接未通過驗證",
+        accessEndedHelp: "請掃描這台 Mac 上 CodeLight 目前顯示的 QR Code。已儲存的訊息和草稿會保留。",
+        retryConnection: "重試連接",
+        scanMac: "掃描 Mac QR Code",
     },
 
     codeLightLoading: {
-        titles: "正在讀取 Codex 會話標題…",
-        discovered: ({ count }: { count: number }) => "已發現 {count} 個 Codex 會話，繼續載入中…".replace("{count}", String(count)),
-        messages: "正在同步此會話…",
+        titles: "正在讀取 Codex、Antigravity 和 Claude Desktop 會話…",
+        discovered: ({ count }: { count: number }) => "已讀取 {count} 個項目，繼續載入中…".replace("{count}", String(count)),
+        messages: "正在讀取此會話…",
         older: "正在載入更早的訊息…",
-        failed: "同步暫未完成，請重試以繼續。",
-        empty: "此 Mac 上暫未找到 Codex 會話。",
+        unavailable: "暫不可用",
+        failed: "會話清單無法更新，請重試。",
+        empty: "此 Mac 上暫未找到可用的 Codex、Antigravity 或 Claude Desktop 會話。",
     },
 
     codeLightProjects: {
@@ -91,10 +108,10 @@ export const zhHant: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "傳送結果尚未確認，正在核對原 Codex 會話，請勿重複傳送。",
-        waiting: "正在等待原 Codex 桌面會話。",
+        deliveryUnconfirmed: "傳送結果尚未確認，正在核對原會話，請勿重複傳送。",
+        waiting: "正在等待原桌面會話。",
         openDesktop: "在桌面開啟",
-        openFailed: "無法開啟原 Codex 會話，請確認 Codex 仍在執行。",
+        openFailed: "無法開啟原會話，請確認對應桌面應用程式仍在執行。",
     },
 
     voiceStatusBar: {
@@ -211,7 +228,7 @@ export const zhHant: TranslationStructure = {
         developer: '開發者',
         developerTools: '開發者工具',
         about: '關於',
-        aboutFooter: "CodeLight 透過端對端加密同步，將手機連接到既有的 Codex 桌面會話。",
+        aboutFooter: "CodeLight 可連接 Mac 上的 Codex、Antigravity 和 Claude Desktop 會話。Claude Desktop 使用 Gateway；可用操作取決於每個會話。",
         whatsNew: '更新日誌',
         whatsNewSubtitle: '查看最新更新和改進',
         reportIssue: '回報問題',
@@ -957,14 +974,14 @@ export const zhHant: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "你的 Codex 會話，\n隨時隨地可用",
+        headline: "你的 Codex / Antigravity / Claude Desktop 會話，\n隨時隨地可用",
         propEncrypted: "端對端加密",
         propNoPassword: "無需註冊或 VPN",
         propOpenSource: "開源，MIT 授權",
         linkTitle: "連接你的 Mac",
         installStep: "在 Mac 開啟 CodeLight",
-        openStep: "保持 Codex 會話執行",
-        openBody: "請在 Mac 開啟 CodeLight，並保持 Codex 執行。CodeLight 會顯示配對 QR Code。",
+        openStep: "保持 Codex / Antigravity / Claude Desktop 會話執行",
+        openBody: "請在 Mac 開啟 CodeLight，並保持 Codex / Antigravity / Claude Desktop 執行。CodeLight 會顯示配對 QR Code。",
         scanStep: "掃描 QR Code",
         scanButton: "掃描 QR Code",
         pasteLink: "無法掃描？改為貼上連結",
@@ -987,8 +1004,8 @@ export const zhHant: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "手機上的 Codex",
-        subtitle: "透過端對端加密同步，連接既有的 Codex 桌面會話。",
+        title: "手機上的 Codex / Antigravity / Claude Desktop",
+        subtitle: "透過端對端加密同步，連接既有的 Codex / Antigravity / Claude Desktop 桌面會話。",
         createAccount: '建立帳戶',
         linkOrRestoreAccount: '連結或恢復帳戶',
         loginWithMobileApp: '使用行動應用程式登入',
@@ -1204,6 +1221,8 @@ export const zhHant: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "下載圖片",
+        downloadFailed: "儲存圖片失敗，請重試。",
         open: '開啟圖片',
         close: '關閉圖片',
         zoomIn: '放大',

@@ -28,9 +28,11 @@ cumulative totals are coalesced, not written on every chunk; shutdown flushes th
 owned counter file. Live throughput uses monotonic elapsed time. Connection
 closure and concurrent sockets must not double-count bytes.
 
-The UI and current docs clearly remind users: only desktop Codex connected through
-gateway mode is supported. This wording must not imply support for other harnesses
-or arbitrary desktop connection modes.
+The UI identifies Codex and configured Antigravity Desktop native conversations.
+Codex retains its existing gateway-mode owner; Antigravity requires a verified
+native protocol endpoint, as specified in [remote control integration](antigravity-remote-control.md).
+This wording must not imply support for historical CLI/window harnesses or
+arbitrary desktop connection modes.
 
 The Mac controller owns the selected statistics/pairing panel. Before pairing it
 defaults to pairing; the first non-revoked saved or newly paired device selects

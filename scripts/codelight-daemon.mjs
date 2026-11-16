@@ -9,20 +9,20 @@ import { LocalSourceDiscovery } from '../src/happy/discovery.mjs';
 import { CodeLightMacDaemon } from '../src/happy/mac-daemon.mjs';
 
 const flags = new Map(process.argv.slice(2).map(arg => { const at = arg.indexOf('='); return at < 0 ? [arg, '1'] : [arg.slice(0, at), arg.slice(at + 1)]; }));
-const allowed = new Set(['--help', '--inspect', '--server', '--profile', '--account-file', '--lease-dir', '--only']);
+const allowed = new Set(['--help', '--inspect', '--server', '--profile', '--account-file', '--lease-dir', '--only', '--antigravity-runtime', '--claude-runtime']);
 for (const [key, value] of flags) {
   if (!allowed.has(key)) throw Error(`Unknown CodeLight option: ${key}. Use --help.`);
   if (!['--help', '--inspect'].includes(key) && (!value.trim() || value === '1')) throw Error(`${key} requires an explicit value using ${key}=value.`);
 }
 const selected = flags.get('--only');
 // scope 在任何 profile 读取、配对或写入之前校验，避免拒绝的 harness 留下配对状态。
-if (selected !== undefined && !/^codex:[^\s]+$/.test(selected)) throw Error('Only native Codex session scope is supported (--only=codex:native-id).');
+if (selected !== undefined && !/^(codex|antigravity|claude-desktop):[^\s]+$/.test(selected)) throw Error('Unsupported native Desktop session scope. Use --only=codex:native-id, antigravity:native-id or claude-desktop:native-id.');
 if (flags.has('--help')) {
-  console.log('CodeLight Mac: node scripts/codelight-daemon.mjs --server=https://your-server [--profile=/private/profile] [--only=codex:native-id] [--inspect]');
+  console.log('CodeLight Mac: node scripts/codelight-daemon.mjs --server=https://your-server [--profile=/private/profile] [--only=codex:native-id|antigravity:native-id|claude-desktop:native-id] [--antigravity-runtime=/private/runtime.json] [--claude-runtime=/private/installed-manifest.json] [--inspect]');
   process.exit(0);
 }
 if (flags.has('--inspect')) {
-  const inspector = new LocalSourceDiscovery();
+  const inspector = new LocalSourceDiscovery({ antigravityRuntimePath: flags.get('--antigravity-runtime'), claudeRuntimePath: flags.get('--claude-runtime') });
   try { const result = await inspector.discover(); console.log(JSON.stringify({ discoveredSources: result.sources.map(source => ({ app: source.app, id: source.id, kind: source.kind, available: source.available ?? null })), errors: result.errors })); }
   finally { await inspector.close(); }
   process.exit(0);
@@ -63,7 +63,7 @@ if (accountFile) {
 } });
 await writeDurablePrivateJson(join(directory, 'config.json'), { version: 1, serverUrl });
 } finally { await releaseInitialization(); }
-const discovery = new LocalSourceDiscovery();
+const discovery = new LocalSourceDiscovery({ antigravityRuntimePath: flags.get('--antigravity-runtime'), claudeRuntimePath: flags.get('--claude-runtime') });
 const daemon = new CodeLightMacDaemon({ directory, leaseDirectory: resolve(flags.get('--lease-dir') ?? join(homedir(), '.codelight', 'leases')),
   account, discovery, only: selected ? source => `${source.app}:${source.id}` === selected : undefined });
 daemon.on('diagnostic', value => console.log(JSON.stringify({ service: 'CodeLight', diagnostic: value.code })));

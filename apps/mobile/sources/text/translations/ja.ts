@@ -18,12 +18,18 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
 }
 
 export const ja: TranslationStructure = {
+    codeLightHandoff: {
+        action: "引き継ぐ…",
+        noTargets: "この Mac に接続中の別のデスクトップセッションがありません。",
+        unavailable: "元または引き継ぎ先のセッションを利用できなくなりました。",
+    },
+
     codeLightSetup: {
         createFailed: "接続を設定できませんでした。Mac との接続を確認して、もう一度お試しください。",
         storageFailed: "接続を安全に保存できませんでした。端末の空き容量を確認して、もう一度お試しください。",
         reloadFailed: "CodeLight を閉じて開き直すと、保存済みの設定で再接続します。",
         pairFailed: "このペアリングリンクは利用できません。Mac の CodeLight に表示される新しい QR コードを読み取ってください。",
-        macHelp: "Mac で CodeLight を開き、既存の Codex セッションを実行したままにしてください。",
+        macHelp: "Mac で CodeLight を開き、既存の Codex / Antigravity / Claude Desktop セッションを実行したままにしてください。",
         helpBody: "Mac で CodeLight を開き、実行したままにしてください。このスマートフォンで QR コードを読み取ります。接続先アドレスが変わったら、更新して新しいコードを読み取ってください。登録や VPN は不要です。",
     },
 
@@ -36,23 +42,26 @@ export const ja: TranslationStructure = {
         network: "Mac に接続できませんでした。CodeLight を実行したまま、もう一度お試しください。",
     },
 
+    codeLightCommands: { modelMenu: '入力欄の横にあるモデルボタンで、この会話のモデルを選択してください。', unsupported: "このアプリのこのコマンドは CodeLight で利用できません。下書きは保持されています。", busy: "このセッションは処理中です。下書きは保持されています。", unconfirmed: "コマンドの結果は未確認です。結果を確認してください。" },
     codeLightModels: {
+        nextMessage: '次のメッセージ',
         default: "既定",
         check: "設定を確認",
         saving: "Mac のモデル設定を更新しています…",
-        failed: "設定が変更されたか、更新できませんでした。現在の選択を確認して、もう一度選択してください。",
-        unconfirmed: "更新結果を確認できていません。元の設定を確認中です。変更を繰り返さないでください。",
+        readFailed: "モデル設定を読み取れませんでした。Mac との接続を確認してください。",
+        failed: "モデル設定を更新できませんでした。現在の選択を確認してください。",
+        unconfirmed: "変更の結果は未確認です。変更を繰り返さずに結果を確認してください。",
     },
 
     codeLightChannels: {
         title: "接続経路",
         automatic: "自動選択",
-        automaticDetail: "確認済みの利用可能な接続を使います。",
+        automaticDetail: "保存済みの接続を確認して、この Mac に接続します。",
         local: "ローカルネットワーク",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "接続済み",
-        available: "利用可能",
+        available: "保存済み",
         probing: "確認中",
         failed: "利用不可",
         switching: "接続中…",
@@ -60,16 +69,24 @@ export const ja: TranslationStructure = {
         current: "現在の経路",
         latency: ({ ms }: { ms: number }) => "{ms} ミリ秒".replace("{ms}", String(ms)),
         latencyUnknown: "遅延は未確認",
-        switchFailed: "接続を切り替えられませんでした。現在の経路は維持されます。",
+        switchFailed: "接続できませんでした。以前の選択は保持されています。",
+        connectingTitle: "Mac に接続中…",
+        failedTitle: "Mac に接続できません",
+        failedHelp: "Mac で CodeLight を開き、ネットワークを確認して再接続するか、別の接続を選んでください。",
+        accessEndedTitle: "Mac 接続を確認できません",
+        accessEndedHelp: "その Mac の CodeLight に表示されている QR コードを読み取ってください。保存済みのメッセージと下書きは保持されます。",
+        retryConnection: "接続を再試行",
+        scanMac: "Mac のコードを読み取る",
     },
 
     codeLightLoading: {
-        titles: "Codex セッションのタイトルを読み込んでいます…",
-        discovered: ({ count }: { count: number }) => "Codex セッション {count} 件を検出 · 引き続き読み込み中…".replace("{count}", String(count)),
-        messages: "このセッションを同期しています…",
+        titles: "Codex、Antigravity、Claude Desktop のセッションを読み込み中…",
+        discovered: ({ count }: { count: number }) => "{count} 件を取得 · 引き続き読み込み中…".replace("{count}", String(count)),
+        messages: "このセッションを読み込み中…",
         older: "以前のメッセージを読み込んでいます…",
-        failed: "同期を完了できませんでした。再試行して続行してください。",
-        empty: "この Mac に Codex セッションが見つかりません。",
+        unavailable: "利用不可",
+        failed: "セッション一覧を更新できませんでした。再試行してください。",
+        empty: "この Mac に利用可能な Codex、Antigravity、Claude Desktop セッションはありません。",
     },
 
     codeLightProjects: {
@@ -92,10 +109,10 @@ export const ja: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "送信結果を確認できていません。元の Codex セッションを確認中です。再送しないでください。",
-        waiting: "元の Codex デスクトップセッションを待っています。",
+        deliveryUnconfirmed: "送信結果を確認できていません。元のセッションを確認中です。再送しないでください。",
+        waiting: "元のデスクトップセッションを待っています。",
         openDesktop: "デスクトップで開く",
-        openFailed: "元の Codex セッションを開けませんでした。Codex が実行中か確認してください。",
+        openFailed: "元のセッションを開けませんでした。対応するデスクトップアプリが実行中か確認してください。",
     },
 
     voiceStatusBar: {
@@ -212,7 +229,7 @@ export const ja: TranslationStructure = {
         developer: '開発者',
         developerTools: '開発者ツール',
         about: 'このアプリについて',
-        aboutFooter: "CodeLight は、エンドツーエンド暗号化による同期でスマートフォンを既存の Codex デスクトップセッションに接続します。",
+        aboutFooter: "CodeLight は Mac の Codex、Antigravity、Claude Desktop セッションに接続します。Claude Desktop は Gateway を使用し、利用できる操作は各セッションによって異なります。",
         whatsNew: '新機能',
         whatsNewSubtitle: '最新のアップデートと改善を確認',
         reportIssue: '問題を報告',
@@ -958,14 +975,14 @@ export const ja: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "Codex セッションを、\nどこにいても",
+        headline: "Codex / Antigravity / Claude Desktop セッションを、\nどこにいても",
         propEncrypted: "エンドツーエンド暗号化",
         propNoPassword: "登録や VPN は不要",
         propOpenSource: "オープンソース、MIT ライセンス",
         linkTitle: "Mac に接続",
         installStep: "Mac で CodeLight を開く",
-        openStep: "Codex セッションを実行したままにする",
-        openBody: "Mac で CodeLight を開き、Codex を実行したままにしてください。CodeLight にペアリング用 QR コードが表示されます。",
+        openStep: "Codex / Antigravity / Claude Desktop セッションを実行したままにする",
+        openBody: "Mac で CodeLight を開き、Codex / Antigravity / Claude Desktop を実行したままにしてください。CodeLight にペアリング用 QR コードが表示されます。",
         scanStep: "QR コードを読み取る",
         scanButton: "QR コードを読み取る",
         pasteLink: "読み取れない場合はリンクを貼り付け",
@@ -988,8 +1005,8 @@ export const ja: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "スマートフォンで Codex",
-        subtitle: "エンドツーエンド暗号化による同期で、既存の Codex デスクトップセッションに接続します。",
+        title: "スマートフォンで Codex / Antigravity / Claude Desktop",
+        subtitle: "エンドツーエンド暗号化による同期で、既存の Codex / Antigravity / Claude Desktop デスクトップセッションに接続します。",
         createAccount: 'アカウントを作成',
         linkOrRestoreAccount: 'アカウントをリンクまたは復元',
         loginWithMobileApp: 'モバイルアプリでログイン',
@@ -1206,6 +1223,8 @@ export const ja: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "画像をダウンロード",
+        downloadFailed: "画像を保存できませんでした。もう一度お試しください。",
         open: '画像を開く',
         close: '画像を閉じる',
         zoomIn: '拡大',

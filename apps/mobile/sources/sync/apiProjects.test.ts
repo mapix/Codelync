@@ -5,6 +5,7 @@ import {
     fetchProjects,
     requestProjectAvatarDownload,
 } from './apiProjects';
+vi.mock('expo-crypto', () => ({ getRandomBytes: (size: number) => new Uint8Array(size) }));
 
 vi.mock('./serverConfig', () => ({
     getServerUrl: () => 'https://api.example.test',

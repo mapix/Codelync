@@ -158,6 +158,34 @@ test('canonical history patches preserve ordering, duplicates, fallback IDs and 
   assert.equal(consumer()?.rows.length, 4);
 });
 
+test('item insertion and removal refresh cached native order without rewriting old rows or tool payloads', async (t) => {
+  const state = longState(3, 3, 1024), turn = state.turns[2];
+  turn.items.push({ type: 'agentMessage', text: 'position-only fallback' });
+  const { native, session, consumer } = await start(t, state), full = await start(t, state);
+  const oldView = session.view; assert.ok(oldView);
+  const oldTool = oldView.rows.find(row => row.id === 'item-2-1'); assert.ok(oldTool);
+  const oldFirst = oldView.rows[0], toolPayload = oldTool.tools;
+  assert.equal(oldTool.order, 2);
+  const opening = { id: 'new-opening', type: 'userMessage', content: [{ type: 'text', text: 'new original input' }] };
+  turn.items.unshift(opening);
+  native.emit({ type: 'patches', baseRevision: 1, revision: 2, patches: [{ op: 'add', path: ['turns', 2, 'items', 0], value: opening }] });
+  full.native.emit({ type: 'snapshot', conversationState: state, revision: 2 });
+  assert.deepEqual(publicView(consumer()), publicView(full.consumer()));
+  const moved = session.view?.rows.find(row => row.id === 'item-2-1'); assert.ok(moved);
+  assert.equal(moved.order, 3); assert.notEqual(moved, oldTool); assert.equal(moved.tools, toolPayload);
+  assert.equal(oldTool.order, 2); assert.equal(session.view?.rows[0], oldFirst);
+  assert.equal(session.projection?.work.projectedItems, 2); // New input and position-derived fallback only.
+  assert.ok(consumer()?.rows.some((/** @type {Value} */ row) => row.id === 'turn-2:4'));
+  turn.items.shift();
+  native.emit({ type: 'patches', baseRevision: 2, revision: 3, patches: [{ op: 'remove', path: ['turns', 2, 'items', 0] }] });
+  full.native.emit({ type: 'snapshot', conversationState: state, revision: 3 });
+  assert.deepEqual(publicView(consumer()), publicView(full.consumer()));
+  const restored = session.view?.rows.find(row => row.id === 'item-2-1'); assert.ok(restored);
+  assert.equal(restored.order, 2); assert.equal(restored.tools, toolPayload); assert.equal(moved.order, 3);
+  assert.equal(session.projection?.work.projectedItems, 1); // Only the fallback ID depends on the shifted position.
+  assert.ok(consumer()?.rows.some((/** @type {Value} */ row) => row.id === 'turn-2:3'));
+});
+
 test('accepted async replies and changed question titles invalidate dependencies across historical turns', async (t) => {
   const state = longState(50, 4, 64);
   state.turns[0].items = [{ id: 'question-source', type: 'agentMessage', text: 'Question', questions: [{ title: 'Original title', options: ['A'] }] }];

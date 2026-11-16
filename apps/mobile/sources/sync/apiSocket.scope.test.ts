@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ sockets: [] as any[], nonce: 0, credentials: { token: 'fixture-token' } as any }));
+const mocks = vi.hoisted(() => ({ sockets: [] as any[], nonce: 0, credentials: { token: 'fixture-token' } as any, distribution: { noninvasiveLocal: true } }));
 vi.mock('socket.io-client', () => ({ io: vi.fn((_url, options) => {
     const socket: any = { connected: true, on: vi.fn(), onAny: vi.fn(), disconnect: vi.fn(), emit: vi.fn(), timeout: vi.fn(), emitWithAck: vi.fn().mockResolvedValue({ ok: true, result: 'reply' }) };
     socket.options=options; socket.io={ opts:options, on:vi.fn() }; socket.timeout.mockReturnValue(socket); mocks.sockets.push(socket); return socket;
@@ -10,11 +10,40 @@ vi.mock('expo-crypto', () => ({ getRandomBytes: (count: number) => new Uint8Arra
 vi.mock('@/auth/tokenStorage', () => ({ TokenStorage: { getCredentials: async () => mocks.credentials } }));
 vi.mock('./encryption/encryption', () => ({ Encryption: class {} }));
 vi.mock('./storage', () => ({ storage: {} }));
-vi.mock('@/config', () => ({ config: { noninvasiveLocal: true } }));
+vi.mock('@/config', () => ({ config: mocks.distribution }));
 import { apiSocket } from './apiSocket';
 import nacl from 'tweetnacl';
 import { encodeBase64 } from '@/encryption/base64';
-afterEach(() => { apiSocket.disconnect(); mocks.sockets.length = 0; mocks.credentials = { token: 'fixture-token' }; });
+afterEach(() => { apiSocket.disconnect(); mocks.sockets.length = 0; mocks.credentials = { token: 'fixture-token' }; mocks.distribution.noninvasiveLocal = true; });
+
+it('clears a previous connection failure after recovery and publishes changed safe errors', () => {
+    apiSocket.initialize({ endpoint: 'https://connection.example', token: 'fixture-token' }, {} as any);
+    const socket = mocks.sockets[0], seen: Array<unknown> = [];
+    const release = apiSocket.onStatusChange(() => seen.push(apiSocket.peerConnectionError()));
+    const failure = socket.on.mock.calls.find((call: any[]) => call[0] === 'connect_error')[1];
+    const connected = socket.on.mock.calls.find((call: any[]) => call[0] === 'connect')[1];
+    failure({ message: 'transport unavailable', context: { status: 503 } });
+    failure({ message: 'Invalid authentication token', context: { status: 401 } });
+    expect(seen.slice(-2)).toEqual([{ code: 'transport-error', httpStatus: 503 }, { code: 'invalid-token', httpStatus: 401 }]);
+    const notifications = seen.length;
+    failure({ message: 'Invalid authentication token', context: { status: 401 } });
+    expect(seen).toHaveLength(notifications);
+    connected();
+    expect(apiSocket.peerConnectionError()).toBeNull(); expect(seen.at(-1)).toBeNull();
+    release();
+});
+
+it('a pinned peer proves socket entry even without a distribution manifest flag', () => {
+    mocks.distribution.noninvasiveLocal = false;
+    const mac = nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(3)), device = nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(4));
+    const endpoint = 'http://192.168.1.2:8800';
+    const peer = { id: 'fixture-peer', key: encodeBase64(mac.publicKey, 'base64url'), channels: [{ id: 'local', kind: 'local' as const, url: endpoint }],
+        device: { publicKey: encodeBase64(device.publicKey, 'base64url'), secretKey: encodeBase64(device.secretKey, 'base64url') } };
+    apiSocket.initialize({ endpoint, token: 'fixture-token', peer }, {} as any);
+    const packet = JSON.parse(Buffer.from(mocks.sockets[0].options.extraHeaders.Authorization.slice(10), 'base64url').toString());
+    const plain = nacl.box.open(Buffer.from(packet.ciphertext, 'base64url'), Buffer.from(packet.nonce, 'base64url'), device.publicKey, mac.secretKey)!;
+    expect(JSON.parse(Buffer.from(plain).toString())).toMatchObject({ path: '/v1/updates/', token: 'fixture-token' });
+});
 
 it('a route disconnect cancels an outstanding peer read instead of leaving the session loading', async () => {
     const mac=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(3)), device=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(4));
@@ -66,6 +95,34 @@ it('a disconnected socket cannot buffer a mutation for a later reconnect', async
     mocks.sockets[0].connected = false;
     await expect(apiSocket.sessionRPC('fixture-id', 'communication', {})).rejects.toMatchObject({ effectMayHaveOccurred: false });
     expect(mocks.sockets[0].emitWithAck).not.toHaveBeenCalled();
+});
+it.each(['communication', 'permission', 'abort', 'codex-controls-update', 'source-command', 'native-task-stop', 'unknown-native-operation'])('offline native %s rejects before encryption and cannot send after recovery', async method => {
+    const encryptRaw = vi.fn().mockResolvedValue('ciphertext');
+    apiSocket.initialize({ endpoint: 'https://current.example', token: 'fixture-token' }, { getSessionEncryption: () => ({ encryptRaw, decryptRaw: vi.fn() }) } as any);
+    const socket = mocks.sockets[0]; socket.connected = false;
+    await expect(apiSocket.sessionRPC('fixture', method, {})).rejects.toMatchObject({ effectMayHaveOccurred: false });
+    socket.connected = true; socket.on.mock.calls.find((row: any[]) => row[0] === 'connect')[1]();
+    expect(encryptRaw).not.toHaveBeenCalled(); expect(socket.emitWithAck).not.toHaveBeenCalled();
+});
+it('a native write cannot cross same-socket disconnect/reconnect while encrypting', async () => {
+    let finish!: (value: string) => void;
+    const encryptRaw = vi.fn(() => new Promise<string>(resolve => { finish = resolve; }));
+    apiSocket.initialize({ endpoint: 'https://current.example', token: 'fixture-token' }, { getSessionEncryption: () => ({ encryptRaw, decryptRaw: vi.fn() }) } as any);
+    const socket = mocks.sockets[0], event = (name: string) => socket.on.mock.calls.find((row: any[]) => row[0] === name)[1];
+    event('connect')(); const writing = apiSocket.sessionRPC('fixture', 'communication', {});
+    socket.connected = false; event('disconnect')('transport-close'); socket.connected = true; event('connect')();
+    finish('ciphertext'); await expect(writing).rejects.toMatchObject({ effectMayHaveOccurred: false });
+    expect(socket.emitWithAck).not.toHaveBeenCalled();
+});
+it('read-only native RPCs and legacy calls retain their existing encryption-time reconnect behavior', async () => {
+    for (const native of [true, false]) {
+        mocks.distribution.noninvasiveLocal = native; let finish!: (value: string) => void;
+        apiSocket.initialize({ endpoint: 'https://current.example', token: 'fixture-token' }, { getSessionEncryption: () => ({ encryptRaw: () => new Promise<string>(resolve => { finish = resolve; }), decryptRaw: async () => ({ kept: true }) }) } as any);
+        const socket = mocks.sockets.at(-1); socket.connected = false;
+        const reading = apiSocket.sessionRPC('fixture', native ? 'bridge-receipt' : 'communication', {});
+        socket.connected = true; finish('ciphertext'); await expect(reading).resolves.toEqual({ kept: true });
+        expect(socket.emitWithAck).toHaveBeenCalledOnce(); apiSocket.disconnect();
+    }
 });
 
 it.each(['session', 'machine'] as const)('a %s request cannot move to a different connection while encrypting', async kind => {

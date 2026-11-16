@@ -1,5 +1,83 @@
 # CodeLight 产品与验收合同
 
+## 当前支持范围 — 2026-11-16
+
+当前产品支持 Codex、Antigravity Desktop 和 Claude Desktop（Gateway）的原生
+会话。目录、来源标签、设置、构建说明与官网统一列出这三种 Desktop；各来源
+仅显示原应用当前已确认可用的模型、slash command、子代理和控制操作。
+Claude Desktop 的完整正式控制仍需通过其验收门槛。所有独立 CLI/TUI 家族
+继续延期。以下较早日期的接入章节保留各来源的协议与验收边界，不缩小当前范围。
+
+Mac 的加密 machine metadata 也声明这三种 `sourceApps`；该支持范围标记不
+代替原应用的实时目录、当前可用性或具体控制能力。独立 runner availability
+继续为 false，不能因 Desktop 支持而启用相应 CLI。
+
+## Claude Desktop Gateway — 商业打磨范围，2026-11-14
+
+用户已将范围扩展为 Codex、Antigravity 与 Gateway 模式 Claude Desktop，
+所有 CLI/TUI 家族延期。Claude 仅接受显式安装并核验的原生 owner manifest，
+按 Code/Chat 原生 collection 隔离来源；未配置或未核验的模式不进入目录。
+既有 Gateway 配置与当前 Desktop 运行时保持所属关系；独立 CLI/SDK runner、
+官方 OAuth/Remote Control、窗口截图不能替代原生会话接入。
+Claude 正式应用安装与完整模式验收仍为发布门槛，隔离副本的成功不得表示正式
+支持已完成。详见 [Claude 原生合同](claude-desktop-native.md) 与
+[商业验收合同](codelight-commercial-quality.md)。
+
+项目会话 badge 与 active/waiting/unknown/total 使用同一普通会话范围。
+明确 `isSubagent:true` 的来源不占项目会话状态观察预算，也不计入未知会话数；
+普通 fork 的 parentId 不足以判定子代理。父会话内的原生子代理列表与聚合状态
+继续独立呈现，不能因此把缺失或不完整的子代理状态当成零。
+
+## Codex 与 Antigravity 原生会话 — 2026-11-13
+
+用户已授权将产品范围扩展为 Codex 与 Antigravity Desktop。Codex 保留既有
+desktop IPC owner；Antigravity 复用远控实际代理的原生 LanguageServerService
+RPC，由 CodeLight 提供远端配对、密封传输和设备授权。其他历史 harness、
+CLI runner、窗口共享和 AX 控制仍延期。接入与验收规则见
+[Antigravity 远控合同](antigravity-remote-control.md)。只有通过原 owner、
+会话身份和明确协议校验的来源才进入当前产品。下文 Codex 的已有能力与
+验收保持有效；不代表 Antigravity 自动具备每一种 Codex 专属操作。
+
+CodeLight 的原生应用标识 `com.learnings.codelight` 始终启用原生项目／会话
+目录和有限会话加载。启动时 Expo manifest 尚未可用或旧配置缺字段，不能
+回退到历史 Happy 的顶层会话列表或全量历史同步。配置缓存不能更改产品范围。
+
+## Codex imageView projection — 2026-11-02
+
+- 点击后的 Mac 图片处理生成去除元数据的 JPEG 预览，必要时降低画质及尺寸，最终加密附件不超过 500,000 字节。源文件保留，正文同步仍只传占位标记；未点击时不解码、不压缩、不上传。输出缓存按压缩策略版本隔离，不能复用旧的原图 ref。
+- 图片加载失败的原生诊断只记录阶段、耗时和固定错误码，不记录原图片、路径、URL、密钥、用户文字或附件 ref。分别核对原图片读取、RPC 解密、响应校验、附件下载、blob 解密与原生渲染。
+- 预览加载成功后提供“下载图片”按钮，使用当前已解密的图片打开手机系统保存菜单，支持相册/文件保存，不再重新下载原图。临时图片位于 App 缓存，保存菜单关闭后清理；保存失败提示可重试，不影响查看和关闭。
+- Mac 打包须包含已安装的图像库平台原生模块及动态库。仅导出二进制、未导出 package.json/默认入口的生产依赖也必须可定位，不能因 exports 限制而被误判为未安装的 optional dependency。安装前用签名包内 Node 实际加载并压缩图片；图片库延迟到点击时加载，避免影响连接服务启动。
+- 私有 USB 诊断可将本机当前入口作为已配对手机的候选定位地址。手机须用原配对密钥认证 Mac 返回的通道列表，确认相同 peer 后交给既有自动选路所有者验证实时连接并保存；不创建新配对、账户或会话，不依据地址本身信任对端。
+- 图片 RPC 和下载读取当前连接 owner 已保存的配对凭据与通道清单，不能用 Sync 初始化时的旧通道快照向新入口发送无认证请求。同一 peer/账户/设备的通道变化可继续只读加载；其他 peer、账户或设备变化必须拒绝，旧式连接保留地址/token 隔离。
+- 将本机附件 URL 改写为当前入口时，协议、hostname 和 port 必须分别完整替换；HTTPS 默认端口须清掉本机端口，保留 Relay 路径前缀。外部存储 URL 保持原值。
+
+- 原 owner 的 `imageView` 是可见工具消息，必须保留原 item/turn ID 和顺序，不能因没有文本而跳过。
+- 仅对原生记录明确给出的本机图片路径读取附件，不接受手机传入路径，不新增文件浏览或手机上传能力。源图片限常规 PNG/JPEG/GIF/WebP、64 MiB 与 6400 万像素；压缩后的加密附件限 500,000 字节。
+- 同步只传图片标记、原 item ID 和文件名。最近页、实时流与后台刷新不读取图片文件、不上传图片、不下载缩略图；正文显示可点击占位图。
+- 点击占位图后才经当前会话加密 `native-image-read` RPC 传原 image ID。Connector 根据该 source 的原生记录定位路径，复用当前会话的加密 blob key 和 ACL 发布不可变副本，ref 先在加密检查点落盘再返回。重复点击、ACK 丢失和重启复用同一 ref，不按文件名或文字去重。
+- 手机只在预览打开后额外读取附件。图片加载期间显示进度，失败保留占位与可重试提示；不能让单张图片失败使整个会话同步失败。预览复用现有缩放、平移、关闭组件。原 owner/lease 改变时拒绝本次读取。
+- 图片投影语义迁移必须刷新已有 Connector 的快照版本；原 owner 正文未变化也要替换旧图片参数，不能被内容 stamp 或手机去重压住。原 item ID 与已保存附件 ref 保留。
+- 验收覆盖：同步/挂载占位图时图片读取与上传为零、点击后首次加载、重复点击/ACK 丢失/重启不重复上传、历史图片、缺失/超限/非图片文件、任意路径和不同 source/会话请求拒绝、最近页与实时消息的占位参数、真机点击报告会话中的图片。
+
+```mermaid
+sequenceDiagram
+    participant O as 原 Codex owner
+    participant C as 已绑定 Connector
+    participant B as 会话加密附件存储
+    participant P as 手机
+    O->>C: imageView item ID + 本机路径
+    C-->>P: 原 item ID + 图片标记和名称（无图片字节）
+    P->>C: 点击后 encrypted native-image-read(image ID)
+    C->>C: 核对 owner/lease、限长读取、图片格式
+    C->>B: 按会话 blob key 加密上传
+    B-->>C: 本会话 attachment ref
+    C->>C: 加密检查点保存 ref
+    C-->>P: 本会话 attachment ref + 尺寸
+    P->>B: 已认证附件读取
+    P->>P: 解密并复用图片预览
+```
+
 ## Control responsiveness and observation budget — 2026-11-01
 
 - A large legacy Codex observer checkpoint moves already-acknowledged event
@@ -45,7 +123,8 @@ sequenceDiagram
   original user row carrying that exact command ID under the same owner/epoch.
   A different device's answer or a pending/rejected steering row is insufficient.
 
-2026-10-31 当前产品定位为 **Codex 专用原生手机 App**，只支持使用网关模式接入的桌面 Codex。其他 harness、窗口共享和 AX 控制是否启用留待后续决定。既有研究源码保留，但不属于当前发行能力。
+2026-10-31 的 Codex 专用定位已由上述 2026-11-13 授权扩展。既有延期研究
+源码保留，Antigravity 必须通过新原生协议接入，不能恢复旧窗口适配器。
 
 ## 产品规则与所有者
 
@@ -83,7 +162,7 @@ sequenceDiagram
 - 手机底部只催当前轮未回答的问题；旧轮问题保留真实历史答复证据，不重新进入待操作队列。过期回复在 native dispatch 前拒绝，详见 [Codex 原生 IPC 合同](codex-native-ipc.md)。
 - 项目视图在手机前台显示来自原 Codex 状态的轻量活跃/待操作统计，每条可见会话显示活跃、待操作、空闲或未确认状态。最近更新时间不是运行状态；未确认、过期或断连的数据不能显示为已确认的零。状态同步与当前会话的历史同步分开，详见 [项目状态合同](codelight-project-activity.md)。
 - 原生项目内会话通过一行选择框切换，沿用已有项目归属、会话身份和路由。打开选择框不加载所有历史、不向原 Agent 发命令；重复选择当前会话保留输入草稿。
-- 用户界面说明和翻译统一遵守 Codex-only 范围。不能用保留的 Happy/Claude/其他 harness 代码或历史 spec 宣称当前支持。
+- 用户界面说明和翻译统一列出 Codex、Antigravity Desktop 和 Claude Desktop（Gateway），并按各来源的实际能力提供操作。保留的 CLI、其他 harness 或窗口研究代码不进入当前支持清单。
 
 ## RPC scope 与事件顺序
 

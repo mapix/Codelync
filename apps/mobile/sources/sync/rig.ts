@@ -1,4 +1,5 @@
 import { isNoninvasiveBridge, getNoninvasiveTurnId } from './noninvasiveBridge';
+import { nativeQueryCanCancel } from '@/utils/nativeQuery';
 import type { Metadata, RigComposerMode } from './storageTypes';
 
 export type ProviderIconKind = 'codex' | 'claude' | 'grok' | 'kimi' | 'generic';
@@ -197,7 +198,8 @@ export function rigSendsMessageReceipts(metadata: Metadata | null | undefined): 
     return isRigMetadataV1(metadata) && metadata?.capabilities?.messageReceipts === true;
 }
 
-export function rigCanAbort(metadata: Metadata | null | undefined): boolean {
+export function rigCanAbort(metadata: Metadata | null | undefined, agentState?: { nativeQuery?: unknown } | null): boolean {
+    if (isNoninvasiveBridge(metadata) && metadata?.bridge?.source.app === 'claude-desktop') return nativeQueryCanCancel(metadata, agentState?.nativeQuery);
     if (isNoninvasiveBridge(metadata) && !getNoninvasiveTurnId(metadata)) return false;
     return !isRigMetadataV1(metadata)
         || (metadata?.capabilities?.abort === true && rigHasRpcMethod(metadata, 'abort'));

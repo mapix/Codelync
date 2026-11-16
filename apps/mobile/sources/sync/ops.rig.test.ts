@@ -1,20 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { rigMetadataFixture } from './__testdata__/rigMetadata';
 
-const { sessionRPC, getState, setMode } = vi.hoisted(() => ({
+const { sessionRPC, getState, setMode, nativeRpc } = vi.hoisted(() => ({
     sessionRPC: vi.fn(),
     getState: vi.fn(),
     setMode: vi.fn(),
+    nativeRpc: vi.fn(),
 }));
 
 vi.mock('./apiSocket', () => ({ apiSocket: { sessionRPC } }));
 vi.mock('./sync', () => ({ sync: {} }));
 vi.mock('./storage', () => ({ storage: { getState } }));
 vi.mock('./rigComposer', () => ({ rigComposerSetMode: setMode }));
+vi.mock('./noninvasiveRpc', () => ({ runNoninvasiveRpc: nativeRpc, recoverNoninvasiveRpc: async () => true }));
 
 describe('Rig session RPC capability gates', () => {
     beforeEach(() => {
         sessionRPC.mockReset();
+        nativeRpc.mockReset(); nativeRpc.mockResolvedValue({ cancelled: true });
         sessionRPC.mockResolvedValue({ aborted: true });
         getState.mockReturnValue({
             sessions: { rig: { metadata: rigMetadataFixture } },
@@ -25,6 +28,27 @@ describe('Rig session RPC capability gates', () => {
         const { sessionAbort } = await import('./ops');
         await sessionAbort('rig');
         expect(sessionRPC).toHaveBeenCalledWith('rig', 'abort', {});
+    });
+
+    it('cancels only the displayed Claude query, with no turn ID or draft change', async () => {
+        const hostId = 'local:claude-desktop:' + 'a'.repeat(64);
+        const query = { version: 1, app: 'claude-desktop', nativeConversationId: 'original', hostId, ownerGeneration: 'owner',
+            queryToken: 'query', status: 'running', canSend: false, activeSendMode: 'unverified', canCancel: true } as const;
+        const session = { draft: 'PRESERVED', metadata: { client: { id: 'noninvasive-bridge' }, nativeSession: { isSubagent: false },
+            bridge: { source: { app: 'claude-desktop', id: 'original', hostId, runtimeGeneration: 'owner', kind: 'session', protocol: 'claude-desktop-native',
+                appMode: 'chat', nativeCollection: 'local-agent-mode-sessions' }, controlMode: 'session', sourceStatus: 'connected', currentTurnId: null },
+            capabilities: { abort: true, rpcMethods: ['abort'] } }, agentState: { nativeQuery: query } };
+        getState.mockReturnValue({ sessions: { claude: session } });
+        const { sessionAbort } = await import('./ops');
+        await sessionAbort('claude', query);
+        expect(nativeRpc).toHaveBeenCalledExactlyOnceWith('claude', 'abort', { queryToken: 'query' });
+        expect(sessionRPC).not.toHaveBeenCalled(); expect(session.draft).toBe('PRESERVED');
+        nativeRpc.mockClear();
+        await expect(sessionAbort('claude', { ...query, queryToken: 'old-query' })).rejects.toThrow('changed');
+        expect(nativeRpc).not.toHaveBeenCalled();
+        session.metadata.nativeSession.isSubagent = true;
+        await expect(sessionAbort('claude', query)).rejects.toThrow('not available');
+        expect(nativeRpc).not.toHaveBeenCalled();
     });
 
     it('does not server-archive or delete a bot conversation', async () => {

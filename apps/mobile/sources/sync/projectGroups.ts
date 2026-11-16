@@ -1,6 +1,7 @@
 import type { Session } from './storageTypes';
 import type { SessionRowData } from './storage';
 import { getRepoPath, getWorktreeName, isWorktreePath } from '@/utils/worktreePaths';
+import { codeLightSourceAppName, isCodeLightSessionIdentity } from '@/utils/codeLightSourceScope';
 
 // One git worktree inside a project. `id` is empty and `name` is null for
 // the project's primary tree, which always sorts first.
@@ -48,14 +49,21 @@ export function buildPathProjectGroups(
         const sessionPath = session.metadata?.path?.trim() || '';
         const worktree = isWorktreePath(sessionPath);
         const projectPath = worktree ? getRepoPath(sessionPath) : sessionPath;
+        const source = session.metadata?.bridge?.source;
+        const nativeSource = isCodeLightSessionIdentity(source, session.metadata?.bridge?.controlMode);
+        const nativeProject = nativeSource ? session.metadata?.nativeSession : undefined;
         const workspaceId = worktree ? sessionPath : '';
         const workspaceName = worktree ? getWorktreeName(sessionPath) : null;
-        const key = JSON.stringify([machineId, projectPath]);
+        const key = JSON.stringify(nativeSource
+            ? [machineId, source?.hostId, source?.app, nativeProject?.projectKey || nativeProject?.projectPath || projectPath]
+            : [machineId, projectPath]);
         let group = projects.get(key);
         if (!group) {
             group = {
                 id: `${idPrefix}:${key}`,
-                name: pathProjectName(projectPath, session.metadata?.homeDir),
+                name: nativeSource
+                    ? `${codeLightSourceAppName(source?.app)} · ${nativeProject?.projectLabel || pathProjectName(nativeProject?.projectPath || projectPath, session.metadata?.homeDir)}`
+                    : pathProjectName(projectPath, session.metadata?.homeDir),
                 machineId,
                 workspaces: [],
                 sessionCount: 0,

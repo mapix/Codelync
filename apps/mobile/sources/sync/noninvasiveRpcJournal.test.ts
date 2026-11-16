@@ -9,6 +9,26 @@ function setup() {
     return { store, rpc, id, saved: () => saved, journal: new NoninvasiveRpcJournal(store, rpc, id, async value => `digest:${value.length}`) };
 }
 describe('non-invasive RPC persistent identities', () => {
+    it.each(['foreign-id', 'foreign-target', 'missing'])('an explicit original-ID check rejects %s before RPC or deletion', async kind => {
+        const f = setup(), target = 'task:A', captured = { ...context, method: 'native-task-stop', target };
+        const record = JSON.stringify({ ...captured, commandId: kind === 'foreign-id' ? 'foreign-command' : 'original-command', target: kind === 'foreign-target' ? 'task:B' : target, digest: 'kept', createdAt: 1 });
+        if (kind !== 'missing') await f.store.set(record);
+        const remove = vi.spyOn(f.store, 'remove');
+        expect(await f.journal.recoverDetailed(captured, 'original-command')).toEqual({ confirmed: false });
+        expect(f.rpc).not.toHaveBeenCalled(); expect(f.id).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+        expect(f.saved()).toBe(kind === 'missing' ? null : record);
+    });
+    it.each(['complete', 'failed', 'unknown'] as const)('an exact original-ID check handles %s without another mutation or ID', async status => {
+        const f = setup(), captured = { ...context, method: 'native-task-stop', target: 'task:A' };
+        await f.store.set(JSON.stringify({ ...captured, commandId: 'original-command', digest: 'kept', createdAt: 1 }));
+        f.rpc.mockResolvedValue({ receipt: { id: 'original-command', status, result: { requested: true }, error: 'PRIVATE_ERROR_URL' } });
+        const result = await f.journal.recoverDetailed(captured, 'original-command');
+        expect(f.rpc).toHaveBeenCalledExactlyOnceWith(context.sessionId, 'bridge-receipt', { commandId: 'original-command' });
+        expect(f.id).not.toHaveBeenCalled(); expect(result.confirmed).toBe(status !== 'unknown');
+        expect(result.pending?.commandId).toBe('original-command');
+        if (status === 'failed') { expect(result.failed).toBe(true); expect(JSON.stringify(result)).not.toContain('PRIVATE_ERROR_URL'); }
+        expect(f.saved() === null).toBe(status !== 'unknown');
+    });
     it('a proven pre-dispatch rejection clears only the new journal record and allows an explicit retry', async () => {
         const f = setup(); f.rpc.mockRejectedValueOnce(Object.assign(Error('connection changed before emit'), { effectMayHaveOccurred: false }));
         await expect(f.journal.execute(context, { turnId: 'native-turn' })).rejects.toThrow('connection changed before emit');

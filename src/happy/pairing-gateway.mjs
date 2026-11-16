@@ -4,6 +4,8 @@ import { channelList, peerMaterial } from '@slopus/happy-wire/codelight';
 import { BridgeError } from '../errors.mjs';
 import nacl from 'tweetnacl';
 import { WebSocketServer } from 'ws';
+import { PEER_RESPONSE_CODEC_HEADER } from '@slopus/happy-wire/peer-codec';
+import { sealPeerResponse } from './peer-response-codec.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const CODE = /^[A-Za-z0-9_-]{43}$/u;
@@ -116,7 +118,7 @@ async function readBody(req) {
 }
 
 /** Only this loopback API is proxied; invitations are exchanged, never enumerated through the public tunnel.
- * @param {{upstream:string,invitations:PairingInvitations,devices?:import('./device-registry.mjs').DeviceRegistry,notificationsAvailable?:boolean,metrics?:Pick<import('./gateway-metrics.mjs').GatewayMetrics,'trackSocket'|'request'>,pairingBudget?:{capacity?:number,refillPerSecond?:number,now?:()=>number},entryProbe?:(challenge:unknown)=>string|null,proof?:import('../network/device-proof.mjs').DeviceProofVerifier,requireProof?:boolean,expectedOrigin?:()=>string|null,onVerified?:()=>void,peerApi?:(path:string,method:string,body:Value,device:string)=>Promise<Value>,peerId?:()=>string}} options */
+ * @param {{upstream:string,invitations:PairingInvitations,devices?:import('./device-registry.mjs').DeviceRegistry,notificationsAvailable?:boolean,metrics?:Pick<import('./gateway-metrics.mjs').GatewayMetrics,'trackSocket'|'request'>,pairingBudget?:{capacity?:number,refillPerSecond?:number,now?:()=>number},entryProbe?:(challenge:unknown)=>string|null,proof?:import('../network/device-proof.mjs').DeviceProofVerifier,expectedOrigin?:()=>string|null,onVerified?:()=>void,peerApi?:(path:string,method:string,body:Value,device:string)=>Promise<Value>,peerId?:()=>string}} options */
 export function createPairingGateway(options) {
   const upstream = new URL(options.upstream);
   if (upstream.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(upstream.hostname)) throw Error('invalid-pairing-upstream');
@@ -126,8 +128,8 @@ export function createPairingGateway(options) {
   const authorize = req => {
     const proof = options.proof?.authorize(req.headers.authorization, req.method ?? 'GET', req.url ?? '/', options.expectedOrigin?.());
     if (proof) { req.headers.authorization = 'Bearer ' + proof.token; options.onVerified?.(); return proof.id; }
-    if (options.requireProof) return null;
-    return options.devices?.authorize(req.headers.authorization?.replace(/^Bearer /u, '')) ?? null;
+    // All client-facing channels require proof; raw tokens belong only on the owned backend link.
+    return null;
   };
   const server = createServer({ headersTimeout: 10000, requestTimeout: 60000, keepAliveTimeout: 5000 }, async (req, res) => {
     try { options.metrics?.request(); } catch { /* 统计失败不能阻断配对或同步。 */ }
@@ -155,12 +157,10 @@ export function createPairingGateway(options) {
       try {
         let body = ''; for await (const chunk of req) { body += chunk.toString(); if (body.length > 4096) throw Error('request-too-large'); }
         const payload = await options.peerApi(req.url ?? '', req.method ?? 'GET', body ? JSON.parse(body) : {}, device);
-        const encoded = Buffer.from(JSON.stringify({ peerId: options.peerId?.(), payload }));
-        if (encoded.length > 8 * 1024 * 1024) throw Error('peer-response-too-large');
         const key = options.devices.publicKey(device); if (!key) throw Error('unknown-device');
-        const nonce = randomBytes(24), ciphertext = nacl.box(encoded, nonce, bytes(key), options.invitations.pair.secretKey);
+        const packet = sealPeerResponse(options.peerId?.(), payload, bytes(key), options.invitations.pair.secretKey, req.headers[PEER_RESPONSE_CODEC_HEADER]);
         res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
-        res.end(JSON.stringify({ version: 2, nonce: nonce.toString('base64url'), ciphertext: Buffer.from(ciphertext).toString('base64url') }));
+        res.end(JSON.stringify(packet));
       } catch (error) {
         const status = error instanceof BridgeError ? error.status : 400;
         const code = error instanceof BridgeError && /^[a-z][a-z0-9-]{0,80}$/u.test(error.code) ? error.code : 'peer-request-failed';
@@ -184,7 +184,7 @@ export function createPairingGateway(options) {
     }
     if (req.url?.startsWith('/codelight/')) { res.writeHead(404).end(); return; }
     const path = req.url?.split('?')[0];
-    if (options.devices && (path?.startsWith('/v1/auth') || path !== '/health' && !authorize(req))) {
+    if (path?.startsWith('/v1/auth') || path !== '/health' && !authorize(req)) {
       res.writeHead(401).end(); return;
     }
     const proxy = proxyRequest({ hostname: upstream.hostname, port: upstream.port, path: req.url,
@@ -213,7 +213,7 @@ export function createPairingGateway(options) {
     const path = req.url?.split('?')[0];
     if (path !== '/v1/updates' && path !== '/v1/updates/') { socket.destroy(); return; }
     const device = authorize(req);
-    if (options.devices && !device) { socket.destroy(); return; }
+    if (!device) { socket.destroy(); return; }
     if (device) options.devices?.connected(device, /** @type {import('node:net').Socket} */ (socket));
     const proxy = proxyRequest({ hostname: upstream.hostname, port: upstream.port, path: req.url,
       headers: { ...req.headers, host: upstream.host } });

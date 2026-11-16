@@ -1,4 +1,8 @@
 import { CodexIpcAdapter } from './codex-ipc.mjs';
+import { CodexSubagentProjection } from './native-subagents.mjs';
+import { codexNativeInputControl } from './codex-subagent-control.mjs';
+import { aggregateNativeActivity } from './native-aggregate-activity.mjs';
+import { readNativeCodexCatalogue } from './codex-catalog.mjs';
 import { pendingNativeAsyncQuestions } from '../native-question-scope.mjs';
 import { BridgeError } from '../errors.mjs';
 import { execFile } from 'node:child_process';
@@ -12,7 +16,7 @@ import { validateNativeResponse, validateFormResponse, validateQuestionResponse,
 
 /** @typedef {Record<string, any>} Value */
 /** @typedef {{id:string,role:string,text:string,tools:Value[],turnId:string|null,status:string|null,at:number|null,order?:number,asyncQuestions?:Value[],commandId?:string,replaceSourceRowIds?:string[]}} Row */
-/** @typedef {{rows:Row[],currentTurnId:string|null,latestTurnId?:string|null,status:string,requests:Value[],revision:number|null,contentStamp?:string,ownerGeneration?:string,historyComplete?:boolean,nativeControlsCurrent?:Value}} View */
+/** @typedef {{rows:Row[],currentTurnId:string|null,latestTurnId?:string|null,status:string,requests:Value[],revision:number|null,contentStamp?:string,ownerGeneration?:string,historyComplete?:boolean,nativeControlsCurrent?:Value,nativeInput?:Value}} View */
 /** @typedef {{resolve:(view:View)=>void,reject:(error:Error)=>void,timer:ReturnType<typeof setTimeout>}} Waiter */
 /** @typedef {Waiter & {owner:string|null,armed:boolean}} FreshWaiter */
 /** @typedef {{sourceId:string,row:Row}} Candidate */
@@ -24,11 +28,13 @@ import { validateNativeResponse, validateFormResponse, validateQuestionResponse,
 /** Safe phone-facing projection of the existing native desktop owner. */
 export class CodexBackend {
   supportsNativeModelSettings = true;
-  /** @param {{ipc?:CodexIpcAdapter,waitTimeoutMs?:number,snapshotRefreshMs?:number,nativeErrorThread?:string,nativeErrorFile?:string,openDesktop?:((uri:string)=>Promise<unknown>),loadModelCatalog?:(provider:string|null,currentModel:string)=>Promise<Value>}} [options] */
+  supportsSourceCommands = true;
+  /** @param {{ipc?:CodexIpcAdapter,waitTimeoutMs?:number,snapshotRefreshMs?:number,nativeErrorThread?:string,nativeErrorFile?:string,openDesktop?:((uri:string)=>Promise<unknown>),loadModelCatalog?:(provider:string|null,currentModel:string)=>Promise<Value>,readSourceCatalogue?:(options:Value)=>Promise<Value>,savedHistoryReader?:{readPage:(id:string,boundary?:Value)=>Promise<Value>,release?:(id:string)=>void,close?:()=>void}}} [options] */
   constructor(options = {}) {
     this.ipc = options.ipc ?? new CodexIpcAdapter();
     this.openDesktop = options.openDesktop ?? openLocalCodexDesktop;
     this.loadModelCatalog = options.loadModelCatalog ?? loadNativeCodexModelCatalog;
+    this.readSourceCatalogue = options.readSourceCatalogue ?? readNativeCodexCatalogue;
     this.waitTimeoutMs = options.waitTimeoutMs ?? 15_000;
     this.snapshotRefreshMs = options.snapshotRefreshMs ?? 1000;
     if (!Number.isSafeInteger(this.snapshotRefreshMs) || (this.snapshotRefreshMs !== 0 && this.snapshotRefreshMs < 1000)) throw new BridgeError('invalid-refresh-rate', 'Native snapshot refresh cannot exceed one request per second.');
@@ -40,7 +46,43 @@ export class CodexBackend {
     /** @type {Map<string,Promise<View>>} */ this.freshSnapshots = new Map();
     /** @type {Map<string,Set<FreshWaiter>>} */ this.freshWaiters = new Map();
     this.disposed = false;
+    this.subagentProjection = new CodexSubagentProjection();
+    this.savedHistoryReader = options.savedHistoryReader ?? null;
+    this.supportsNativeSavedHistory = this.savedHistoryReader !== null;
   }
+
+  /** Separate saved-data capability. It never acquires a controller or seeds live state.
+   * @param {string} id @param {Value} [boundary] @returns {Promise<Value>} */
+  async readHistoricalPage(id, boundary = {}) {
+    if (this.disposed) throw new BridgeError('adapter-disposed', 'Codex backend is disposed.', 503);
+    if (!this.savedHistoryReader) throw new BridgeError('codex-history-unavailable', 'Verified original Desktop saved history is unavailable.', 503);
+    try {
+      const view = await this.savedHistoryReader.readPage(id, boundary), proof = view?.historicalRead;
+      if (!Array.isArray(view?.rows) || view.status !== 'history-only' || view.ownerGeneration !== null || view.currentTurnId !== null || !Array.isArray(view.requests) || view.requests.length
+        || proof?.version !== 1 || proof.available !== true || proof.app !== 'codex' || proof.originator !== 'Codex Desktop' || proof.nativeId !== id || proof.hostId !== 'local'
+        || !/^[a-f0-9]{64}$/u.test(proof.namespaceHash) || !/^[a-f0-9]{64}$/u.test(proof.sourceStamp)) throw new BridgeError('codex-history-view-unverified', 'Verified original Desktop saved history is unavailable.', 503);
+      if (this.disposed) throw new BridgeError('adapter-disposed', 'Codex backend is disposed.', 503);
+      const rows = view.rows.map((/** @type {Value} */ row) => {
+        if (!['user', 'assistant', 'reasoning', 'tool'].includes(row.role)) throw new BridgeError('codex-history-view-unverified', 'Verified original Desktop saved history is unavailable.', 503);
+        return { id: row.id, role: row.role, text: row.text, turnId: row.turnId, status: 'history-only', at: row.at, order: row.order,
+          ...(typeof row.displayTurnId === 'string' ? { displayTurnId: row.displayTurnId } : {}),
+          tools: (row.tools ?? []).map((/** @type {Value} */ tool) => ({ id: tool.id, name: tool.name, output: tool.output, status: tool.status })) };
+      });
+      const historicalRead = Object.fromEntries(['version', 'available', 'app', 'originator', 'nativeId', 'hostId', 'namespaceHash', 'sourceStamp', 'parentNativeId', 'bytesRead',
+        'trailingIncomplete', 'appendProof', 'retainedRanges'].filter(key => proof[key] !== undefined).map(key => [key, proof[key]]));
+      historicalRead.byteBoundary = { start: proof.byteBoundary?.start, end: proof.byteBoundary?.end, total: proof.byteBoundary?.total };
+      historicalRead.lastLifecycle = proof.lastLifecycle ? { type: proof.lastLifecycle.type, turnId: proof.lastLifecycle.turnId,
+        recordByteOffset: proof.lastLifecycle.recordByteOffset, at: proof.lastLifecycle.at, terminalObserved: proof.lastLifecycle.terminalObserved === true } : null;
+      return structuredClone({ rows, requests: [], status: 'history-only', currentTurnId: null, ownerGeneration: null, historicalRead,
+        contentStamp: view.contentStamp, historyComplete: view.historyComplete });
+    } catch (error) {
+      const code = error instanceof BridgeError && (error.code.startsWith('codex-history-') || error.code === 'adapter-disposed') ? error.code : 'codex-history-read-unavailable';
+      throw new BridgeError(code, 'Verified original Desktop saved history is unavailable.', error instanceof BridgeError ? error.status : 503);
+    }
+  }
+
+  /** @param {string} id */
+  releaseHistoricalSource(id) { this.savedHistoryReader?.release?.(id); }
 
   async status() {
     try {
@@ -212,6 +254,13 @@ export class CodexBackend {
       session.projection = projectHistory(session.state, session.projection);
       session.view = projectView(session.state, change.revision, session.projection);
       if (session.ownerGeneration !== null) session.view.ownerGeneration = session.ownerGeneration;
+      const children = this.subagentProjection.project(session.projection.turns, session.id, frame.params?.hostId ?? 'local', session.ownerGeneration, session.state.turnHistory?.history?.isComplete === true);
+      Object.assign(session.view, children, { ownNativeStatus: session.view.status,
+        nativeInput: { ...codexNativeInputControl(session.state), app: 'codex', nativeConversationId: session.id,
+          hostId: frame.params?.hostId ?? 'local', ownerGeneration: session.ownerGeneration },
+        aggregateActivity: aggregateNativeActivity({ app: 'codex', parentConversationId: session.id, hostId: frame.params?.hostId ?? 'local', ownerGeneration: session.ownerGeneration,
+          ownStatus: session.view.status, ownWaiting: session.view.requests.length > 0, subagents: children.subagents,
+          rosterAvailable: children.subagentsAvailable, rosterComplete: children.subagentsComplete }) });
       // 完整行摘要按顺序组合；只序列化改变的行，状态帧不再重复复制全部历史文本。
       const metadata = { ...session.view, rows: undefined };
       session.view.contentStamp = createHash('sha256').update('codelight-view-v1\0').update(session.projection.rowsDigest).update(JSON.stringify(metadata)).digest('hex');
@@ -309,14 +358,19 @@ export class CodexBackend {
   /** @param {string} id @param {string|null} [expectedGeneration] */
   async readControls(id, expectedGeneration) {
     const current = await this.ipc.readModelSettings(id, expectedGeneration);
-    if (this.ipc.hostId !== 'local') return { model: { available: false, current, models: [], catalogSource: 'unavailable', reason: 'original-host-catalog-unavailable' } };
-    try {
-      const catalog = await this.loadModelCatalog(current.modelProvider, current.model);
-      const models = Array.isArray(catalog.models) ? catalog.models : [];
-      const latest = await this.ipc.readModelSettings(id, expectedGeneration);
-      if (latest.modelProvider !== current.modelProvider) return { model: { available: false, current: latest, models: [], catalogSource: 'unavailable', reason: 'original-provider-changed' } };
-      return { model: { available: models.some((/** @type {Value} */ m) => m.id === latest.model), current: latest, models, catalogSource: catalog.catalogSource ?? 'unavailable' } };
-    } catch { return { model: { available: false, current, models: [], catalogSource: 'unavailable', reason: 'native-model-catalog-unavailable' } }; }
+    let model = /** @type {Value} */ ({ available: false, current, models: [], catalogSource: 'unavailable', reason: 'original-host-catalog-unavailable' });
+    if (this.ipc.hostId === 'local') {
+      try {
+        const catalog = await this.loadModelCatalog(current.modelProvider, current.model);
+        const models = Array.isArray(catalog.models) ? catalog.models : [];
+        const latest = await this.ipc.readModelSettings(id, expectedGeneration);
+        model = latest.modelProvider !== current.modelProvider
+          ? { available: false, current: latest, models: [], catalogSource: 'unavailable', reason: 'original-provider-changed' }
+          : { available: models.some((/** @type {Value} */ m) => m.id === latest.model), current: latest, models, catalogSource: catalog.catalogSource ?? 'unavailable' };
+      } catch { model = { available: false, current, models: [], catalogSource: 'unavailable', reason: 'native-model-catalog-unavailable' }; }
+    }
+    const catalogue = await this.readSourceCatalogue({ hostId: this.ipc.hostId, ownerGeneration: this.ipc.generation?.(id) ?? null, modelAvailable: model.available });
+    return { ...catalogue, model };
   }
 
   /** @param {string} id @param {string} action @param {unknown} payload @param {string} commandId @param {{expectedGeneration:string|null}} [context] @returns {Promise<Value>} */
@@ -326,6 +380,18 @@ export class CodexBackend {
       let response;
       if (action === 'read-controls') {
         exactKeys(payload, []); return await this.readControls(id, context?.expectedGeneration);
+      } else if (action === 'source-command') {
+        exactKeys(payload, ['name', 'arguments']);
+        if (payload.name !== 'compact' || payload.arguments !== '') throw new BridgeError('unsupported-action', 'This Codex command has no verified native action contract.');
+        const view = await this.freshSnapshot(id);
+        if (view.currentTurnId !== null || view.status !== 'idle') throw new BridgeError('stale-turn', 'Native compaction requires an idle Codex conversation.', 409);
+        const generation = view.ownerGeneration ?? this.ipc.generation?.(id) ?? null;
+        if (!generation || context?.expectedGeneration != null && context.expectedGeneration !== generation) throw new BridgeError('source-epoch-changed', 'The original Codex owner changed before compaction.', 409);
+        const catalogue = await this.readSourceCatalogue({ hostId: this.ipc.hostId, ownerGeneration: generation });
+        if (!catalogue.commands?.available || !catalogue.commands.items.some((/** @type {Value} */ command) => command.name === 'compact' && command.execution === 'native-action')) throw new BridgeError('unsupported-action', 'This desktop version has no verified compaction contract.');
+        response = await this.ipc.compact(id, commandId, generation);
+        if (response.result?.ok !== true) throw new BridgeError('codex-protocol-error', 'The original owner did not confirm the compaction request.', 502);
+        return { acknowledged: true, requested: true, commandName: 'compact' };
       } else if (action === 'update-settings') {
         exactKeys(payload, ['model', 'reasoningEffort', 'expectedModel', 'expectedReasoningEffort']);
         const controls = await this.readControls(id, context?.expectedGeneration), current = controls.model.current;
@@ -348,11 +414,16 @@ export class CodexBackend {
       } else if (action === 'send' || action === 'steer') {
         exactKeys(payload, ['text']);
         if (typeof payload.text !== 'string' || !payload.text.trim()) throw new BridgeError('invalid-input', 'Message text is required.');
+        const session = this.sessions.get(id);
+        let input = /** @type {Value|null} */ (session?.state ? codexNativeInputControl(session.state) : null);
+        if (!input && context?.expectedGeneration != null) input = (await this.freshSnapshot(id)).nativeInput ?? null;
+        if (input?.available === false) throw Object.assign(new BridgeError('parent-owned-subagent', 'This original Codex child receives follow-ups through its parent.', 409), { effectMayHaveOccurred: false });
         response = action === 'send' ? await this.ipc.send(id, payload.text, commandId, context?.expectedGeneration) : await this.ipc.steer(id, payload.text, commandId, context?.expectedGeneration);
       } else if (action === 'answer-question') {
         exactKeys(payload, ['questionItemId', 'answer']);
         if (typeof payload.questionItemId !== 'string' || typeof payload.answer !== 'string' || !payload.answer.trim()) throw new BridgeError('invalid-answer', 'A native question identity and nonempty answer are required.');
         const view = await this.freshSnapshot(id);
+        if (view.nativeInput?.available === false) throw Object.assign(new BridgeError('parent-owned-subagent', 'This original Codex child receives text replies through its parent.', 409), { effectMayHaveOccurred: false });
         const question = pendingNativeAsyncQuestions(view).find((question) => question.questionItemId === payload.questionItemId);
         if (!question) throw new BridgeError('stale-question', 'This native asynchronous question is unknown or already answered.', 409);
         const text = `<send_user_message_question_reply>\n${JSON.stringify([{ questionItemId: question.questionItemId, question: question.title, answer: payload.answer }])}\n</send_user_message_question_reply>`;
@@ -395,6 +466,9 @@ export class CodexBackend {
       } else throw new BridgeError('unsupported-action', 'This operation has no supported native Codex contract.');
       return actionResult(action, response);
     } catch (error) {
+      if (error instanceof BridgeError && error.code === 'codex-request-rejected') Object.assign(error, {
+        nativeCause: error.message.includes('direct app-server input is not allowed for multi-agent v2 sub-agents') ? 'codex-parent-owned-child-input' : 'codex-request-rejected',
+      });
       if (id === this.nativeErrorThread && this.nativeErrorFile && error instanceof BridgeError) {
         // 专用验收只保存原生错误，绝不把用户输入、恢复上下文或认证数据写入诊断。
         this.nativeErrors.push({ threadId: id, action, commandId, code: error.code, message: redactNativeError(error.message), at: new Date().toISOString() });
@@ -411,8 +485,11 @@ export class CodexBackend {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    for (const session of this.sessions.values()) this.closeSession(session);
-    this.ipc.dispose();
+    try { this.savedHistoryReader?.close?.(); }
+    finally {
+      for (const session of this.sessions.values()) this.closeSession(session);
+      this.ipc.dispose();
+    }
   }
 }
 
@@ -637,8 +714,12 @@ function projectTurn(turn, turnIndex, questions, answers, previous, dependencies
       const cached = previous?.context === context ? previous.items.get(item) : null;
       if (cached && (typeof item.id === 'string' || cached.index === itemIndex) && item.type !== 'steeringUserMessage' && (!cached.candidate || cached.candidate.row.at === itemAt)
         && (!cached.candidate || cached.candidate.row.role !== 'user' || JSON.stringify(cached.candidate.row.replaceSourceRowIds ?? []) === JSON.stringify(replacementIds(cached.candidate.row.commandId, cached.candidate.row.id)))) {
-        itemCache.set(item, cached);
-        if (cached.candidate) candidates.push(cached.candidate);
+        // Stable native IDs preserve content, not their previous array position.
+        // Never rewrite a cached row still owned by an earlier snapshot.
+        const candidate = cached.candidate && cached.index !== itemIndex
+          ? { ...cached.candidate, row: { ...cached.candidate.row, order: itemIndex + 1 } } : cached.candidate;
+        itemCache.set(item, { index: itemIndex, candidate });
+        if (candidate) candidates.push(candidate);
         continue;
       }
       work.projectedItems += 1;
@@ -669,6 +750,10 @@ function projectTurn(turn, turnIndex, questions, answers, previous, dependencies
       } else if (item.type === 'reasoning') {
         // 手机仅复用原应用公开的 summary，不从内部 content/text 扩大推理可见范围。
         role = 'reasoning'; text = textContent(item.summary);
+      } else if (item.type === 'imageView') {
+        // 原 owner 的图片没有 text/result；此前漏掉此类型，导致整条可见消息被跳过。
+        role = 'tool';
+        tools = [{ id, name: 'view_image', imagePath: string(item.path), output: '', status: 'completed' }];
       } else if (['commandExecution', 'fileChange', 'mcpToolCall', 'dynamicToolCall', 'function_call', 'function_call_output'].includes(item.type)) {
         role = 'tool';
         const name = string(item.tool) ?? string(item.name) ?? string(item.command) ?? string(item.type) ?? 'Tool';

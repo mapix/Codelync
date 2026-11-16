@@ -14,6 +14,7 @@ export interface PeerChannelSnapshot {
     selectedId: string | null;
     automatic: boolean;
     connecting: boolean;
+    failureCode?: 'connection-failed' | 'access-ended' | null;
 }
 
 function channelName(kind: PeerChannel['kind']) { return t(`codeLightChannels.${kind}`); }
@@ -35,6 +36,14 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
     const [submitting, setSubmitting] = React.useState(false);
     const [error, setError] = React.useState(false);
     const generation = React.useRef(0), busy = React.useRef(false);
+    const selected = snapshot.channels.find(channel => channel.id === snapshot.selectedId);
+    const scope = JSON.stringify([snapshot.peerId, snapshot.selectedId, snapshot.automatic, selected?.url ?? null]);
+    const currentScope = React.useRef(scope); currentScope.current = scope;
+    const healthy = !snapshot.connecting && selected?.state === 'connected';
+    React.useEffect(() => { setError(false); }, [scope]);
+    React.useEffect(() => {
+        if (healthy && !snapshot.failureCode) setError(false);
+    }, [healthy, snapshot]);
     React.useEffect(() => {
         generation.current++;
         busy.current = false; setSubmitting(false); setOpen(false); setError(false);
@@ -45,28 +54,29 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
         if (busy.current) return;
         busy.current = true; setSubmitting(true); setError(false);
         const current = generation.current;
+        const selectedScope = currentScope.current;
         try {
             await onSelect(id);
             if (generation.current === current) setOpen(false);
         } catch {
             // 失败由连接 owner 保留当前通道；界面不乐观改选，也不展示可能含凭据的原始错误。
-            if (generation.current === current) setError(true);
+            if (generation.current === current && currentScope.current === selectedScope) setError(true);
         } finally {
             if (generation.current === current) { busy.current = false; setSubmitting(false); }
         }
     }, [onSelect]);
 
     if (!snapshot.peerId || snapshot.channels.length === 0) return null;
-    const selected = snapshot.channels.find(channel => channel.id === snapshot.selectedId);
-    const label = selected ? [selected.state !== 'connected' ? t(`codeLightChannels.${selected.state}`) : '', snapshot.automatic ? t('codeLightChannels.automatic') : '', channelName(selected.kind)].filter(Boolean).join(' · ')
+    const label = selected ? [snapshot.connecting ? t('codeLightChannels.switching') : selected.state !== 'connected' ? t(`codeLightChannels.${selected.state}`) : '', snapshot.automatic ? t('codeLightChannels.automatic') : '', channelName(selected.kind)].filter(Boolean).join(' · ')
         : t(snapshot.connecting ? 'codeLightChannels.switching' : 'codeLightChannels.notConnected');
     return (
         <View style={[presentation === 'header' ? styles.headerContainer : presentation === 'settings' ? styles.settingsContainer : styles.container, style]}>
             <Pressable testID="codelight-channel-open" accessibilityRole="button" accessibilityLabel={`${t('codeLightChannels.title')}: ${label}`}
+                accessibilityState={{ expanded: open, busy: submitting }}
                 onPress={() => { setError(false); setOpen(true); }} style={presentation === 'header' ? styles.headerTrigger : presentation === 'settings' ? styles.settingsTrigger : styles.trigger}>
                 {snapshot.connecting || submitting ? <ActivityIndicator size="small" color={theme.colors.textSecondary} />
                     : <Ionicons name={selected?.kind === 'local' ? 'wifi-outline' : selected?.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline'} size={presentation === 'settings' ? 25 : presentation === 'header' ? 21 : 16} color={theme.colors.textSecondary} />}
-                {presentation === 'header' ? <View style={[styles.headerStatus, { backgroundColor: selected?.state === 'connected' ? theme.colors.success : theme.colors.textSecondary }]} /> : presentation === 'settings' ? <View style={styles.settingsCopy}>
+                {presentation === 'header' ? <View style={[styles.headerStatus, { backgroundColor: healthy ? theme.colors.success : theme.colors.textSecondary }]} /> : presentation === 'settings' ? <View style={styles.settingsCopy}>
                     <Text style={styles.settingsTitle}>{t('codeLightChannels.title')}</Text>
                     <Text style={styles.settingsDescription} numberOfLines={2}>{label}</Text>
                 </View> : <Text style={styles.triggerText} numberOfLines={1}>{label}</Text>}

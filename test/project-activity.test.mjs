@@ -7,7 +7,44 @@ import { CodexActivityObserver } from '../src/adapters/codex-activity.mjs';
 /** @param {number} i @param {Value} [extra] */
 function source(i, extra = {}) { return { id: `thread-${i}`, relayId: `phone-${i}`, app: 'codex', kind: 'session', hostId: 'local', workspace: '/fixture/project', ...extra }; }
 const group = { id: 'phone-card', projectKey: '/fixture/project', hostId: 'local' };
+
+test('ordinary project activity excludes explicit children from counts and observer budget while retaining forks', async () => {
+  const calls = /** @type {string[]} */ ([]);
+  const sources = [source(0), source(1, { parentId: 'thread-0' }),
+    ...Array.from({ length: 99 }, (_, index) => source(index + 2, { isSubagent: true, parentId: 'thread-0' })),
+    source(200, { metadata: { nativeSession: { isSubagent: true } } })];
+  const service = new NativeProjectActivityService({ sources: () => sources, inventoryAvailable: () => true,
+    observerFactory: options => { calls.push(options.id); return { status: () => ({ known: true, active: false, waiting: false, status: 'ready' }), refresh: async () => {}, close: () => {} }; },
+    ipcFactory: () => ({ dispose: () => {} }) });
+  try {
+    const result = service.poll({ clientId: 'phone', requestSeq: 1, groups: [group] });
+    assert.equal(result.groups[0].total, 2); assert.equal(result.groups[0].unknown, 0);
+    assert.deepEqual(calls, ['thread-0', 'thread-1']);
+    assert.equal(service.entries.size, 2);
+  } finally { service.close(); }
+});
+
 async function flush() { await new Promise(resolve => setImmediate(resolve)); }
+
+test('foreground header refresh stays fresh between ten-second phone polls without extending native TTL', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let now = 1000, reads = 0, at = 0, closed = false;
+  const native = { ...source(1), app: 'antigravity', protocol: 'antigravity-connect', hostId: 'local:antigravity:' + 'a'.repeat(64), runtimeGeneration: 'owner' };
+  const service = new NativeProjectActivityService({ sources: () => [native], inventoryAvailable: () => true, now: () => now,
+    observerFactory: () => ({ status: () => ({ known: at > 0 && now - at <= 5000, active: true, waiting: false, observedAt: at, status: 'ready' }),
+      refreshDueAt: () => at > 0 ? at + 3000 : null, refresh: async () => { reads++; at = now; }, close: () => { closed = true; } }),
+    ipcFactory: () => ({}) });
+  t.after(() => service.close());
+  const interest = { ...group, hostId: native.hostId, app: 'antigravity' };
+  service.poll({ clientId: 'phone', requestSeq: 1, groups: [interest] }); await flush();
+  assert.equal(reads, 1);
+  for (let i = 0; i < 3; i++) { now += 3000; t.mock.timers.tick(3000); await flush(); }
+  now += 1000; t.mock.timers.tick(1000); await flush();
+  const result = service.poll({ clientId: 'phone', requestSeq: 2, groups: [interest] });
+  assert.equal(result.groups[0].unknown, 0); assert.equal(result.groups[0].active, 1); assert.equal(reads, 4);
+  service.poll({ clientId: 'phone', requestSeq: 3, groups: [] }); const before = reads;
+  now += 12000; t.mock.timers.tick(12000); await flush(); assert.equal(reads, before); assert.equal(closed, true);
+});
 class Observer {
   value = { known: false, active: false, waiting: false, status: 'refreshing' };
   refreshes = 0; closed = false;
@@ -280,7 +317,7 @@ test('row status verifies relay/native pair within the requested project and hos
 
 test('visible older rows take allocation and start priority while phones share the 128 observer budget', async t => {
   const f = fixture(t, { sources: Array.from({ length: 150 }, (_, i) => source(i)), deferred: true });
-  const identity = (/** @type {number} */ i) => JSON.stringify(['local', `thread-${i}`]);
+  const identity = (/** @type {number} */ i) => JSON.stringify(['codex', 'local', `thread-${i}`]);
   poll(f.service, 'header-phone', 1);
   poll(f.service, 'row-phone', 1, [{ ...group, sessions: [{ id: 'wrong-relay', nativeId: 'thread-149' }] }]);
   assert.equal(f.service.entries.has(identity(149)), false);
@@ -299,6 +336,25 @@ test('visible older rows take allocation and start priority while phones share t
   assert.equal(f.observers.get('thread-149'), observer); assert.equal(observer.refreshes, 1); assert.equal(f.service.entries.size, 128);
   assert.throws(() => poll(f.service, 'row-phone', 2, [{ ...group, sessions: [] }]), { code: 'stale-activity-interest' });
   assert.throws(() => poll(f.service, 'row-phone', 3, [{ ...group, sessions: [] }]), { code: 'activity-interest-conflict' });
+});
+
+test('equal native IDs and project paths stay isolated by application and instance in foreground summaries', async () => {
+  const hostId = 'local:antigravity:' + 'a'.repeat(64);
+  const common = { id: 'same-native-id', hostId, kind: 'session', available: true, workspace: '/same-project' };
+  const sources = [{ ...common, app: 'codex', relayId: 'codex-phone-id' }, { ...common, app: 'antigravity', relayId: 'agy-phone-id', protocol: 'antigravity-connect', runtimeGeneration: 'agy-owner' }];
+  let ipcReads = 0;
+  const service = new NativeProjectActivityService({ sources: () => sources, inventoryAvailable: () => true,
+    ipcFactory: () => { ipcReads++; return { dispose() {} }; }, nativeAdapter: () => ({}),
+    observerFactory: options => { let known = false; return { status: () => ({ known, active: known && options.app === 'antigravity', waiting: known && options.app === 'antigravity', status: known ? 'ready' : 'refreshing' }), refresh: async () => { known = true; }, close() {} }; } });
+  const groups = [{ id: 'codex-card', projectKey: '/same-project', hostId, sessions: [{ id: 'codex-phone-id', nativeId: common.id }] },
+    { id: 'agy-card', projectKey: '/same-project', hostId, app: 'antigravity', sessions: [{ id: 'agy-phone-id', nativeId: common.id }] }];
+  try {
+    service.poll({ clientId: 'fixture-client', requestSeq: 1, groups }); await flush();
+    const result = service.poll({ clientId: 'fixture-client', requestSeq: 2, groups });
+    assert.equal(result.groups[0].total, 1); assert.equal(result.groups[0].active, 0); assert.equal(result.groups[1].total, 1); assert.equal(result.groups[1].active, 1); assert.equal(result.groups[1].waiting, 1);
+    assert.deepEqual(result.groups[0].sessions, [{ id: 'codex-phone-id', known: true, active: false, waiting: false }]);
+    assert.deepEqual(result.groups[1].sessions, [{ id: 'agy-phone-id', known: true, active: true, waiting: true }]); assert.equal(ipcReads, 1);
+  } finally { service.close(); }
 });
 
 test('visible row limits and payload budget apply across groups and expose no source history', async t => {

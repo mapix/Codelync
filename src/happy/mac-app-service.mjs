@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import nacl from 'tweetnacl';
@@ -25,7 +25,9 @@ import { closeOwnedResources, stopOwnedChildren } from './owned-shutdown.mjs';
 const runtime = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const flags = new Map(process.argv.slice(2).map(value => { const i = value.indexOf('='); return [value.slice(0, i), value.slice(i + 1)]; }));
 const state = resolve(flags.get('--state') ?? join(homedir(), 'Library/Application Support/CodeLight'));
-const backendOrigin = 'http://127.0.0.1:57670';
+const backendPort = Number(process.env.CODELIGHT_BACKEND_PORT ?? 57670);
+if (!Number.isSafeInteger(backendPort) || backendPort < 1 || backendPort > 65535) throw Error('invalid-backend-port');
+const backendOrigin = `http://127.0.0.1:${backendPort}`;
 const node = flags.get('--node') ?? join(runtime, 'node');
 const backend = flags.get('--backend') ?? join(runtime, 'server/standalone.mjs');
 const cloudflared = flags.get('--cloudflared') ?? join(runtime, 'cloudflared');
@@ -36,6 +38,7 @@ const lockfile = createRequire(import.meta.url)('proper-lockfile');
 /** @type {NotificationDispatcher|null} */ let notifications = null;
 /** @type {PairingInvitations|null} */ let invitations = null;
 /** @type {(()=>Promise<void>)|null} */ let releaseLease = null;
+let qaPairingWrite = Promise.resolve();
 /** @type {ReturnType<typeof setInterval>|null} */ let renewal = null;
 let publicOrigin = '', closing = false;
 /** @type {GatewayMetrics|null} */ let metrics = null;
@@ -92,7 +95,18 @@ async function owner() {
 function issue(force = false) {
   if (!connections || closing) return;
   publicOrigin = connections.primaryOrigin();
-  try { const pairing = connections.pairing(force); if (pairing) notify({ type: 'ready', ...pairing }); }
+  try {
+    const pairing = connections.pairing(force);
+    if (pairing) {
+      notify({ type: 'ready', ...pairing });
+      // Explicit isolated native QA only. Invitations remain on this Mac and
+      // never enter the public status API, ordinary logs or source repository.
+      if (process.env.CODELIGHT_PAIRING_EXPORT === '1' && process.env.CODELIGHT_STATE_DIR &&
+          state === resolve(process.env.CODELIGHT_STATE_DIR)) {
+        qaPairingWrite = qaPairingWrite.catch(() => {}).then(() => writeDurablePrivateJson(join(state, 'qa-pairing.json'), pairing));
+      }
+    }
+  }
   catch { notify({ type: 'diagnostic', code: 'pairing-invitation-pending' }); }
 }
 async function main() {
@@ -101,7 +115,7 @@ async function main() {
   releaseLease = await lockfile.lock(marker, { realpath: false, stale: 10000, update: 2000, retries: 0 });
   let relay = await readOptionalPrivateJson(join(state, 'relay-key.json'));
   if (!relay) { relay = { secret: randomBytes(32).toString('hex') }; await writeDurablePrivateJson(join(state, 'relay-key.json'), relay); }
-  const env = /** @type {NodeJS.ProcessEnv} */ ({ ...process.env, HANDY_MASTER_SECRET: relay.secret, PORT: '57670', HOST: '127.0.0.1',
+  const env = /** @type {NodeJS.ProcessEnv} */ ({ ...process.env, HANDY_MASTER_SECRET: relay.secret, PORT: String(backendPort), HOST: '127.0.0.1',
     DATA_DIR: join(state, 'relay'), PGLITE_DIR: join(state, 'relay/pglite'), DB_PROVIDER: 'pglite', NODE_ENV: 'production', HAPPY_DISABLE_ANALYTICS: '1' });
   for (const key of ['DATABASE_URL', 'REDIS_URL', 'S3_HOST', 'S3_ACCESS_KEY', 'S3_SECRET_KEY']) delete env[key];
   // 固定 loopback identity 属于同一份本地数据库；公网临时地址变化不能改写原 command/receipt 的身份。
@@ -143,9 +157,18 @@ async function main() {
   catch { notify({ type: 'diagnostic', code: 'gateway-metrics-unavailable' }); metrics = new GatewayMetrics({ cumulativeKnown: false }); }
   const publishMetrics = () => { if (!closing && metrics) notify({ type: 'metrics', metrics: metrics.snapshot({ connectedDevices: devices.list().filter(device => !device.revoked && device.connected).length }) }); };
   publishMetrics(); metricsTimer = setInterval(publishMetrics, 1000);
-  daemon = new CodeLightMacDaemon({ directory: join(state, 'connector'), leaseDirectory: join(homedir(), '.codelight/leases'), account,
+  let configuredClaudeRuntime;
+  try {
+    const configured = await readOptionalPrivateJson(join(state, 'native-desktops.json'));
+    if (configured !== null) {
+      if (!configured || configured.version !== 1 || typeof configured.claudeRuntimePath !== 'string' || !isAbsolute(configured.claudeRuntimePath)
+        || Object.keys(configured).some(key => !['version', 'claudeRuntimePath'].includes(key))) throw Error('invalid-native-desktop-configuration');
+      configuredClaudeRuntime = configured.claudeRuntimePath;
+    }
+  } catch { notify({ type: 'diagnostic', code: 'native-desktop-configuration-unavailable' }); }
+  daemon = new CodeLightMacDaemon({ directory: join(state, 'connector'), leaseDirectory: process.env.CODELIGHT_LEASE_DIR ?? join(homedir(), '.codelight/leases'), account,
     observeBackground: !!sender,
-    onRpc: () => metrics?.rpc(), viewedSessions: () => devices.viewedSessions(), discovery: new LocalSourceDiscovery({ storage: new BundledCodexStorage() }), only: source => source.app === 'codex' });
+    onRpc: () => metrics?.rpc(), viewedSessions: () => devices.viewedSessions(), discovery: new LocalSourceDiscovery({ storage: new BundledCodexStorage(), claudeRuntimePath: configuredClaudeRuntime }) });
   daemon.on('diagnostic', value => notify({ type: 'diagnostic', code: value.code }));
   daemon.on('notification-observation', value => notifications?.observe(value.sourceKey, value.sessionId, value.summary).catch(() => notify({ type: 'diagnostic', code: 'notification-observation-pending' })));
   await daemon.start();

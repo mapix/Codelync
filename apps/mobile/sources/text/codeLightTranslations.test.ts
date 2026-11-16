@@ -38,6 +38,8 @@ it.each(SUPPORTED_LANGUAGE_CODES)('%s provides all project counters and explicit
     }
     expect(translation.codeLightProjects.updated({ time: '09:30' })).toContain('09:30');
     for (const key of ['offline', 'stale', 'refreshing', 'unavailable'] as const) expect(translation.codeLightProjects[key].length).toBeGreaterThan(0);
+    expect(translation.codeLightLoading.unavailable.trim().length).toBeGreaterThan(0);
+    if (language !== 'en') expect(translation.codeLightLoading.unavailable).not.toBe(en.codeLightLoading.unavailable);
     for (const key of scanKeys) {
         expect(translation.onboarding[key].length).toBeGreaterThan(0);
         if (language !== 'en') expect(translation.onboarding[key]).not.toBe(en.onboarding[key]);
@@ -46,9 +48,14 @@ it.each(SUPPORTED_LANGUAGE_CODES)('%s provides all project counters and explicit
         for (const group of visibleGroups) expect(JSON.stringify(translation[group])).not.toBe(JSON.stringify(en[group]));
     }
     expect(translation.settings.aboutFooter).toContain('Codex');
-    expect(translation.settings.aboutFooter).not.toMatch(/Claude|Anthropic/);
+    expect(translation.settings.aboutFooter).toContain('Antigravity');
+    expect(translation.settings.aboutFooter).toContain('Claude Desktop');
+    expect(translation.settings.aboutFooter).toContain('Gateway');
     expect(translation.welcome.title).toContain('Codex');
-    expect(translation.welcome.title).not.toContain('Claude');
+    expect(translation.welcome.title).toContain('Antigravity');
+    expect(translation.welcome.title).toContain('Claude Desktop');
+    expect(translation.sourceBridge.waiting).not.toContain('Codex');
+    expect(translation.sourceBridge.openFailed).not.toContain('Codex');
     expect(translation.codeLightSetup.helpBody).not.toContain('start-codelight.sh');
     expect(translation.onboarding.terminalRun).toBe('open /Applications/CodeLight.app');
 });

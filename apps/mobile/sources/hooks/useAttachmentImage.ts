@@ -17,6 +17,8 @@ import {
 } from '@/sync/attachmentDiagnostics';
 import { decryptBlob } from '@/encryption/blob';
 import { encodeBase64 } from '@/encryption/base64';
+import { noteNativeImageStage } from '@/sync/nativeImageDiagnostics';
+import { currentImageReadCredentials } from '@/sync/imageReadCredentials';
 
 const MAX_CACHE_ENTRIES = 50;
 const cache = new Map<string, string>();
@@ -63,11 +65,13 @@ function warnAttachmentImageDiagnostic(reason: string, message?: string) {
 }
 
 async function loadAttachmentDataUri(sessionId: string, ref: string): Promise<string | null> {
-    const credentials = sync.getCredentials();
-    if (!credentials) {
+    const expected = sync.getCredentials();
+    if (!expected) {
         warnAttachmentImageDiagnostic('no-credentials');
         return null;
     }
+    // 自动换通道后 Sync 的旧清单缺少新入口；必须从连接 owner 保存的凭据生成认证头。
+    const credentials = await currentImageReadCredentials(expected);
     const blobKey = sync.encryption.getSessionBlobKey(sessionId);
     if (!blobKey) {
         warnAttachmentImageDiagnostic('missing-blob-key');
@@ -78,9 +82,11 @@ async function loadAttachmentDataUri(sessionId: string, ref: string): Promise<st
         return null;
     }
     let encrypted: Uint8Array;
+    noteNativeImageStage('download-start');
     try {
         encrypted = await downloadEncryptedAttachment(credentials, sessionId, ref);
     } catch (err) {
+        noteNativeImageStage('download-failed');
         const diagnostic = getAttachmentDiagnostic(err);
         if (diagnostic) {
             console.warn('[attachment-image] download failed:', formatAttachmentDiagnosticForLog(diagnostic, {
@@ -99,10 +105,12 @@ async function loadAttachmentDataUri(sessionId: string, ref: string): Promise<st
     }
     const decrypted = decryptBlob(encrypted, blobKey);
     if (!decrypted) {
+        noteNativeImageStage('blob-decrypt-failed');
         warnAttachmentImageDiagnostic('decrypt-returned-null');
         return null;
     }
     const mime = detectImageMime(decrypted);
+    noteNativeImageStage('image-loaded', { bytes: decrypted.length });
     return `data:${mime};base64,${encodeBase64(decrypted)}`;
 }
 

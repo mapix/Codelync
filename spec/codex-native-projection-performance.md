@@ -37,6 +37,11 @@ sequenceDiagram
 - History ordering is canonical. Unchanged native turns and items reuse their
   allowlisted rows. Turn status, timestamp, identity, item position fallback,
   steering aliases and duplicate IDs retain their existing effects.
+  Inserting, removing or moving an item updates every shifted public row's
+  original item order, including rows with stable native IDs whose contents are
+  unchanged. Such rows reuse their content and tool payloads through an immutable
+  row copy; prior snapshots are never rewritten. Position-derived fallback IDs
+  still reproject when their native item position changes.
 - Metadata-only patches reuse the ordered rows without walking their items.
   A changed tool output reuses unrelated native items. Pending opening input
   and steering aliases are reconsidered inside the affected turn because a

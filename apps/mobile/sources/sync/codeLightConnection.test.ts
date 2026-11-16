@@ -41,6 +41,7 @@ it('automatic choice tries a newly authenticated LAN address when the reachable 
 });
 it('a cold-start connection error triggers automatic recovery once while a probe is pending',async()=>{
  mocks.reconnect=true;mocks.connected=false;initializeCodeLightConnection(credentials);
+ mocks.switch.mockImplementation(async()=>{mocks.connected=true;});
  let finish!:(value:any)=>void;const pending=new Promise(resolve=>{finish=resolve;});
  const fetch=vi.fn(()=>pending);vi.stubGlobal('fetch',fetch);
  mocks.listener!('error');mocks.listener!('error');
@@ -48,4 +49,28 @@ it('a cold-start connection error triggers automatic recovery once while a probe
  finish({ok:true,json:async()=>({channels})});
  await vi.waitFor(()=>expect(getConnectionSnapshot().connecting).toBe(false));
  expect(mocks.switch).toHaveBeenCalledTimes(1);
+});
+it('the same paired Mac selection coalesces repeated presses before proving or saving twice',async()=>{
+ initializeCodeLightConnection(credentials);let finish!:(value:any)=>void;const response=new Promise(resolve=>{finish=resolve;});
+ const fetch=vi.fn(()=>response);vi.stubGlobal('fetch',fetch);
+ const first=selectConnection('relay'),second=selectConnection('relay');expect(first).toBe(second);expect(fetch).toHaveBeenCalledOnce();
+ finish({ok:true,json:async()=>({channels})});await first;expect(mocks.set).toHaveBeenCalledOnce();expect(mocks.switch).toHaveBeenCalledOnce();
+});
+it('a resolved switch without a live socket cannot publish connected from an HTTP proof',async()=>{
+ mocks.connected=false;initializeCodeLightConnection(credentials);vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({channels})}));
+ await expect(selectConnection('relay')).rejects.toThrow('live Mac connection');
+ expect(getConnectionSnapshot().channels.some(channel=>channel.state==='connected')).toBe(false);
+ expect(getConnectionSnapshot()).toMatchObject({connecting:false,failureCode:'connection-failed'});
+});
+it('an exhausted access refusal retains pairing and requires an explicit recovery action',async()=>{
+ initializeCodeLightConnection(credentials);vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:403}));
+ await expect(selectConnection('auto')).rejects.toThrow();
+ expect(getConnectionSnapshot()).toMatchObject({peerId:credentials.peer.id,selectedId:'local',failureCode:'access-ended',connecting:false});
+ expect(mocks.set).not.toHaveBeenCalled();
+});
+it('an old selection failure cannot mark a new paired Mac failed',async()=>{
+ initializeCodeLightConnection(credentials);let finish!:(value:any)=>void;vi.stubGlobal('fetch',vi.fn(()=>new Promise(resolve=>{finish=resolve;})));
+ const old=selectConnection('relay');const next={...credentials,peer:{...credentials.peer,id:'new-paired-peer'}};initializeCodeLightConnection(next);
+ finish({ok:false});await expect(old).rejects.toThrow();expect(getConnectionSnapshot()).toMatchObject({peerId:'new-paired-peer',connecting:false});
+ expect(getConnectionSnapshot().failureCode).toBeUndefined();expect(mocks.set).not.toHaveBeenCalled();
 });

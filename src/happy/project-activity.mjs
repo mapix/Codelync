@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { CodexActivityObserver } from '../adapters/codex-activity.mjs';
 import { CodexIpcAdapter } from '../adapters/codex-ipc.mjs';
+import { AntigravityBackend, AntigravityActivityObserver } from '../adapters/antigravity-backend.mjs';
+import { ClaudeActivityObserver } from '../adapters/claude-activity.mjs';
 import { BridgeError } from '../errors.mjs';
-import { isCodeLightCodexSource } from './source-scope.mjs';
+import { isCodeLightNativeSource } from './source-scope.mjs';
 
 /** @typedef {Record<string, any>} Value */
 /** @typedef {{id:string,nativeId:string|null}} SessionRow */
-/** @typedef {{id:string,projectKey:string,hostId:string,sessions?:SessionRow[]}} Group */
+/** @typedef {{id:string,projectKey:string,hostId:string,app?:string,sessions?:SessionRow[]}} Group */
 /** @typedef {{requestSeq:number,fingerprint:string,groups:Group[],expiresAt:number,retainUntil:number}} Interest */
-/** @typedef {{source:Value,observer:Value,starting:boolean,queued:boolean,closed:boolean}} Entry */
+/** @typedef {{source:Value,observer:Value,starting:boolean,queued:boolean,closed:boolean,forceRefresh?:boolean}} Entry */
 const MAX_CLIENTS = 256;
 const TOMBSTONE_MS = 120000;
 const MAX_REQUEST_BYTES = 256 * 1024;
@@ -20,14 +22,15 @@ function validString(value, limit) { return typeof value === 'string' && !!value
  * @param {Value} source */
 function nativeSource(source) {
   // 多处显式 mode 必须分别满足 native 边界；null 或别处的 session 不能掩盖不支持的元数据。
-  return isCodeLightCodexSource(source, source) && isCodeLightCodexSource(source, source.metadata) && (source.kind === undefined || source.kind === 'session') &&
-    typeof source.id === 'string' && !!source.id && source.id.length <= 512 && source.available !== false && source.removed !== true && source.archived !== true;
+  return isCodeLightNativeSource(source, source) && isCodeLightNativeSource(source, source.metadata) && (source.kind === undefined || source.kind === 'session') &&
+    typeof source.id === 'string' && !!source.id && source.id.length <= 512 && source.available !== false && source.removed !== true && source.archived !== true
+    && source.isSubagent !== true && source.metadata?.nativeSession?.isSubagent !== true;
 }
 /** @param {Value} source */
-function key(source) { return JSON.stringify([source.hostId ?? 'local', source.id]); }
+function key(source) { return JSON.stringify([source.app ?? 'codex', source.hostId ?? 'local', source.id]); }
 /** @param {Value} source @param {Group} group */
 function member(source, group) {
-  return (source.hostId ?? 'local') === group.hostId && (source.project?.key || source.workspace || '/') === group.projectKey;
+  return (source.app ?? 'codex') === (group.app ?? 'codex') && (source.hostId ?? 'local') === group.hostId && (source.project?.key || source.workspace || '/') === group.projectKey;
 }
 /** @param {Value|undefined} source @param {Group} group @param {SessionRow} row */
 function rowMember(source, group, row) { return !!source && row.nativeId !== null && source.id === row.nativeId && source.relayId === row.id && member(source, group); }
@@ -40,6 +43,7 @@ function parseGroups(value) {
   let rowCount = 0;
   const groups = value.map(group => {
     if (!group || !validString(group.id, 8192) || !validString(group.projectKey, 4096) || !validString(group.hostId, 256) || ids.has(group.id)) throw new BridgeError('invalid-activity-interest', 'Project activity needs unique UI IDs and explicit project/host identities.');
+    if (group.app !== undefined && !['codex', 'antigravity', 'claude-desktop'].includes(group.app)) throw new BridgeError('invalid-activity-interest', 'A supported source application is required.');
     ids.add(group.id);
     /** @type {SessionRow[]|undefined} */ let sessions;
     if (group.sessions !== undefined) {
@@ -52,20 +56,23 @@ function parseGroups(value) {
         return { id: row.id, nativeId: validString(row.nativeId, 512) ? row.nativeId : null };
       });
     }
-    return { id: group.id, projectKey: group.projectKey, hostId: group.hostId, ...(sessions === undefined ? {} : { sessions }) };
+    return { id: group.id, projectKey: group.projectKey, hostId: group.hostId, ...(group.app === undefined ? {} : { app: group.app }), ...(sessions === undefined ? {} : { sessions }) };
   });
   return groups;
 }
 
 export class NativeProjectActivityService {
-  /** @param {{sources:()=>Value[],inventoryAvailable:()=>boolean,observerFactory?:(options:Value)=>Value,ipcFactory?:(hostId:string)=>Value,now?:()=>number,leaseMs?:number,maxSources?:number,concurrency?:number,epoch?:string}} options */
+  /** @param {{sources:()=>Value[],inventoryAvailable:(app?:string)=>boolean,observerFactory?:(options:Value)=>Value,ipcFactory?:(hostId:string)=>Value,nativeAdapter?:(source:Value)=>Value,now?:()=>number,leaseMs?:number,maxSources?:number,concurrency?:number,epoch?:string}} options */
   constructor(options) {
     if (!options || typeof options.sources !== 'function' || typeof options.inventoryAvailable !== 'function') throw new BridgeError('invalid-activity-service', 'A native source inventory is required.');
     this.sources = options.sources; this.inventoryAvailable = options.inventoryAvailable;
     this.now = options.now ?? Date.now; this.leaseMs = options.leaseMs ?? 30000;
     this.maxSources = options.maxSources ?? 128; this.concurrency = options.concurrency ?? 4;
     if (!Number.isSafeInteger(this.leaseMs) || this.leaseMs < 1 || this.leaseMs > 30000 || !Number.isSafeInteger(this.maxSources) || this.maxSources < 1 || this.maxSources > 128 || !Number.isSafeInteger(this.concurrency) || this.concurrency < 1 || this.concurrency > 4) throw new BridgeError('invalid-activity-limit', 'Activity leases, observer count and concurrency must fit their bounds.');
-    this.observerFactory = options.observerFactory ?? (options => new CodexActivityObserver(/** @type {any} */ (options)));
+    this.antigravity = options.nativeAdapter ? null : new AntigravityBackend();
+    this.nativeAdapter = options.nativeAdapter ?? (() => /** @type {AntigravityBackend} */ (this.antigravity));
+    this.observerFactory = options.observerFactory ?? (options => options.app === 'antigravity' ? new AntigravityActivityObserver(/** @type {any} */ (options))
+      : options.app === 'claude-desktop' ? new ClaudeActivityObserver(/** @type {any} */ (options)) : new CodexActivityObserver(/** @type {any} */ (options)));
     this.ipcFactory = options.ipcFactory ?? (hostId => new CodexIpcAdapter({ hostId }));
     this.epoch = options.epoch ?? randomUUID(); this.sequence = 0; this.closed = false;
     this.interests = /** @type {Map<string,Interest>} */ (new Map());
@@ -128,15 +135,15 @@ export class NativeProjectActivityService {
   reconcile(inventory, now) {
     const groups = [...this.interests.values()].filter(interest => interest.expiresAt > now).flatMap(interest => interest.groups);
     const desired = new Map();
-    if (inventory.available) {
+    if (inventory.available || inventory.sources.some(source => this.inventoryAvailable(source.app ?? 'codex'))) {
       const indexed = new Map(inventory.sources.map(source => [key(source), source]));
       // 可见行先分配全机共享预算；native/relay/project/host 四项都命中才能获得优先级。
       for (const group of groups) for (const row of group.sessions ?? []) {
-        const source = row.nativeId === null ? undefined : indexed.get(key({ id: row.nativeId, hostId: group.hostId }));
-        if (rowMember(source, group, row) && desired.size < this.maxSources) desired.set(key(/** @type {Value} */ (source)), source);
+        const source = row.nativeId === null ? undefined : indexed.get(key({ app: group.app ?? 'codex', id: row.nativeId, hostId: group.hostId }));
+        if (this.inventoryAvailable(group.app ?? 'codex') && rowMember(source, group, row) && desired.size < this.maxSources) desired.set(key(/** @type {Value} */ (source)), source);
       }
       for (const source of inventory.sources) {
-        if (groups.some(group => member(source, group)) && desired.size < this.maxSources) desired.set(key(source), source);
+        if (this.inventoryAvailable(source.app ?? 'codex') && groups.some(group => member(source, group)) && desired.size < this.maxSources) desired.set(key(source), source);
       }
     }
     for (const [identity, entry] of this.entries) if (!desired.has(identity)) {
@@ -144,11 +151,11 @@ export class NativeProjectActivityService {
     }
     for (const [identity, source] of desired) if (!this.entries.has(identity)) {
       const hostId = source.hostId ?? 'local';
-      let ipc = this.ipcs.get(hostId);
-      if (!ipc) { ipc = this.ipcFactory(hostId); this.ipcs.set(hostId, ipc); }
+      let ipc;
+      if ((source.app ?? 'codex') === 'codex') { ipc = this.ipcs.get(hostId); if (!ipc) { ipc = this.ipcFactory(hostId); this.ipcs.set(hostId, ipc); } }
       try {
-        const observer = this.observerFactory({ id: source.id, hostId, ipc, now: this.now, requestRefresh: () => this.queueRefresh(identity) });
-        this.entries.set(identity, { source: { id: source.id, hostId }, observer, starting: false, queued: true, closed: false });
+        const observer = this.observerFactory({ id: source.id, hostId, app: source.app ?? 'codex', ipc, ...(['antigravity', 'claude-desktop'].includes(source.app) ? { backend: this.nativeAdapter(source), expectedHostId: hostId } : {}), now: this.now, requestRefresh: () => this.queueRefresh(identity) });
+        this.entries.set(identity, { source: { app: source.app ?? 'codex', id: source.id, hostId }, observer, starting: false, queued: true, closed: false });
       } catch { /* 不支持的源保留在 total/unknown，不伪装成 idle。 */ }
     }
     // 同时按可见优先顺序启动；已有冷任务不能把新滚入屏幕的行一直排在队尾。
@@ -160,23 +167,24 @@ export class NativeProjectActivityService {
   }
   /** @param {Group} group @param {{available:boolean,sources:Value[]}} inventory @param {number} _now */
   summary(group, inventory, _now) {
-    const members = inventory.sources.filter(source => member(source, group));
+    const inventoryAvailable = this.inventoryAvailable(group.app ?? 'codex');
+    const members = [...new Map(inventory.sources.filter(source => member(source, group)).map(source => [key(source), source])).values()];
     const byNativeId = new Map(members.map(source => [source.id, source]));
     const states = /** @type {Map<string,Value|null>} */ (new Map());
     let active = 0, waiting = 0, unknown = 0, refreshing = false;
     for (const source of members) {
       const entry = this.entries.get(key(source));
       let status;
-      try { status = inventory.available && entry && !entry.closed ? entry.observer.status() : null; } catch { status = null; }
+      try { status = inventoryAvailable && entry && !entry.closed ? entry.observer.status() : null; } catch { status = null; }
       states.set(source.id, status);
       if (!status?.known) { unknown++; refreshing ||= status?.status === 'refreshing' || !!entry?.queued; }
       else { if (status.active === true) active++; if (status.waiting === true) waiting++; }
     }
     return { id: group.id, total: members.length, active, waiting, unknown,
-      status: !inventory.available ? 'unavailable' : unknown ? refreshing ? 'refreshing' : 'unavailable' : 'ready',
+      status: !inventoryAvailable ? 'unavailable' : unknown ? refreshing ? 'refreshing' : 'unavailable' : 'ready',
       ...(group.sessions === undefined ? {} : { sessions: group.sessions.map(row => {
         const source = row.nativeId === null ? undefined : byNativeId.get(row.nativeId);
-        const state = inventory.available && rowMember(source, group, row) ? states.get(/** @type {string} */ (row.nativeId)) : null;
+        const state = inventoryAvailable && rowMember(source, group, row) ? states.get(/** @type {string} */ (row.nativeId)) : null;
         const known = state?.known === true;
         return { id: row.id, known, active: known && state?.active === true, waiting: known && state?.waiting === true };
       }) }) };
@@ -200,12 +208,14 @@ export class NativeProjectActivityService {
     // 后台 completion 只检查当前兴趣，不能从旧任务捕获的 sources 重建已释放兴趣。
     this.reconcile(this.inventory(), now);
     for (const entry of this.entries.values()) {
+      const due = this.refreshDeadline(entry);
+      if (!entry.starting && due !== null && due <= now) { entry.queued = true; entry.forceRefresh = true; }
       if (this.inFlight >= this.concurrency) break;
       if (entry.closed || entry.starting || !entry.queued) continue;
       let status;
       try { status = entry.observer.status(); } catch { continue; }
-      if (status.known) { entry.queued = false; continue; }
-      entry.starting = true; entry.queued = false; this.inFlight++;
+      if (status.known && !entry.forceRefresh) { entry.queued = false; continue; }
+      entry.starting = true; entry.queued = false; entry.forceRefresh = false; this.inFlight++;
       Promise.resolve().then(() => entry.closed ? undefined : entry.observer.refresh()).catch(() => {}).finally(() => {
         entry.starting = false; this.inFlight--;
         if (!this.closed) this.schedule();
@@ -213,15 +223,26 @@ export class NativeProjectActivityService {
     }
     this.armTimer(now);
   }
+  /** @param {Entry} entry @returns {number|null} */
+  refreshDeadline(entry) {
+    if (entry.closed || entry.starting || typeof entry.observer.refreshDueAt !== 'function') return null;
+    try { const at = entry.observer.refreshDueAt(); return Number.isFinite(at) && at >= 0 ? at : null; } catch { return null; }
+  }
   /** @param {number} now */
   armTimer(now) {
     if (this.timer) clearTimeout(this.timer); this.timer = null;
     if (this.closed) return;
     const deadlines = [...this.interests.values()].map(interest => interest.groups.length ? interest.expiresAt : interest.retainUntil);
+    for (const entry of this.entries.values()) {
+      const at = this.refreshDeadline(entry);
+      // A completion already wakes the shared queue. An overdue peer must not
+      // create a one-millisecond timer loop while all native read slots are busy.
+      if (at !== null && !(at <= now && this.inFlight >= this.concurrency)) deadlines.push(at);
+    }
     if (!deadlines.length) return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      const time = this.now(); this.expire(time); this.reconcile(this.inventory(), time); this.armTimer(time);
+      this.pump();
     }, Math.max(1, Math.min(2147483647, Math.min(...deadlines) - now)));
     this.timer.unref();
   }
@@ -234,5 +255,6 @@ export class NativeProjectActivityService {
     this.entries.clear();
     for (const ipc of this.ipcs.values()) ipc.dispose?.();
     this.ipcs.clear();
+    void this.antigravity?.dispose();
   }
 }

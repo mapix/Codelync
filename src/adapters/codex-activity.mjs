@@ -1,5 +1,7 @@
 import { CodexIpcAdapter } from './codex-ipc.mjs';
 import { BridgeError } from '../errors.mjs';
+import { CodexSubagentProjection } from './native-subagents.mjs';
+import { aggregateNativeActivity } from './native-aggregate-activity.mjs';
 
 /** @typedef {Record<string, any>} Value */
 /** @typedef {{known:boolean,active:boolean,waiting:boolean,status:'ready'|'refreshing'|'unavailable',observedAt:number,generation:string|null,revision:number|null}} Activity */
@@ -64,6 +66,8 @@ function replyIds(value) {
 /** @param {unknown} value @returns {Value|null} */
 function item(value) {
   if (!record(value)) return null;
+  if (value.type === 'subAgentActivity') return { type: value.type, id: id(value.id), agentThreadId: id(value.agentThreadId),
+    agentPath: id(value.agentPath), kind: id(value.kind), startedAtMs: Number.isFinite(value.startedAtMs) ? value.startedAtMs : null };
   if (value.type === 'agentMessage') return { type: value.type, id: id(value.id), questions: questions(value.questions) };
   if (value.type === 'userMessage') return { type: value.type, replies: replyIds(value.content) };
   if (value.type === 'steeringUserMessage') return { type: value.type, status: id(value.status), replies: value.status === 'accepted' ? replyIds(value.input) : [] };
@@ -109,7 +113,7 @@ function snapshot(value) {
       if (key.length > LIMIT.id || FORBIDDEN.has(key)) throw Error('Unsupported native turn key.');
       entities[key] = turn(history.entitiesByKey[key]);
     }
-    output.turnHistory = { history: { entitiesByKey: entities, islands: islands(history.islands) } };
+    output.turnHistory = { history: { entitiesByKey: entities, islands: islands(history.islands), isComplete: history.isComplete === true } };
   }
   if (Array.isArray(value.turns)) output.turns = turns(value.turns);
   if (!output.turnHistory && !output.turns) throw Error('Missing native turn history.');
@@ -166,6 +170,7 @@ function patches(base, values) {
 /** @param {Value} state @param {Value} patch @returns {{path:(string|number)[],value?:any,op?:string}|null} */
 function reducePatch(state, patch) {
   const p = patch.path, removing = patch.op === 'remove';
+  if (p[0] === 'turnHistory' && p[1] === 'history' && p[2] === 'isComplete' && p.length === 3) return { path: p, value: !removing && patch.value === true, op: 'replace' };
   if (p[0] === 'threadRuntimeStatus') {
     if (p.length === 1) return { path: p, value: removing ? undefined : runtime(patch.value) };
     if (p[1] === 'type' && p.length === 2) return { path: p, value: id(patch.value) };
@@ -203,6 +208,11 @@ function reducePatch(state, patch) {
   const current = get(state, p.slice(0, offset + 2)), child = p[offset + 2];
   if (child === 'type') throw Error('Native item type requires fresh snapshot.');
   if (!current) return null;
+  if (current.type === 'subAgentActivity') {
+    if (['id', 'agentThreadId', 'agentPath', 'kind'].includes(child) && p.length === offset + 3) return { path: p, value: id(patch.value) };
+    if (child === 'startedAtMs' && p.length === offset + 3) return { path: p, value: Number.isFinite(patch.value) ? patch.value : null };
+    return null;
+  }
   if (current.type === 'agentMessage') {
     if (child === 'id' && p.length === offset + 3) return { path: p, value: id(patch.value) };
     if (child !== 'questions') return null;
@@ -248,6 +258,7 @@ export class CodexActivityObserver {
     this.connection = /** @type {Value|null} */ (null); this.followerClientId = /** @type {string|null} */ (null);
     this.replica = /** @type {Value|null} */ (null); this.value = /** @type {Activity} */ ({ known: false, active: false, waiting: false, status: 'refreshing', observedAt: this.now(), generation: null, revision: null });
     this.closed = false; this.lifecycle = 0; this.release = /** @type {(()=>void)|null} */ (null);
+    this.subagentProjection = new CodexSubagentProjection();
     this.starting = /** @type {Promise<void>|null} */ (null); this.refreshing = /** @type {Promise<void>|null} */ (null);
   }
   start() {
@@ -301,8 +312,13 @@ export class CodexActivityObserver {
       } else throw Error('Unsupported native state.');
       const facts = projection(this.replica);
       this.connection = this.ipc.socket; this.followerClientId = this.ipc.clientId;
-      this.publish(/** @type {Activity} */ ({ known: facts !== null, active: facts?.active ?? false, waiting: facts?.waiting ?? false,
-        status: facts ? 'ready' : 'unavailable', observedAt: this.now(), generation: owner, revision: change.revision }));
+      const children = this.subagentProjection.project(loadedTurns(this.replica), this.id, this.hostId, owner, this.replica.turnHistory?.history?.isComplete === true);
+      const aggregate = aggregateNativeActivity({ app: 'codex', parentConversationId: this.id, hostId: this.hostId, ownerGeneration: owner,
+        ownStatus: facts ? facts.active ? 'active' : 'idle' : 'unknown', ownWaiting: facts?.waiting === true, subagents: children.subagents,
+        rosterAvailable: children.subagentsAvailable, rosterComplete: children.subagentsComplete });
+      this.publish(/** @type {Activity} */ ({ known: aggregate.known, active: aggregate.active, waiting: aggregate.waiting,
+        ownKnown: facts !== null, ownActive: facts?.active ?? false, ownWaiting: facts?.waiting ?? false, aggregateActivity: aggregate,
+        status: aggregate.known ? 'ready' : 'unavailable', observedAt: this.now(), generation: owner, revision: change.revision }));
     } catch {
       // 不完整 patch 或 owner 换代只能读取新快照；原输入和原 runner 不能被重建或重放。
       this.invalidate('refreshing');

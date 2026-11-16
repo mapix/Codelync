@@ -6,7 +6,9 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Text } from '@/components/StyledText';
 import { Typography } from '@/constants/Typography';
 import { t } from '@/text';
-import { useSessionPendingCommunications, useSession, useSessionMessages } from '@/sync/storage';
+import { storage, useSessionPendingCommunications, useSession, useSessionMessages, useSocketStatus } from '@/sync/storage';
+import { apiSocket } from '@/sync/apiSocket';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 import { isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
 import {
     shouldUseAgentQuestionFallback,
@@ -27,6 +29,7 @@ import { AgentQuestionModal } from './AgentQuestionModal';
 export function AgentQuestionBanner({ sessionId }: { sessionId: string }) {
     const pendingCommunications = useSessionPendingCommunications(sessionId);
     const session = useSession(sessionId);
+    const writesBlocked = nativeWriteConnectionBlocked(session?.metadata, useSocketStatus().status === 'connected');
     const { messages } = useSessionMessages(sessionId);
     const inlineToolIds = isNoninvasiveBridge(session?.metadata) ? messages.flatMap(message => (
         message.kind === 'tool-call' && message.tool.name === 'request_user_input'
@@ -53,12 +56,13 @@ export function AgentQuestionBanner({ sessionId }: { sessionId: string }) {
     }, [openId, pendingCommunications]);
 
     const handleDismissUnsupported = React.useCallback(async (id: string, rawKind: string) => {
+        if (nativeWriteConnectionBlocked(storage.getState().sessions[sessionId]?.metadata ?? session?.metadata, apiSocket.peerConnected())) return;
         try {
             await sessionCancelCommunication(sessionId, id, rawKind);
         } catch {
             // The agent re-asks if the dismissal never lands; nothing to show here.
         }
-    }, [sessionId]);
+    }, [sessionId, session?.metadata]);
 
     if (!pending) return null;
 
@@ -66,6 +70,7 @@ export function AgentQuestionBanner({ sessionId }: { sessionId: string }) {
         return (
             <AgentQuestionBannerView
                 pending={pending}
+                dismissDisabled={writesBlocked}
                 onDismiss={() => handleDismissUnsupported(pending.id, pending.rawKind)}
             />
         );
@@ -88,10 +93,11 @@ export function AgentQuestionBanner({ sessionId }: { sessionId: string }) {
  * The banner itself, with no store or network of its own, so it can be rendered
  * from the dev previews as well as from a live session.
  */
-export function AgentQuestionBannerView({ pending, onPress, onDismiss }: {
+export function AgentQuestionBannerView({ pending, onPress, onDismiss, dismissDisabled = false }: {
     pending: PendingAgentCommunication;
     onPress?: () => void;
     onDismiss?: () => void;
+    dismissDisabled?: boolean;
 }) {
     const styles = stylesheet;
     const { theme } = useUnistyles();
@@ -110,7 +116,7 @@ export function AgentQuestionBannerView({ pending, onPress, onDismiss }: {
                         {t('agentQuestion.unsupportedDescription', { kind: pending.rawKind })}
                     </Text>
                 </View>
-                <Pressable onPress={onDismiss} hitSlop={10}>
+                <Pressable onPress={onDismiss} hitSlop={10} disabled={dismissDisabled}>
                     <Text style={styles.dismiss}>{t('agentQuestion.dismiss')}</Text>
                 </Pressable>
             </View>

@@ -26,12 +26,18 @@ function plural({ count, one, few, many }: { count: number; one: string; few: st
  * Must match the exact structure of the English translations
  */
 export const pl: TranslationStructure = {
+    codeLightHandoff: {
+        action: "Przekaż do…",
+        noTargets: "Na tym Macu nie ma innej połączonej sesji desktopowej.",
+        unavailable: "Sesja źródłowa lub docelowa nie jest już dostępna.",
+    },
+
     codeLightSetup: {
         createFailed: "Nie udało się skonfigurować połączenia. Sprawdź połączenie z Makiem i spróbuj ponownie.",
         storageFailed: "Nie udało się bezpiecznie zapisać połączenia. Sprawdź wolne miejsce na urządzeniu i spróbuj ponownie.",
         reloadFailed: "Zamknij i otwórz ponownie CodeLight, aby połączyć się z zapisanymi ustawieniami.",
         pairFailed: "Link parowania jest niedostępny. Zeskanuj nowy kod QR wyświetlany w CodeLight na Macu.",
-        macHelp: "Otwórz CodeLight na Macu i pozostaw istniejące sesje Codex uruchomione.",
+        macHelp: "Otwórz CodeLight na Macu i pozostaw istniejące sesje Codex / Antigravity / Claude Desktop uruchomione.",
         helpBody: "Otwórz CodeLight na Macu i pozostaw aplikację uruchomioną. Zeskanuj jej kod QR tym telefonem. Jeśli adres połączenia się zmieni, odśwież i zeskanuj nowy kod. Rejestracja i VPN nie są potrzebne.",
     },
 
@@ -44,23 +50,26 @@ export const pl: TranslationStructure = {
         network: "Nie udało się połączyć z Makiem. Pozostaw CodeLight uruchomione i spróbuj ponownie.",
     },
 
+    codeLightCommands: { modelMenu: 'Wybierz model sesji przyciskiem modelu obok pola tekstowego.', unsupported: "Ta komenda aplikacji nie jest dostępna w CodeLight. Szkic został zachowany.", busy: "Ta sesja jest zajęta. Szkic został zachowany.", unconfirmed: "Wynik komendy nie jest potwierdzony. Sprawdź wynik." },
     codeLightModels: {
+        nextMessage: 'Następna wiadomość',
         default: "Domyślny",
         check: "Sprawdź ustawienia",
         saving: "Aktualizowanie ustawień modelu na Macu…",
-        failed: "Ustawienia zmieniły się lub nie zostały zaktualizowane. Sprawdź bieżący wybór i wybierz ponownie.",
-        unconfirmed: "Aktualizacja niepotwierdzona. Sprawdzamy pierwotne ustawienia; nie powtarzaj zmiany.",
+        readFailed: "Nie można odczytać ustawień modelu. Sprawdź połączenie z Makiem.",
+        failed: "Nie udało się zaktualizować ustawienia modelu. Sprawdź obecny wybór.",
+        unconfirmed: "Zmiana nie jest potwierdzona. Sprawdź wynik bez powtarzania zmiany.",
     },
 
     codeLightChannels: {
         title: "Połączenie",
         automatic: "Automatycznie",
-        automaticDetail: "Użyj dostępnego, zweryfikowanego połączenia.",
+        automaticDetail: "Sprawdź zapisane połączenia i połącz z tym Makiem.",
         local: "Sieć lokalna",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "Połączono",
-        available: "Dostępne",
+        available: "Zapisane",
         probing: "Sprawdzanie",
         failed: "Niedostępne",
         switching: "Łączenie…",
@@ -68,16 +77,24 @@ export const pl: TranslationStructure = {
         current: "Bieżąca trasa",
         latency: ({ ms }: { ms: number }) => "{ms} ms".replace("{ms}", String(ms)),
         latencyUnknown: "Opóźnienie nieznane",
-        switchFailed: "Nie udało się zmienić połączenia. Bieżąca trasa pozostaje bez zmian.",
+        switchFailed: "Nie udało się połączyć. Poprzedni wybór został zachowany.",
+        connectingTitle: "Łączenie z Makiem…",
+        failedTitle: "Nie można połączyć z Makiem",
+        failedHelp: "Otwórz CodeLight na Macu i sprawdź sieć. Ponów połączenie lub wybierz inne.",
+        accessEndedTitle: "Połączenie z Makiem niepotwierdzone",
+        accessEndedHelp: "Zeskanuj aktualny kod QR w CodeLight na tym Macu. Zapisane wiadomości i szkice pozostaną.",
+        retryConnection: "Ponów połączenie",
+        scanMac: "Skanuj kod Maca",
     },
 
     codeLightLoading: {
-        titles: "Ładowanie tytułów sesji Codex…",
-        discovered: ({ count }: { count: number }) => "Znalezione sesje Codex: {count} · trwa dalsze ładowanie…".replace("{count}", String(count)),
-        messages: "Synchronizowanie tej sesji…",
+        titles: "Ładowanie sesji Codex, Antigravity i Claude Desktop…",
+        discovered: ({ count }: { count: number }) => "Wczytano {count} pozycji · trwa dalsze ładowanie…".replace("{count}", String(count)),
+        messages: "Ładowanie tej sesji…",
         older: "Ładowanie wcześniejszych wiadomości…",
-        failed: "Nie udało się zakończyć synchronizacji. Spróbuj ponownie, aby kontynuować.",
-        empty: "Nie znaleziono sesji Codex na tym Macu.",
+        unavailable: "Niedostępne",
+        failed: "Nie udało się odświeżyć sesji. Spróbuj ponownie.",
+        empty: "Na tym Macu nie ma dostępnych sesji Codex, Antigravity ani Claude Desktop.",
     },
 
     codeLightProjects: {
@@ -100,10 +117,10 @@ export const pl: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "Dostarczenie niepotwierdzone. Sprawdzamy pierwotną sesję Codex; nie wysyłaj ponownie.",
-        waiting: "Oczekiwanie na pierwotną sesję Codex na komputerze.",
+        deliveryUnconfirmed: "Dostarczenie niepotwierdzone. Sprawdzamy pierwotną sesję; nie wysyłaj ponownie.",
+        waiting: "Oczekiwanie na pierwotną sesję na komputerze.",
         openDesktop: "Otwórz na komputerze",
-        openFailed: "Nie udało się otworzyć pierwotnej sesji Codex. Sprawdź, czy Codex jest uruchomiony.",
+        openFailed: "Nie udało się otworzyć pierwotnej sesji. Sprawdź, czy odpowiednia aplikacja na komputerze jest uruchomiona.",
     },
 
     voiceStatusBar: {
@@ -227,7 +244,7 @@ export const pl: TranslationStructure = {
         developer: 'Deweloper',
         developerTools: 'Narzędzia deweloperskie',
         about: 'O aplikacji',
-        aboutFooter: "CodeLight łączy telefon z istniejącymi sesjami Codex na komputerze, zapewniając synchronizację szyfrowaną end-to-end.",
+        aboutFooter: "CodeLight łączy z sesjami Codex, Antigravity i Claude Desktop na Macu. Claude Desktop korzysta z Gateway; dostępne działania zależą od sesji.",
         whatsNew: 'Co nowego',
         whatsNewSubtitle: 'Zobacz najnowsze aktualizacje i ulepszenia',
         reportIssue: 'Zgłoś problem',
@@ -973,14 +990,14 @@ export const pl: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "Twoje sesje Codex,\ngdziekolwiek jesteś",
+        headline: "Twoje sesje Codex / Antigravity / Claude Desktop,\ngdziekolwiek jesteś",
         propEncrypted: "Szyfrowanie end-to-end",
         propNoPassword: "Bez rejestracji i VPN",
         propOpenSource: "Otwarty kod, licencja MIT",
         linkTitle: "Połącz z Makiem",
         installStep: "Otwórz CodeLight na Macu",
-        openStep: "Pozostaw sesje Codex uruchomione",
-        openBody: "Otwórz CodeLight na Macu i pozostaw Codex uruchomiony. CodeLight wyświetli kod QR do połączenia.",
+        openStep: "Pozostaw sesje Codex / Antigravity / Claude Desktop uruchomione",
+        openBody: "Otwórz CodeLight na Macu i pozostaw Codex / Antigravity / Claude Desktop uruchomiony. CodeLight wyświetli kod QR do połączenia.",
         scanStep: "Zeskanuj kod QR",
         scanButton: "Skanuj kod QR",
         pasteLink: "Nie możesz zeskanować? Wklej link",
@@ -1003,8 +1020,8 @@ export const pl: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "Codex na Twoim telefonie",
-        subtitle: "Połącz się z istniejącymi sesjami Codex na komputerze dzięki szyfrowaniu end-to-end.",
+        title: "Codex / Antigravity / Claude Desktop na Twoim telefonie",
+        subtitle: "Połącz się z istniejącymi sesjami Codex / Antigravity / Claude Desktop na komputerze dzięki szyfrowaniu end-to-end.",
         createAccount: 'Utwórz konto',
         linkOrRestoreAccount: 'Połącz lub przywróć konto',
         loginWithMobileApp: 'Zaloguj się przez aplikację mobilną',
@@ -1234,6 +1251,8 @@ export const pl: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "Pobierz obraz",
+        downloadFailed: "Nie udało się zapisać obrazu. Spróbuj ponownie.",
         open: 'Otwórz obraz',
         close: 'Zamknij obraz',
         zoomIn: 'Powiększ',

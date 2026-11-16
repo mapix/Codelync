@@ -170,3 +170,37 @@ Use a new immutable image/release filename for each update. Retain the previous
 deployment revision and public artifact; roll back only this website's deployment
 if verification fails. Do not remove old downloads while clients may still use
 their versioned URL. A website rollback does not change any user's Mac session.
+
+### Website copy updates
+
+The existing site is `codelight.novarock.io`, served by
+`codelight/codelight-website`. A copy update does not publish a new app release.
+The 2026-11-16 Mac 0.6.1/build 2026111605 passed Apple Accepted, stapling and
+Gatekeeper. Publish its verified release metadata and archive after the final
+privacy check, retaining the immutable 0.5.8 archive and checksum. The private
+iPhone development package remains separate from public downloads.
+
+First update the website section of `spec/codelight-public-release.md`, using
+`spec/codelight-error-recovery.md` and the verified Desktop capability rules.
+Keep Chinese and English meaning aligned, preserve the current layout, and use
+fictional examples. Check language switching, recovery FAQ, the current download
+link and a narrow phone layout before deployment.
+Set the HTML script query revision from the final `app.js` SHA-256. Verify normal
+browser loading after publication; an uncached fetch alone cannot establish that
+the page executed the matching language dictionary.
+
+For a page-only update, `deploy/website/Dockerfile.copy-update` inherits the exact
+previously verified static image and replaces only the four landing assets. Make
+a fresh context containing that Dockerfile plus `site/index.html`, `site/app.js`,
+`site/styles.css` and `site/assets/icon.png`. Verify the selected current image
+ID against the running deployment and its retained public archive/checksum.
+Build with `--pull=false` and an explicit verified local `STATIC_IMAGE`; record
+the resulting immutable image ID. This preserves existing `release.json`, all
+versioned downloads, nginx configuration and security headers byte-for-byte.
+Never include workspace, app state, phone packages or private QA in the context.
+
+Import only that image into the existing cluster. Server-side dry-run a change
+to the existing deployment image, then apply only that image change. Verify both
+ready replicas, unchanged ingress/TLS/security headers, rendered bilingual copy,
+the same public release metadata and a small Range response from its download.
+Keep the previous revision and image available for a scoped website rollback.

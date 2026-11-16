@@ -36,8 +36,46 @@ export function peerMaterial(macKey, secret) {
   return 'CodeLight peer v2\n' + macKey + '\n' + secret;
 }
 export function rpcTarget(method, params = {}) {
-  const key = typeof params.id === 'string' ? ['request', params.id]
-    : typeof params.turnId === 'string' ? ['turn', params.turnId]
+  const key = method === 'codex-controls-update' && params.expectedScope?.app === 'claude-desktop'
+    ? ['settings', ...['appMode', 'nativeCollection', 'nativeConversationId', 'hostId', 'ownerGeneration', 'runtimeGeneration', 'queryToken', 'cliSessionId', 'settingsToken'].map(name => params.expectedScope[name] ?? null)]
+    : method === 'native-task-stop' && typeof params.taskId === 'string' ? ['task', params.taskId, params.scope?.queryToken ?? null]
+    : typeof params.id === 'string' ? ['request', params.id]
+    : typeof params.queryToken === 'string' ? ['query', params.queryToken]
+      : typeof params.turnId === 'string' ? ['turn', params.turnId]
       : typeof params.sourceKey === 'string' ? ['source', params.sourceKey] : ['entity'];
   return JSON.stringify([method, ...key]);
+}
+
+/** Visible native tool JSON is independent of attachment marker parameters. */
+export const NATIVE_TOOL_INPUT_MAX_BYTES = 64 * 1024;
+function nativeToolInputJson(value) {
+  let count = 0;
+  const seen = new Set();
+  function valid(item, depth) {
+    if (++count > 2048 || depth > 12) return false;
+    if (item === null || typeof item === 'boolean') return true;
+    if (typeof item === 'number') return Number.isFinite(item);
+    if (typeof item === 'string') return item.length <= NATIVE_TOOL_INPUT_MAX_BYTES;
+    if (!item || typeof item !== 'object' || seen.has(item) || Object.getOwnPropertySymbols(item).length) return false;
+    const array = Array.isArray(item), prototype = Object.getPrototypeOf(item);
+    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return false;
+    seen.add(item);
+    const properties = Object.getOwnPropertyDescriptors(item);
+    for (const [key, property] of Object.entries(properties)) {
+      if (array && key === 'length') continue;
+      if (array && !/^(0|[1-9][0-9]*)$/.test(key)) return false;
+      if (key.length > 512 || ['__proto__', 'prototype', 'constructor'].includes(key) || property.get || property.set || !valid(property.value, depth + 1)) return false;
+    }
+    seen.delete(item); return true;
+  }
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !valid(value, 0)) return null;
+    const encoded = JSON.stringify(value);
+    return new TextEncoder().encode(encoded).byteLength <= NATIVE_TOOL_INPUT_MAX_BYTES ? encoded : null;
+  } catch { return null; }
+}
+export function isNativeToolInput(value) { return nativeToolInputJson(value) !== null; }
+export function projectNativeToolInput(value) {
+  const encoded = nativeToolInputJson(value);
+  return encoded === null ? { inputUnavailable: true } : { input: JSON.parse(encoded) };
 }

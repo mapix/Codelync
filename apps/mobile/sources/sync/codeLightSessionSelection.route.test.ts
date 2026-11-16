@@ -15,6 +15,17 @@ beforeEach(() => {
 it('a verified same-peer route change during scope loading does not fail desktop selection', async () => {
     await expect(selectCodeLightSession(session)).resolves.toBeUndefined(); expect(mocks.rpc).toHaveBeenCalledTimes(1);
 });
+it('selects the exact verified Antigravity source through the same sealed machine operation', async () => {
+    const antigravity = { ...session, id: 'agy-session', metadata: { ...session.metadata, bridge: { ...session.metadata.bridge,
+        controlMode: 'session', sourceKey: 'agy-source-key', source: { app: 'antigravity', id: 'original-cascade', hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'verified-owner' } } } };
+    await selectCodeLightSession(antigravity);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith('fixture-machine', 'codelight-select-source', expect.objectContaining({ sourceKey: 'agy-source-key' }));
+    mocks.rpc.mockClear();
+    delete antigravity.metadata.bridge.source.protocol;
+    await selectCodeLightSession(antigravity);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+});
 it('a different peer is rejected before selection dispatch', async () => {
     mocks.peer = 'peer:other-peer';
     await expect(selectCodeLightSession(session)).rejects.toThrow('Selection authority changed'); expect(mocks.rpc).not.toHaveBeenCalled();

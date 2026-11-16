@@ -107,6 +107,20 @@ function ownerState() {
   };
 }
 
+test('imageView retains the original item identity and order without requiring text', async t => {
+  const { native, backend } = fixture(t);
+  const pending = backend.snapshot('image-session'); await until(() => native.subscriptions === 1);
+  native.snapshot('image-session', { turns: [{ turnId: 'image-turn', status: 'completed', items: [
+    { id: 'before', type: 'agentMessage', text: 'Before' },
+    { id: 'original-image', type: 'imageView', path: '/fixture/image.png', startedAtMs: 200, completedAtMs: 201 },
+    { id: 'after', type: 'agentMessage', text: 'After' },
+  ] }], threadRuntimeStatus: { type: 'idle' } });
+  const view = await pending;
+  assert.deepEqual(view.rows.map(row => row.id), ['before', 'original-image', 'after']);
+  assert.deepEqual(view.rows[1].tools, [{ id: 'original-image', name: 'view_image', imagePath: '/fixture/image.png', output: '', status: 'completed' }]);
+  assert.equal(view.rows[1].at, 200); assert.equal(native.actions.length, 0);
+});
+
 test('a native steering caller carries its temporary and accepted row relationship', async t => {
   const { native, backend } = fixture(t);
   /** @type {Value[]} */ const views = [];
@@ -281,6 +295,29 @@ test('native mutation disconnect and timeout become unknown delivery receipts', 
   native.actionError = new BridgeError('codex-owner-unavailable', 'fixture no owner');
   await assert.rejects(backend.command('session-1', 'send', { text: 'fixture input' }, 'no-owner'), { code: 'codex-owner-unavailable' });
   assert.equal(native.actions.length, 4);
+});
+
+test('current v2 child input is parent-owned before dispatch while native interrupt and approvals remain usable', async t => {
+  const { native, backend } = fixture(t); native.ownerGeneration = 'owner-1';
+  const subscription = backend.subscribe('child-session', () => {}); await until(() => native.subscriptions === 1);
+  native.snapshot('child-session', { ...ownerState(), threadSource: 'subagent', parentThreadId: 'parent-session',
+    source: { subAgent: { thread_spawn: { parent_thread_id: 'parent-session', agent_path: '/root/child' } } } }); await subscription;
+  const view = await backend.snapshot('child-session');
+  assert.ok(view.nativeInput);
+  assert.equal(view.nativeInput.available, false); assert.equal(view.nativeInput.parentConversationId, 'parent-session');
+  for (const action of ['send', 'steer']) await assert.rejects(backend.command('child-session', action, { text: 'Synthetic never dispatched' }, `child-${action}`, { expectedGeneration: 'owner-1' }),
+    error => error instanceof BridgeError && error.code === 'parent-owned-subagent' && /** @type {Value} */ (error).effectMayHaveOccurred === false);
+  assert.equal(native.actions.length, 0);
+  await backend.command('child-session', 'interrupt', { turnId: 'turn-2' }, 'child-stop');
+  await backend.command('child-session', 'approval', { requestId: 'approval-1', kind: 'command', decision: 'decline' }, 'child-approval');
+  assert.deepEqual(native.actions.map(row => row.method), ['interrupt', 'approval']);
+});
+
+test('native request rejection retains a bounded original cause without inventing admission', async t => {
+  const { native, backend } = fixture(t);
+  native.actionError = new BridgeError('codex-request-rejected', 'direct app-server input is not allowed for multi-agent v2 sub-agents');
+  await assert.rejects(backend.command('unobserved-child', 'send', { text: 'Synthetic fixture only' }, 'child-original-rejection'),
+    error => error instanceof BridgeError && /** @type {Value} */ (error).nativeCause === 'codex-parent-owned-child-input');
 });
 
 test('user question answers cover the exact pending identities and are forwarded natively', async (t) => {

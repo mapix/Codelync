@@ -139,6 +139,63 @@ user conversations receive no test input or approval decisions. Before claiming
 full runtime acceptance, a dedicated desktop-owned test conversation must show
 subscription and native admission, with app-server PID unchanged.
 
+## Verified desktop saved-history capability
+
+A completed or paused native subagent can remain in the original Desktop index
+and saved rollout after its live owner has been unloaded. Owner discovery may
+time out before any snapshot read. This is independent from native history
+availability and does not establish idle status or a control owner.
+
+An explicitly configured `CodexSavedHistoryReader` may read that original saved
+data for a selected native child. The same namespace's read-only index must
+identify its native ID, explicit subagent parent and rollout path. Canonical
+paths remain within `sessions` or `archived_sessions`; no-follow descriptors
+validate both child and parent's bounded `session_meta` headers as `Codex Desktop`
+with exact IDs and parent relation. CLI-origin, foreign-namespace, missing,
+mismatched and unsupported records fail with content-free reason codes.
+
+Selected recent history reads bounded tail bytes; earlier reads require an
+explicit byte boundary and source stamp. Stable rows retain original item/call
+IDs when available, with byte offsets as fallback and global byte order. Public
+message text, tool display fields and public reasoning summaries are projected;
+base instructions, developer/system messages, internal metadata and raw reasoning
+content are excluded. A missing native user/turn context supplies a display-only
+unrooted turn, never an active control identity. File replacement, index/path
+change, overwrite, truncation or source release fences late/stale results. Harmless
+append retains the source stamp only while canonical file/header/index membership
+is unchanged and retained captured-byte hashes still match. Revalidation is
+bounded to at most eight captured windows per source; expired proof requires a
+fresh source capture. It does not claim that unread portions were hashed. An
+incomplete trailing record remains outside the committed byte boundary. Reads never navigate
+Desktop, resume a runtime or replay a mutation.
+
+The backend's conditional `supportsNativeSavedHistory` and `readHistoricalPage`
+capability return a separate view: `status:'history-only'`, `requests:[]`,
+`currentTurnId:null`, `ownerGeneration:null`, `contentStamp`, `historyComplete`
+and `historicalRead:{version:1,available:true,app:'codex',originator:'Codex Desktop',nativeId,
+hostId:'local',namespaceHash,sourceStamp,parentNativeId,bytesRead,byteBoundary}`.
+`byteBoundary` contains start, end and total saved-file offsets. Historical
+provenance is independent from live owner generation. The common connector owns
+readable-history routing and excludes every admission, control and receipt
+reconciliation from this mode. Original live Root snapshots and nonnull native
+control-owner requirements retain their existing route.
+
+`historicalRead.lastLifecycle` records only the latest scoped native `event_msg`
+task/turn lifecycle marker, with type, original turn ID, native timestamp and byte
+offset. `task_complete` and `turn_aborted` are terminal observations only when
+the original turn ID is present and no incomplete tail remains. Unknown markers
+and `task_started` are nonterminal. Row completion, tool output, timestamps and
+message recency cannot establish a terminal observation or idle state. An appended
+new task marker invalidates terminal fast preflight even when the data source
+stamp remains stable. A verified terminal saved child may avoid unavailable
+owner discovery; unknown/nonterminal children retain the original live path.
+
+Acceptance covers exact original Desktop index/header/parent proof, bounded
+selected tail, explicit older pages, source/path/append/release races, original
+row IDs, public-field exclusion and conditional backend forwarding. A real
+read-only probe records metadata and byte counts only; private bodies, identities
+and file paths are excluded from public fixtures and reports.
+
 ## Phone-facing backend projection
 
 `CodexBackend` wraps the IPC adapter. Per selected session it owns one native

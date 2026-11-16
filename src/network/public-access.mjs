@@ -52,7 +52,7 @@ export class EntryProbes {
 
 export class CloudflareAccess extends EventEmitter {
   /** @param {{binary:string,upstream:string,state:string}} options */
-  constructor(options) { super(); this.options = options; this.closed = false; this.child = /** @type {import('node:child_process').ChildProcess|null} */ (null); this.reject = /** @type {((error:Error)=>void)|null} */ (null); }
+  constructor(options) { super(); this.options = options; this.closed = false; this.child = /** @type {import('node:child_process').ChildProcess|null} */ (null); this.reject = /** @type {((error:Error)=>void)|null} */ (null); this.closing = /** @type {Promise<void>|null} */ (null); }
   async start() {
     const log = await open(join(this.options.state, 'tunnel.log'), 'a', 0o600);
     if (this.closed) { await log.close(); throw Error('public-access-cancelled'); }
@@ -70,13 +70,24 @@ export class CloudflareAccess extends EventEmitter {
   }
   activate() {}
   pauseReconnect() {}
-  async close() {
+  close() {
+    if (this.closing) return this.closing;
     this.closed = true; this.reject?.(Error('public-access-cancelled')); this.reject = null;
-    const child = this.child;
-    if (child?.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM'); await Promise.race([once(child, 'exit'), delay(5000)]);
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
+    this.closing = (async () => {
+      const child = this.child;
+      if (child?.pid && child.exitCode === null && child.signalCode === null) {
+        const deadline = new AbortController(), exited = once(child, 'exit');
+        child.kill('SIGTERM');
+        try {
+          await Promise.race([exited, delay(5000, undefined, { signal: deadline.signal })]);
+          if (child.exitCode === null && child.signalCode === null) {
+            if (!child.kill('SIGKILL')) throw Error('cloudflare-shutdown-failed');
+            await exited;
+          }
+        } finally { deadline.abort(); }
+      }
+    })();
+    return this.closing;
   }
 }
 

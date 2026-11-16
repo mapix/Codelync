@@ -17,6 +17,7 @@ import { apiSocket } from './apiSocket';
 import { sync } from './sync';
 import { storage } from './storage';
 import { MetadataSchema, type RigComposerDraft, type Session } from './storageTypes';
+import { isNoninvasiveBridge } from './noninvasiveBridge';
 import {
     getRigComposerMode,
     getRigModels,
@@ -43,7 +44,7 @@ function writerFor(sessionId: string): Writer {
 
 function rigSession(sessionId: string): Session | null {
     const session = storage.getState().sessions[sessionId];
-    return session && isRigMetadataV1(session.metadata) ? session : null;
+    return session && isRigMetadataV1(session.metadata) && !isNoninvasiveBridge(session.metadata) ? session : null;
 }
 
 /** Monotonic per session: later than now and later than anything already seen. */
@@ -162,7 +163,7 @@ export function rigComposerFlushPending(sessionId: string): void {
 /** Push every local draft that is stamped newer than the last metadata the phone has seen. */
 export function rigComposerFlushAheadSessions(): void {
     for (const [sessionId, session] of Object.entries(storage.getState().sessions)) {
-        if (!isRigMetadataV1(session.metadata)) continue;
+        if (!isRigMetadataV1(session.metadata) || isNoninvasiveBridge(session.metadata)) continue;
         const localStamp = session.draftUpdatedAt ?? null;
         const remoteStamp = session.metadata?.draftUpdatedAt ?? null;
         if (localStamp !== null && (remoteStamp === null || localStamp > remoteStamp)) {

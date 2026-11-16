@@ -46,7 +46,8 @@ vi.mock('@/text', () => ({ t: (key: string) => key }));
 
 import { storage } from './storage';
 import { MetadataSchema, type Metadata } from './storageTypes';
-import { rigComposerClear, rigComposerSetMode, rigComposerSetText, RIG_DRAFT_DEBOUNCE_MS } from './rigComposer';
+import { rigComposerClear, rigComposerSetMode, rigComposerSetText, rigComposerFlushAheadSessions, RIG_DRAFT_DEBOUNCE_MS } from './rigComposer';
+import { isRigMetadataV1 } from './rig';
 import { useDraft } from '@/hooks/useDraft';
 
 const lastMode = { providerId: 'codex', modelId: 'shared-model', effort: 'high', serviceTier: 'fast', permissionMode: 'auto' };
@@ -90,6 +91,41 @@ afterEach(() => {
     if (composer) act(() => composer!.unmount());
     composer = undefined;
     vi.useRealTimers();
+});
+
+function nativeMetadata(text: string, stamp = 100): Metadata {
+    return metadata({ client: { id: 'noninvasive-bridge', name: 'CodeLight', version: '0.6.0' },
+        bridge: { version: 1, source: { app: 'codex', id: 'native-root', hostId: 'local', kind: 'session', runtimeGeneration: 'owner', windowGeneration: null },
+            controlMode: 'session', sourceStatus: 'connected', currentTurnId: null },
+        nativeSession: { title: 'Root', updatedAt: 1, parentId: null, agentName: '', preview: '', isPinned: false, catalogueAvailable: true },
+        draft: { ...lastMode, text }, draftUpdatedAt: stamp });
+}
+
+describe('CodeLight native drafts with the real compatible Rig metadata predicate', () => {
+    it('preserves staged local text through recent/observer metadata and reconnect without metadata writes', async () => {
+        const native = nativeMetadata('OLD_PREFIX');
+        expect(isRigMetadataV1(native)).toBe(true);
+        apply('native', native);
+        storage.getState().updateSessionDraft('native', 'PREFIX\n\nBOUND PARENT REQUEST');
+        apply('native', nativeMetadata('OLD_PREFIX', 20_000), 99);
+        expect(session('native').draft).toBe('PREFIX\n\nBOUND PARENT REQUEST');
+        expect(mocks.persisted.drafts.native).toBe('PREFIX\n\nBOUND PARENT REQUEST');
+        storage.getState().setSocketStatus('connected');
+        rigComposerFlushAheadSessions(); rigComposerSetText('native', 'STALE WRITER'); rigComposerClear('native');
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(session('native').draft).toBe('PREFIX\n\nBOUND PARENT REQUEST');
+        expect(writes()).toEqual([]);
+    });
+    it('keeps an explicitly cleared native draft empty even when remote metadata or a captured session still contains old text', () => {
+        apply('native', nativeMetadata('REMOTE_OLD'));
+        storage.getState().updateSessionDraft('native', 'LOCAL');
+        const captured = { ...session('native'), draft: 'CAPTURED_OLD' };
+        storage.getState().updateSessionDraft('native', null);
+        storage.getState().applySessions([captured]);
+        apply('native', nativeMetadata('REMOTE_OLD', 30_000), 100);
+        expect(session('native').draft).toBeNull();
+        expect(mocks.persisted.drafts.native).toBeUndefined();
+    });
 });
 
 describe('Happy Agent composer synchronization', () => {

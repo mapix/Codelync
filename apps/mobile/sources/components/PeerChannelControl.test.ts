@@ -87,3 +87,20 @@ it('a header indicator has no visible route label and opens the same picker only
     act(() => trigger.props.onPress()); expect(renderer.root.findByType('PickerSheet').props.visible).toBe(true);
     act(() => renderer.unmount());
 });
+
+it('an external connection recovery clears an obsolete picker error', async () => {
+    const select=vi.fn().mockRejectedValue(Error('fixed fixture failure'));let renderer!:ReturnType<typeof create>;
+    act(()=>{renderer=create(React.createElement(PeerChannelControlView,{snapshot,onSelect:select}));});
+    act(()=>renderer.root.findAll((n:any)=>n.props.testID==='codelight-channel-open')[0].props.onPress());
+    await act(async()=>renderer.root.findAllByType('Option')[3].props.onPress());
+    expect(renderer.root.findAll((n:any)=>n.props.testID==='codelight-channel-error').length).toBeGreaterThan(0);
+    const recovered={...snapshot,channels:snapshot.channels.map(channel=>channel.id===snapshot.selectedId?{...channel,state:'connected' as const}:channel)};
+    act(()=>renderer.update(React.createElement(PeerChannelControlView,{snapshot:recovered,onSelect:select})));
+    expect(renderer.root.findAll((n:any)=>n.props.testID==='codelight-channel-error')).toHaveLength(0);act(()=>renderer.unmount());
+});
+it('saved routes can still be inspected while a connection probe is running',()=>{
+    const select=vi.fn();let renderer!:ReturnType<typeof create>;
+    act(()=>{renderer=create(React.createElement(PeerChannelControlView,{snapshot:{...snapshot,connecting:true},onSelect:select}));});
+    act(()=>renderer.root.findAll((n:any)=>n.props.testID==='codelight-channel-open')[0].props.onPress());
+    expect(renderer.root.findByType('PickerSheet').props.visible).toBe(true);expect(select).not.toHaveBeenCalled();act(()=>renderer.unmount());
+});

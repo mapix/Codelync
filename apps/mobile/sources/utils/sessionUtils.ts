@@ -2,8 +2,12 @@ import * as React from 'react';
 import { Session } from '@/sync/storageTypes';
 import { resolveSessionState } from '@/sync/sessionState';
 import type { SessionState } from '@/sync/sessionState';
-import { t } from '@/text';
+import { t, getCurrentLanguage } from '@/text';
+import { codeLightSubagentLabels } from '@/text/codeLightSubagentLabels';
 import { buildResumeCommand, buildResumeCommandBlock, ResumeCommandBlock } from './resumeCommand';
+import { isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
+import { currentNativeAggregate } from './nativeAggregateActivity';
+import { readNativeQuery } from './nativeQuery';
 
 export type { SessionState } from '@/sync/sessionState';
 
@@ -22,22 +26,43 @@ export interface SessionStatus {
  * Uses centralized session state from storage.ts
  */
 export function useSessionStatus(session: Session): SessionStatus {
-    const isOnline = session.presence === "online";
+    const native = isNoninvasiveBridge(session.metadata);
+    const generation = session.metadata?.bridge?.source.runtimeGeneration;
+    const isOnline = native
+        ? session.metadata?.bridge?.sourceStatus === 'connected' && typeof generation === 'string' && !!generation.trim()
+        : session.presence === "online";
+    const query = readNativeQuery(session.metadata, session.agentState?.nativeQuery);
     const state = resolveSessionState({
         agentState: session.agentState,
-        thinking: session.thinking,
+        thinking: query ? query.status === 'running' : session.thinking,
         isOnline,
     });
+    const aggregate = native ? currentNativeAggregate(session) : null;
 
     const vibingMessage = React.useMemo(() => {
         return vibingMessages[Math.floor(Math.random() * vibingMessages.length)].toLowerCase() + '…';
     }, [state]);
 
+    if (query && state !== 'disconnected' && state !== 'permission_required' && state !== 'input_required' && query.status !== 'idle') {
+        const waiting = query.status === 'waiting';
+        return { state: waiting ? 'waiting' : 'thinking', isConnected: true, shouldShowStatus: true,
+            statusText: codeLightSubagentLabels[getCurrentLanguage()].status[waiting ? 'waiting' : 'running'],
+            statusColor: waiting ? '#FF9500' : '#007AFF', statusDotColor: waiting ? '#FF9500' : '#007AFF', isPulsing: true };
+    }
+
+    if (aggregate && state !== 'disconnected' && state !== 'permission_required' && state !== 'input_required') {
+        if (!aggregate.known) return { state: 'waiting', isConnected: true, statusText: t('codeLightSessionStatus.unknown'), shouldShowStatus: true,
+            statusColor: '#999', statusDotColor: '#999' };
+        if (aggregate.active || aggregate.waiting) return { state: aggregate.active ? 'thinking' : 'waiting', isConnected: true,
+            statusText: codeLightSubagentLabels[getCurrentLanguage()].status[aggregate.waiting ? 'waiting' : 'running'], shouldShowStatus: true,
+            statusColor: aggregate.waiting ? '#FF9500' : '#007AFF', statusDotColor: aggregate.waiting ? '#FF9500' : '#007AFF', isPulsing: true };
+    }
+
     if (state === 'disconnected') {
         return {
             state,
             isConnected: false,
-            statusText: t('status.lastSeen', { time: formatLastSeen(session.activeAt, false) }),
+            statusText: isNoninvasiveBridge(session.metadata) ? t('codeLightSessionStatus.unknown') : t('status.lastSeen', { time: formatLastSeen(session.activeAt, false) }),
             shouldShowStatus: true,
             statusColor: '#999',
             statusDotColor: '#999'

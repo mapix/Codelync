@@ -7,8 +7,23 @@ import { Encryption } from './encryption/encryption';
 import { storage } from './storage';
 import { config } from '@/config';
 import type { PeerCredentials } from '@slopus/happy-wire/codelight';
-import { peerAuthorization, decodePeerResponse } from './peerNetwork';
+import { peerAuthorization, decodePeerResponseAsync } from './peerNetwork';
 import { abortBudget } from './abortBudget';
+import { PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_CODEC_VALUE } from '@slopus/happy-wire/peer-codec';
+import { isNoninvasiveBridge } from './noninvasiveBridge';
+
+// The existing native read methods retain their transport behavior. Unknown
+// native operations receive write admission rules, never a reconnect queue.
+const NATIVE_READ_RPC_METHODS = new Set(['bridge-receipt', 'codex-controls-read', 'native-image-read',
+    'native-task-read', 'native-task-log-read', 'native-task-output-read']);
+function nativeRpcNeedsLiveConnection(sessionId: string, method: string, pinnedPeer: boolean): boolean {
+    if (NATIVE_READ_RPC_METHODS.has(method)) return false;
+    try {
+        const session = storage.getState().sessions[sessionId];
+        if (session) return isNoninvasiveBridge(session.metadata);
+    } catch { /* An unknown CodeLight source cannot acquire an offline write queue. */ }
+    return !!config.noninvasiveLocal || pinnedPeer;
+}
 
 export function getHappyClientId(): string {
     let platform: string = Platform.OS; // 'ios' | 'android' | 'web'
@@ -93,9 +108,9 @@ class ApiSocket {
     peerIdentity() { return this.config?.peer?.id ? 'peer:' + this.config.peer.id : null; }
     async switchPeerChannel(endpoint: string, peer: PeerCredentials): Promise<void> {
         if (!this.config?.peer || this.config.peer.id !== peer.id || !peer.channels.some(channel => channel.url === endpoint)) throw Error('Invalid peer channel switch');
-        const encryption = this.encryption, token = this.config.token;
+        const encryption = this.encryption, previous = this.config;
         if (!encryption) throw Error('Peer encryption is unavailable');
-        this.disconnect(); this.initialize({ endpoint, token, peer }, encryption);
+        this.disconnect(); this.initialize({ ...previous, endpoint, peer }, encryption);
         const connection = this.config;
         await new Promise<void>((resolve, reject) => {
             let release: (() => void) | undefined;
@@ -116,6 +131,7 @@ class ApiSocket {
     private peerReads = new Set<() => void>();
     private statusListeners: Set<(status: 'disconnected' | 'connecting' | 'connected' | 'error') => void> = new Set();
     private currentStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
+    private writeConnectionGeneration = 0;
 
     //
     // Initialization
@@ -148,7 +164,7 @@ class ApiSocket {
         this.socket = io(endpoint.origin, {
             path: socketPath,
             // Mac 网关按独立设备 token 准入升级请求，撤销设备后关闭该设备的连接而不影响其他手机。
-            ...(config.noninvasiveLocal ? { extraHeaders: proofHeaders() } : {}),
+            ...(connection.peer || config.noninvasiveLocal ? { extraHeaders: proofHeaders() } : {}),
             // A callback, not an object literal: socket.io re-invokes it for
             // every connect AND reconnect, so appState is read fresh each time.
             // With a literal, a socket that first connected while foregrounded
@@ -250,6 +266,8 @@ class ApiSocket {
      */
     async sessionRPC<R, A>(sessionId: string, method: string, params: A, expectedServerUrl?: string): Promise<R> {
         const config = this.config, socket = this.socket, encryption = this.encryption;
+        const nativeWrite = nativeRpcNeedsLiveConnection(sessionId, method, !!config?.peer), connectionGeneration = this.writeConnectionGeneration;
+        if (nativeWrite && !socket?.connected) throw Object.assign(new Error('Not connected to the computer'), { effectMayHaveOccurred: false });
         if (expectedServerUrl !== undefined && config?.endpoint !== expectedServerUrl) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
         const sessionEncryption = encryption!.getSessionEncryption(sessionId);
         if (!sessionEncryption) {
@@ -267,6 +285,7 @@ class ApiSocket {
         );
         // 加密是异步的；期间扫码切换连接后，旧请求不能随全局 socket 发到新账户/入口。
         if (config !== this.config || socket !== this.socket || encryption !== this.encryption) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
+        if (nativeWrite && (!socket?.connected || connectionGeneration !== this.writeConnectionGeneration)) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
         const result = await labelRpcStep(
             'sending the request',
             () => this.rpcCall(`${sessionId}:${method}`, encrypted, socket ?? undefined),
@@ -361,9 +380,10 @@ class ApiSocket {
         const deadline = abortBudget(options?.signal, path.endsWith('/recent') ? 30000 : 10000);
         this.peerReads.add(deadline.abort);
         try {
-        const response = await this.request(path, { ...options, signal: deadline.signal });
+        const headers = new Headers(options?.headers); headers.set(PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_CODEC_VALUE);
+        const response = await this.request(path, { ...options, headers: Object.fromEntries(headers.entries()), signal: deadline.signal });
         if (!response.ok) return response;
-        const payload = decodePeerResponse(peer, await response.json());
+        const payload = await decodePeerResponseAsync(peer, await response.json(), { signal: deadline.signal, isCurrent: () => this.config === connection });
         if (this.config !== connection) throw Error('The peer connection changed during this read');
         return new Response(JSON.stringify(payload), { status: response.status, headers: { 'Content-Type': 'application/json' } });
         } finally { deadline.dispose(); this.peerReads.delete(deadline.abort); }
@@ -396,8 +416,9 @@ class ApiSocket {
         }
     }
 
-    private updateStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error') {
-        if (this.currentStatus !== status) {
+    private updateStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error', detailsChanged = false) {
+        if (this.currentStatus !== status || detailsChanged) {
+            if (this.currentStatus === 'connected' && status !== 'connected' || this.currentStatus !== 'connected' && status === 'connected') this.writeConnectionGeneration++;
             this.currentStatus = status;
             this.statusListeners.forEach(listener => listener(status));
         }
@@ -408,6 +429,7 @@ class ApiSocket {
 
         // Connection events
         this.socket.on('connect', () => {
+            this.lastPeerConnectionError = null;
             if (this.isVerboseLogging()) {
                 console.log('🔌 SyncSocket: Connected, recovered: ' + this.socket?.recovered);
                 console.log('🔌 SyncSocket: Socket ID:', this.socket?.id);
@@ -431,11 +453,13 @@ class ApiSocket {
             const code = error.message === 'Missing authentication token' ? 'missing-token'
                 : error.message === 'Invalid authentication token' ? 'invalid-token' : 'transport-error';
             const httpStatus = Number((error as any).description?.status ?? (error as any).context?.status);
-            this.lastPeerConnectionError = { code, ...(Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { httpStatus } : {}) };
+            const next = { code, ...(Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { httpStatus } : {}) };
+            const detailsChanged = this.lastPeerConnectionError?.code !== next.code || this.lastPeerConnectionError?.httpStatus !== next.httpStatus;
+            this.lastPeerConnectionError = next;
             if (this.isVerboseLogging()) {
-                console.error('🔌 SyncSocket: Connection error', error);
+                console.error('🔌 SyncSocket: Connection error', next);
             }
-            this.updateStatus('error');
+            this.updateStatus('error', detailsChanged);
         });
 
         this.socket.on('error', (error) => {

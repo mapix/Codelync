@@ -1,6 +1,31 @@
 import type { NormalizedMessage } from '../typesRaw';
 import type { ReducerState } from './reducer';
 
+/** A consumed provisional alias cannot be claimed by another full native row. */
+function ownedReplacements(state: ReducerState, sourceId: string, wireIds: string[], sourceIds: string[]) {
+    const direct = new Set(sourceIds.filter(id => id !== sourceId && !state.nativeRetiredRowIds.has(id)));
+    const canClaim = (mapped: string | undefined) => {
+        if (!mapped) return true;
+        const row = state.messages.get(mapped);
+        if (row?.tool) return false;
+        const owner = row?.meta?.nativeRow?.id;
+        if (owner) return owner === sourceId || direct.has(owner);
+        // Missing payloads still retain identity mappings; they are not free aliases.
+        return [...state.nativeRowIds].every(([id, target]) => target !== mapped || id === sourceId
+            || state.nativeRetiredRowIds.has(id) || direct.has(id));
+    };
+    return { wireIds: wireIds.filter(id => canClaim(state.messageIds.get(id))
+        && [...state.messages.values()].every(row => row.realID !== id || canClaim(row.id))),
+        sourceIds: [...direct].filter(id => canClaim(state.nativeRowIds.get(id))) };
+}
+
+function canonicalIdFor(state: ReducerState, sourceId: string) {
+    const base = `native:${sourceId}`;
+    let id = base, suffix = 0;
+    while (state.messages.has(id) && state.messages.get(id)?.meta?.nativeRow?.id !== sourceId) id = `${base}:identity:${++suffix}`;
+    return id;
+}
+
 /** Superseded native identities are authoritative aliases, not text-based deduplication. */
 function bindReplacements(state: ReducerState, sourceId: string, wireIds: string[], sourceIds: string[], target: string, changed: Set<string>, removed: string[], replacedRows: string[] = []) {
     const replaced = new Set(wireIds), aliases = new Set<string>(replacedRows);
@@ -13,13 +38,13 @@ function bindReplacements(state: ReducerState, sourceId: string, wireIds: string
         && (replaced.has(row.realID ?? '') || replaced.has(row.localId ?? '')));
     if (targetRow?.role === 'user' && acceptedInput) {
         state.messages.set(target, { ...targetRow, createdAt: acceptedInput.createdAt, localId: acceptedInput.localId ?? targetRow.localId,
-            meta: { ...targetRow.meta, ...acceptedInput.meta }, pending: false, deliveryUnconfirmed: false, sendError: undefined, sortAt: acceptedInput.createdAt });
+            meta: { ...targetRow.meta, ...acceptedInput.meta, nativeRow: targetRow.meta?.nativeRow, nativeTimestamp: targetRow.meta?.nativeTimestamp }, pending: false, deliveryUnconfirmed: false, nativeAdmission: undefined, sendError: undefined, sortAt: acceptedInput.createdAt });
         changed.add(target);
     }
     for (const id of aliases) { state.messages.delete(id); changed.delete(id); if (!removed.includes(id)) removed.push(id); }
     for (const [id, mapped] of state.messageIds) if (aliases.has(mapped)) state.messageIds.set(id, target);
     for (const [id, mapped] of state.localIds) if (aliases.has(mapped)) state.localIds.set(id, target);
-    for (const [id, mapped] of state.nativeRowIds) if (aliases.has(mapped)) {
+    for (const [id, mapped] of state.nativeRowIds) if (aliases.has(mapped) && (id === sourceId || sourceIds.includes(id))) {
         state.nativeRowIds.set(id, target); if (id !== sourceId) state.nativeRetiredRowIds.add(id);
     }
     for (const id of wireIds) state.messageIds.set(id, target);
@@ -33,7 +58,7 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
     for (const message of updates) {
         if (message.role !== 'event' || message.content.type !== 'native-row-upsert') continue;
         const update = message.content;
-        if (update.role === 'tool') {
+        if (update.tools?.length) {
             for (const tool of update.tools ?? []) {
                 const key = `tool:${tool.id}`;
                 if (update.snapshotRevision !== undefined) {
@@ -49,7 +74,7 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
                     // 旧 running seed 不能触发通用 tool-start 的“审批占位→运行”分支，把真实终态重新打开。
                     if (!completed && existing?.tool?.state !== undefined && existing.tool.state !== 'running' && existing.tool.startedAt !== null) continue;
                     state.messages.set(id, { ...existing, id, realID: message.id, role: 'agent', createdAt: existing?.createdAt ?? message.createdAt, text: null, event: null, meta: message.meta, turn: message.turn,
-                        tool: { ...existing?.tool, callId: tool.id, name: tool.name || existing?.tool?.name || 'Tool', input: existing?.tool?.input ?? {},
+                        tool: { ...existing?.tool, callId: tool.id, name: tool.name || existing?.tool?.name || 'Tool', input: tool.arguments ?? tool.input ?? existing?.tool?.input ?? {},
                             createdAt: existing?.tool?.createdAt ?? message.createdAt, startedAt: existing?.tool?.startedAt ?? message.createdAt,
                             completedAt: completed ? existing?.tool?.completedAt ?? null : null, description: existing?.tool?.description ?? tool.name ?? '',
                             state: completed ? tool.status === 'completed' ? 'completed' : 'error' : 'running',
@@ -59,14 +84,28 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
                 }
                 if ((state.nativeRevisions.get(key) ?? 0) >= update.revision) continue;
                 state.nativeRevisions.set(key, update.revision);
+                const id = state.toolIdToMessageId.get(tool.id), existing = id ? state.messages.get(id) : undefined;
+                if (tool.name !== 'file' && tool.input && existing?.tool) {
+                    state.messages.set(existing.id, { ...existing, tool: { ...existing.tool, input: tool.input } }); changed.add(existing.id);
+                }
+                if (tool.name === 'file' && tool.arguments && existing?.tool) {
+                    // 旧图片读取失败后成功补读仍属于同一原生 item，更新参数而非新建第二条工具消息。
+                    state.messages.set(existing.id, { ...existing, tool: { ...existing.tool, name: tool.name, input: tool.arguments, result: tool.output,
+                        state: tool.status === 'completed' ? 'completed' : 'error' } });
+                    changed.add(existing.id);
+                }
                 state.nativeToolUpdates.set(tool.id, tool.output);
             }
-            continue;
         }
+        if (update.role === 'tool') continue;
         if (state.nativeRetiredRowIds.has(update.sourceRowId)) continue;
-        const currentCanonical = state.nativeRowIds.get(update.sourceRowId);
+        const mappedCanonical = state.nativeRowIds.get(update.sourceRowId), mappedRow = mappedCanonical ? state.messages.get(mappedCanonical) : undefined;
+        const currentCanonical = mappedRow?.meta?.nativeRow?.id === update.sourceRowId && !mappedRow.tool ? mappedCanonical : undefined;
+        const toolOnly = update.role === 'assistant' && update.text.trim().length === 0 && !!update.tools?.length;
+        const replacements = ownedReplacements(state, update.sourceRowId, toolOnly ? [] : update.replaceIds,
+            toolOnly ? [] : update.replaceSourceRowIds ?? []);
         // 正文已经由快照播种时，较早/同版本 wire 的替换关联仍需生效，不能留下临时 steering 气泡。
-        if (currentCanonical) bindReplacements(state, update.sourceRowId, update.replaceIds, update.replaceSourceRowIds ?? [], currentCanonical, changed, removed);
+        if (currentCanonical) bindReplacements(state, update.sourceRowId, replacements.wireIds, replacements.sourceIds, currentCanonical, changed, removed);
         if (update.snapshotRevision !== undefined) {
             const owner = update.ownerGeneration ?? 'unknown';
             const priorOwner = state.nativeSnapshotOwners.get(update.sourceRowId);
@@ -75,7 +114,9 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
                 if (priorOwner !== undefined) state.nativeRevisions.delete(update.sourceRowId);
             }
             const key = JSON.stringify(['snapshot', owner, update.sourceRowId]);
-            if ((state.nativeRevisions.get(key) ?? 0) >= update.snapshotRevision
+            const knownSnapshot = state.nativeRevisions.get(key) ?? 0;
+            const missingPayload = !currentCanonical || mappedRow?.text == null || mappedRow.text.trim().length === 0 && update.text.trim().length > 0;
+            if (knownSnapshot > update.snapshotRevision || knownSnapshot === update.snapshotRevision && !missingPayload
                 || (state.nativeRevisions.get(update.sourceRowId) ?? 0) > (update.streamRevision ?? 0)) continue;
             // 快照版本与流式 entry.revision 分属两个 owner；较大的快照版本不能压住后来的第1次文本修订。
             state.nativeRevisions.set(key, update.snapshotRevision);
@@ -84,13 +125,12 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
             if ((state.nativeRevisions.get(update.sourceRowId) ?? 0) >= update.revision) continue;
             state.nativeRevisions.set(update.sourceRowId, update.revision);
         }
-        const replaced = new Set(update.replaceIds);
-        const aliases = new Set([...update.replaceIds.map(id => state.messageIds.get(id)), ...(update.replaceSourceRowIds ?? []).map(id => state.nativeRowIds.get(id))].filter(Boolean));
-        const canonical = state.nativeRowIds.get(update.sourceRowId);
+        const replaced = new Set(replacements.wireIds);
+        const aliases = new Set([...replacements.wireIds.map(id => state.messageIds.get(id)), ...replacements.sourceIds.map(id => state.nativeRowIds.get(id))].filter(Boolean));
         // 最近窗口会改变 realID；必须沿原生身份与旧 wire 别名找回同一显示行。
-        const existing = [...state.messages.values()].filter(row => !row.tool && (row.id === canonical || aliases.has(row.id) || !!row.realID && replaced.has(row.realID)));
+        const existing = [...state.messages.values()].filter(row => !row.tool && (row.id === currentCanonical || aliases.has(row.id) || !!row.realID && replaced.has(row.realID)));
         const first = existing.sort((a, b) => a.createdAt - b.createdAt)[0];
-        const internalId = first?.id ?? `native:${update.sourceRowId}`;
+        const internalId = first?.id ?? canonicalIdFor(state, update.sourceRowId);
         const acceptedInput = update.role === 'user' && first?.role === 'user' && first.meta?.sentFrom !== 'noninvasive-observer'
             && (replaced.has(first.realID ?? '') || replaced.has(first.localId ?? ''));
         // 保存被替换 wire id：历史分页和重新连线不能让旧片段再次出现。
@@ -99,11 +139,14 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
         state.messages.set(internalId, { ...first, id: internalId, realID: message.id,
             role: update.role === 'user' ? 'user' : 'agent', createdAt: acceptedInput ? first.createdAt : update.snapshotRevision !== undefined ? message.createdAt : first?.createdAt ?? message.createdAt,
             text: update.role === 'reasoning' ? `*${update.text}*` : update.text,
-            isThinking: update.role === 'reasoning', event: null, tool: null, meta: acceptedInput ? { ...message.meta, ...first.meta } : message.meta, turn: message.turn,
+            isThinking: update.role === 'reasoning', event: null, tool: null, nativeAdmission: undefined,
+            meta: { ...(acceptedInput ? { ...message.meta, ...first.meta } : message.meta),
+                nativeTimestamp: message.meta?.nativeTimestamp,
+                nativeRow: { id: update.sourceRowId, offset: 0, revision: update.streamRevision ?? update.revision } }, turn: message.turn,
             ...(acceptedInput ? { pending: false, deliveryUnconfirmed: false, sendError: undefined, sortAt: first.createdAt } : {}) });
         state.messageIds.set(message.id, internalId);
         state.nativeRowIds.set(update.sourceRowId, internalId);
-        bindReplacements(state, update.sourceRowId, update.replaceIds, update.replaceSourceRowIds ?? [], internalId, changed, removed, existing.slice(1).map(row => row.id));
+        bindReplacements(state, update.sourceRowId, replacements.wireIds, replacements.sourceIds, internalId, changed, removed, existing.slice(1).map(row => row.id));
         changed.add(internalId);
     }
     for (const message of messages) {
@@ -117,7 +160,10 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
         fragments.set(message.id, message); state.nativeTextFragments.set(source.id, fragments);
     }
     for (const [sourceId, fragments] of state.nativeTextFragments) {
+        if (state.nativeRetiredRowIds.has(sourceId)) { state.nativeTextFragments.delete(sourceId); continue; }
         const internalId = state.nativeRowIds.get(sourceId) ?? `native:${sourceId}`;
+        const currentOwner = state.messages.get(internalId)?.meta?.nativeRow?.id;
+        if (currentOwner && currentOwner !== sourceId) continue;
         for (const [wireId, message] of [...fragments].sort((a, b) => a[1].meta!.nativeRow!.offset - b[1].meta!.nativeRow!.offset)) {
             const source = message.meta!.nativeRow!, first = state.messages.get(internalId);
             const part = message.role === 'user' ? message.content.text : message.role === 'agent' ? message.content[0] : null;

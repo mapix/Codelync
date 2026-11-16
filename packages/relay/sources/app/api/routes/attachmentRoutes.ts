@@ -15,6 +15,7 @@ import * as crypto from 'crypto';
 import { Fastify } from '../types';
 import { db } from '@/storage/db';
 import { s3client, s3bucket, isLocalStorage, getLocalFilesDir, putLocalFile } from '@/storage/files';
+import { CappedAttachmentError, MAX_CAPPED_ATTACHMENT_BYTES, readCappedLocalAttachment, statCappedLocalAttachment } from '@/storage/cappedAttachments';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const PRESIGNED_TTL_SECONDS = 15 * 60; // 15 minutes (design spec)
@@ -211,19 +212,25 @@ export function attachmentRoutes(app: Fastify) {
             }),
             body: z.object({
                 ref: z.string(),
+                maxBytes: z.number().int().positive().max(MAX_CAPPED_ATTACHMENT_BYTES).optional(),
             }),
             response: {
                 200: z.object({
                     downloadUrl: z.string(),
+                    maxBytes: z.number().int().positive().max(MAX_CAPPED_ATTACHMENT_BYTES).optional(),
+                    encryptedSize: z.number().int().nonnegative().max(MAX_CAPPED_ATTACHMENT_BYTES).optional(),
                 }),
                 400: z.object({ error: z.string() }),
                 404: z.object({ error: z.string() }),
+                413: z.object({ error: z.string() }),
+                501: z.object({ error: z.string() }),
+                503: z.object({ error: z.string() }),
             },
         },
         preHandler: app.authenticate,
     }, async (request, reply) => {
         const { sessionId } = request.params;
-        const { ref } = request.body;
+        const { ref, maxBytes } = request.body;
         const userId = request.userId;
 
         const session = await db.session.findFirst({
@@ -248,8 +255,18 @@ export function attachmentRoutes(app: Fastify) {
         if (isLocalStorage()) {
             const baseUrl = resolveBaseUrl(request);
             const downloadUrl = `${baseUrl}/v1/sessions/${sessionId}/attachments/${attachmentFile}`;
+            if (maxBytes !== undefined) {
+                try {
+                    const encryptedSize = await statCappedLocalAttachment(path.join(getLocalFilesDir(), ref), maxBytes);
+                    return reply.send({ downloadUrl: `${downloadUrl}?maxBytes=${maxBytes}`, maxBytes, encryptedSize });
+                } catch (error) {
+                    if (error instanceof CappedAttachmentError) return reply.code(error.status as 404 | 413 | 503).send({ error: error.message });
+                    throw error;
+                }
+            }
             return reply.send({ downloadUrl });
         }
+        if (maxBytes !== undefined) return reply.code(501).send({ error: 'Capped attachment download unavailable for S3 storage' });
         const downloadUrl = await s3client.presignedGetObject(s3bucket, ref, PRESIGNED_TTL_SECONDS);
         return reply.send({ downloadUrl });
     });
@@ -265,10 +282,15 @@ export function attachmentRoutes(app: Fastify) {
                 sessionId: z.string(),
                 attachmentFile: z.string(),
             }),
+            querystring: z.object({
+                maxBytes: z.string().regex(/^[1-9]\d*$/).transform(Number)
+                    .pipe(z.number().int().positive().max(MAX_CAPPED_ATTACHMENT_BYTES)).optional(),
+            }),
         },
         preHandler: app.authenticate,
     }, async (request, reply) => {
         const { sessionId, attachmentFile } = request.params;
+        const { maxBytes } = request.query;
         const userId = request.userId;
 
         // Verify session ownership
@@ -288,12 +310,22 @@ export function attachmentRoutes(app: Fastify) {
 
         if (isLocalStorage()) {
             const fullPath = path.join(getLocalFilesDir(), ref);
+            if (maxBytes !== undefined) {
+                try {
+                    const bytes = await readCappedLocalAttachment(fullPath, maxBytes);
+                    return reply.type('application/octet-stream').header('Cache-Control', 'no-store').send(bytes);
+                } catch (error) {
+                    if (error instanceof CappedAttachmentError) return reply.code(error.status).send({ error: error.message });
+                    throw error;
+                }
+            }
             if (!fs.existsSync(fullPath)) {
                 return reply.code(404).send({ error: 'Attachment not found' });
             }
             reply.header('Content-Type', 'application/octet-stream');
             return reply.type('application/octet-stream').send(fs.readFileSync(fullPath));
         } else {
+            if (maxBytes !== undefined) return reply.code(501).send({ error: 'Capped attachment download unavailable for S3 storage' });
             // S3 mode: redirect to presigned GET URL (15 min, per design).
             const url = await s3client.presignedGetObject(s3bucket, ref, PRESIGNED_TTL_SECONDS);
             return reply.redirect(url);

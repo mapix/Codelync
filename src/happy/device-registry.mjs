@@ -19,7 +19,9 @@ export class DeviceRegistry extends EventEmitter {
     const sessions = new Set();
     for (const row of this.rows) {
       const presence = row.presence, age = now - presence?.at;
-      if (!row.revoked && (this.sockets.get(row.id)?.size ?? 0) > 0 && presence?.active === true &&
+      // The approved, sealed HTTP heartbeat is the viewer lease. A channel's
+      // WebSocket can reconnect independently while that lease remains fresh.
+      if (!row.revoked && presence?.active === true &&
         typeof presence.sessionId === 'string' && presence.sessionId.trim() && Number.isFinite(age) && age >= 0 && age <= 45000) sessions.add(presence.sessionId);
     }
     return sessions;
@@ -36,7 +38,18 @@ export class DeviceRegistry extends EventEmitter {
   /** @param {string} id @param {Value} value */
   viewingPresence(id, value) {
     const row = this.rows.find(row => row.id === id && !row.revoked); if (!row || typeof value.active !== 'boolean' || value.sessionId !== null && (typeof value.sessionId !== 'string' || value.sessionId.length > 128)) throw Error('invalid-viewing-presence');
-    row.presence = { active: value.active, sessionId: value.sessionId, at: Date.now() };
+    const now = Date.now(), sequence = value.sequence;
+    if (sequence !== undefined) {
+      if (!Number.isSafeInteger(sequence) || sequence < 1) throw Error('invalid-viewing-presence-sequence');
+      const previous = Math.max(row.presenceSequence ?? 0, row.presence?.sequence ?? 0);
+      if (sequence <= previous) return false;
+      row.presenceSequence = sequence;
+    } else if (row.presence?.sequence !== undefined && now - row.presence.at >= 0 && now - row.presence.at <= 45000) {
+      // Legacy clients remain usable, but cannot overtake a current sequenced viewer.
+      return false;
+    }
+    row.presence = { active: value.active, sessionId: value.sessionId, at: now, ...(sequence === undefined ? {} : { sequence }) };
+    return true;
   }
   async save() { const snapshot = structuredClone(this.rows); const operation = this.tail.catch(() => {}).then(() => writeDurablePrivateJson(this.path, { version: 1, devices: snapshot })); this.tail = operation; await operation; this.emit('changed', this.list()); }
   /** @param {string} publicKey @param {string} name @param {string} token @param {number} [issuedAt] */

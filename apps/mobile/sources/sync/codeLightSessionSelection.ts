@@ -8,6 +8,7 @@ import { getServerUrl } from './serverConfig';
 import { codeLightAccountScope } from './codeLightBackgroundCache';
 import { CodeLightSelectionJournal } from './codeLightSelectionJournal';
 import type { BridgeRpcReply } from './noninvasiveRpcJournal';
+import { isCodeLightSessionSource } from '@/utils/codeLightSourceScope';
 
 const journals = new Map<string, CodeLightSelectionJournal>();
 const states = new Map<string, { revision: number; state: 'connecting' | 'selected' | 'failed' }>();
@@ -20,7 +21,7 @@ export function useCodeLightSelectionState(sessionId: string) {
 /** Invoked only by a real navigation tap or Retry, never by a preload/background refresh. */
 export async function selectCodeLightSession(session: Session | null) {
     const bridge = session?.metadata?.bridge;
-    if (!session || !bridge || bridge.source.app !== 'codex') return;
+    if (!session || !bridge || !isCodeLightSessionSource(bridge.source, bridge.controlMode)) return;
     const revision = (states.get(session.id)?.revision ?? 0) + 1;
     states.set(session.id, { revision, state: 'connecting' }); notify();
     try {

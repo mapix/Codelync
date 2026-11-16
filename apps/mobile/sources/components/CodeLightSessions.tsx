@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAllMachines, useAllSessions, useSocketStatus } from '@/sync/storage';
 import { useIsFocused } from '@react-navigation/native';
-import { buildCodeLightBrowserRows, codeLightProjectKey, isCodeLightCodexSession, type CodeLightBrowserRow } from '@/utils/codeLightSessionBrowser';
+import { buildCodeLightBrowserRows, codeLightProjectKey, isCodeLightConversation, isCodeLightNativeSession, type CodeLightBrowserRow } from '@/utils/codeLightSessionBrowser';
 import { formatSessionListTimestamp } from '@/utils/sessionListTimestamp';
 import { t } from '@/text';
 import { navigateToSession } from '@/hooks/useNavigateToSession';
@@ -18,16 +18,32 @@ import { CodeLightProjectStatus } from './CodeLightProjectStatus';
 import { CodeLightSessionStatus } from './CodeLightSessionStatus';
 import { CodeLightBottomNavigation } from './CodeLightBottomNavigation';
 import { Typography } from '@/constants/Typography';
+import { codeLightSourceLabel } from '@/utils/codeLightSourceScope';
+import { getCurrentLanguage } from '@/text';
+import { codeLightSubagentKindLabels } from '@/text/codeLightSubagentLabels';
+import { useCodeLightConnectionState } from '@/hooks/useCodeLightConnectionState';
+import { CodeLightConnectionNotice } from './CodeLightConnectionNotice';
+import { PeerChannelControl } from './PeerChannelControl';
 
 export const CodeLightSessions = React.memo(function CodeLightSessions() {
     const catalog = useAllSessions(), machines = useAllMachines({ includeOffline: true }), router = useRouter(), insets = useSafeAreaInsets(), focused = useIsFocused();
-    const sessions = useMemo(() => catalog.filter(isCodeLightCodexSession), [catalog]);
+    const sessions = useMemo(() => catalog.filter(isCodeLightNativeSession), [catalog]);
+    const conversationCount = useMemo(() => sessions.filter(isCodeLightConversation).length, [sessions]);
     const { theme } = useUnistyles();
     const progress = useCodeLightDiscoveryProgress();
     const socketStatus = useSocketStatus().status;
+    const connection = useCodeLightConnectionState().state;
     // 旧请求错误在连接恢复期间已经过期，目录缓存始终可点；只显示当前连接上的读取失败。
     const failed = progress.phase === 'error' && socketStatus === 'connected';
-    const loading = !failed && (progress.phase === 'loading' || progress.phase === 'idle' || socketStatus !== 'connected');
+    const loading = !failed && connection.kind === 'connected' && (progress.phase === 'loading' || progress.phase === 'idle');
+    const [refreshing, setRefreshing] = useState(false);
+    const refreshBusy = useRef(false);
+    const refresh = async () => {
+        if (refreshBusy.current) return;
+        refreshBusy.current = true; setRefreshing(true);
+        try { await sync.refreshSessions(); } catch { /* The current directory progress retains its error. */ }
+        finally { refreshBusy.current = false; setRefreshing(false); }
+    };
     const [query, setQuery] = useState(''), [projects, setProjects] = useState(new Set<string>()), [parents, setParents] = useState(new Set<string>());
     const deferredQuery = useDeferredValue(query);
     const searching = deferredQuery.trim().length > 0;
@@ -41,12 +57,14 @@ export const CodeLightSessions = React.memo(function CodeLightSessions() {
         const visible = new Set(visibleProjects);
         // 查询只带项目身份；状态更新不会使大目录重新分组，也不会为统计下载聊天历史。
         for (const session of sessions) {
+            if (!isCodeLightConversation(session)) continue;
             const metadata = session.metadata;
             const machineId = metadata?.machineId, id = codeLightProjectKey(session);
             if (!machineId || byId.has(id) || !visible.has(id)) continue;
             const machine = machineIndex.get(machineId);
             if (!machine?.active || machine.metadata?.codeLight?.projectActivityVersion !== 1) continue;
             byId.set(id, { id, machineId, hostId: metadata?.bridge?.source.hostId ?? 'local', projectKey: metadata?.nativeSession?.projectKey || metadata?.path || '/',
+                app: metadata?.bridge?.source.app === 'antigravity' ? 'antigravity' : metadata?.bridge?.source.app === 'claude-desktop' ? 'claude-desktop' : 'codex',
                 sessions: visibleSessions.filter(row => row.projectId === id).map(({ id, nativeId }) => ({ id, nativeId })) });
         }
         return [...byId.values()];
@@ -61,18 +79,18 @@ export const CodeLightSessions = React.memo(function CodeLightSessions() {
     const viewability = useRef({ itemVisiblePercentThreshold: 1, minimumViewTime: 200 }).current;
     const viewableChanged = useCallback(({ viewableItems }: { viewableItems: Array<{ item: CodeLightBrowserRow }> }) => {
         const rows = viewableItems.flatMap(token => token.item.kind === 'session' && token.item.session.metadata?.bridge?.source.id
-            ? [{ id: token.item.session.id, nativeId: token.item.session.metadata.bridge.source.id, projectId: codeLightProjectKey(token.item.session) }] : []).slice(0, 64);
+            ? [{ id: token.item.session.id, nativeId: token.item.session.metadata.bridge.source.id, projectId: token.item.projectId }] : []).slice(0, 64);
         const next = [...new Set([...viewableItems.filter(token => token.item.kind === 'project').map(token => token.item.key), ...rows.map(row => row.projectId)])].slice(0, 16);
         setVisibleProjects(previous => previous.length === next.length && previous.every((id, index) => id === next[index]) ? previous : next);
         setVisibleSessions(previous => JSON.stringify(previous) === JSON.stringify(rows) ? previous : rows);
     }, []);
     const toggle = (value: string, previous: Set<string>) => { const next = new Set(previous); if (next.has(value)) next.delete(value); else next.add(value); return next; };
-    const render = ({ item }: { item: CodeLightBrowserRow }) => item.kind === 'project' ? <Pressable style={styles.project} onPress={() => setProjects(previous => toggle(item.key, previous))}>
+    const render = ({ item }: { item: CodeLightBrowserRow }) => item.kind === 'project' ? <Pressable testID={'codelight-project:' + item.key} accessibilityRole="button" accessibilityState={{ expanded: projects.has(item.key) || searching }} style={styles.project} onPress={() => setProjects(previous => toggle(item.key, previous))}>
         <Ionicons name={projects.has(item.key) || searching ? 'chevron-down' : 'chevron-forward'} size={17} color={theme.colors.textSecondary} />
-        <View style={{ flex: 1 }}><Text style={styles.projectTitle}>{item.label}</Text><Text style={styles.path} numberOfLines={1}>{item.path}</Text><CodeLightProjectStatus projectId={item.key} /></View><Text style={styles.count}>{item.count}</Text>
+        <View style={{ flex: 1 }}><Text style={styles.projectTitle}>{item.sourceLabel} · {item.label}</Text><Text style={styles.path} numberOfLines={1}>{item.path}</Text><CodeLightProjectStatus projectId={item.key} /></View><Text style={styles.count}>{item.count}</Text>
     </Pressable> : <View style={[styles.row, item.child && styles.child]}>
-        <Pressable style={{ flex: 1 }} onPress={() => navigateToSession(router, item.session.id)}>
-            <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+        <Pressable testID={(item.session.metadata?.nativeSession?.isSubagent ? 'codelight-subagent-session:' : 'codelight-session:') + item.session.id} accessibilityRole="button" accessibilityLabel={`${item.session.metadata?.nativeSession?.isSubagent ? codeLightSubagentKindLabels[getCurrentLanguage()] + ' · ' : ''}${codeLightSourceLabel(item.session.metadata?.bridge?.source)} · ${item.title}`} style={{ flex: 1 }} onPress={() => navigateToSession(router, item.session.id)}>
+            <Text style={styles.title} numberOfLines={2}>{item.session.metadata?.nativeSession?.isSubagent ? codeLightSubagentKindLabels[getCurrentLanguage()] + ' · ' : ''}{item.title}</Text>
             <CodeLightSessionStatus sessionId={item.session.id} />
             <Text style={styles.detail} numberOfLines={1}>{item.session.metadata?.nativeSession?.preview || item.session.metadata?.bridge?.source.id?.slice(0, 8)}</Text>
             <Text style={styles.time}>{formatSessionListTimestamp(item.at)}</Text>
@@ -80,16 +98,19 @@ export const CodeLightSessions = React.memo(function CodeLightSessions() {
         {item.children ? <Pressable style={styles.branch} onPress={() => setParents(previous => toggle(item.session.id, previous))}><Ionicons name="git-branch-outline" size={18} color={theme.colors.textSecondary} /><Text style={styles.count}>{item.children}</Text></Pressable> : null}
     </View>;
     return <View style={[styles.root, { paddingTop: insets.top }]}>
-        <View style={styles.header}><Text style={styles.heading}>{t('tabs.sessions')}</Text>{!loading || sessions.length > 0 ? <Text style={styles.count}>{sessions.length}</Text> : null}
+        <View style={styles.header}><Text style={styles.heading}>{t('tabs.sessions')}</Text>{conversationCount > 0 || progress.phase === 'complete' && socketStatus === 'connected' ? <Text style={styles.count}>{conversationCount}</Text> : null}
+            <View style={{ flex: 1 }} />{connection.kind === 'connected' ? <PeerChannelControl presentation="header" /> : null}
         </View>
+        <CodeLightConnectionNotice />
         <View style={styles.search}><Ionicons name="search-outline" size={19} color={theme.colors.textSecondary} /><TextInput testID="codelight-session-search" style={styles.input} value={query} onChangeText={setQuery} placeholder={t('tools.names.search')} placeholderTextColor={theme.colors.textSecondary} autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" /></View>
         {loading || failed ? <View testID="codelight-discovery-progress" accessibilityLiveRegion="polite" style={styles.progress}>
             {loading ? <ActivityIndicator size="small" color={theme.colors.textSecondary} /> : null}
             <Text style={[styles.count, { flex: 1 }]}>{failed ? t('codeLightLoading.failed') : progress.found > 0 ? t('codeLightLoading.discovered', { count: progress.found }) : t('codeLightLoading.titles')}</Text>
-            {failed ? <Pressable onPress={() => { void sync.refreshSessions().catch(() => {}); }}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable> : null}
+            {failed ? <Pressable testID="codelight-retry-session-list" accessibilityRole="button" accessibilityState={{ disabled: refreshing, busy: refreshing }}
+                disabled={refreshing} style={{ minWidth: 44, minHeight: 44, justifyContent: 'center' }} onPress={() => void refresh()}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable> : null}
         </View> : null}
         <FlatList data={rows} keyExtractor={row => row.key} renderItem={render} viewabilityConfig={viewability} onViewableItemsChanged={viewableChanged} keyboardShouldPersistTaps="handled" initialNumToRender={18} maxToRenderPerBatch={20} windowSize={7} contentContainerStyle={{ paddingBottom: 16 }}
-            ListEmptyComponent={!loading && progress.phase === 'complete' ? <Text style={[styles.count, { padding: 20 }]}>{t('codeLightLoading.empty')}</Text> : null} />
+            ListEmptyComponent={connection.kind === 'connected' && !loading && progress.phase === 'complete' ? <Text style={[styles.count, { padding: 20 }]}>{t('codeLightLoading.empty')}</Text> : null} />
         <CodeLightBottomNavigation active="sessions" />
     </View>;
 });

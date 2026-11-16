@@ -26,6 +26,8 @@ export type ToolCall = {
 }
 
 // Flattened message types - each message represents a single block
+export type NativeMessageAdmission = { nativeMessageId: string; disposition: 'queued' | 'admitted' };
+
 export type UserTextMessage = {
     kind: 'user-text';
     id: string;
@@ -56,6 +58,8 @@ export type UserTextMessage = {
     sendError?: string;
     /** Native effect is unconfirmed; keep pending and never offer an automatic retry. */
     deliveryUnconfirmed?: boolean;
+    /** Native owner admission is separate from an observed execution or turn. */
+    nativeAdmission?: NativeMessageAdmission;
     /**
      * Position in the chat, when that differs from when the message was made.
      * `createdAt` is immutable by reducer contract, and a pending message has

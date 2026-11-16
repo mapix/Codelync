@@ -4,9 +4,17 @@ import { storage } from '@/sync/storage';
 import { isRigMetadataV1 } from '@/sync/rig';
 import { rigComposerClear, rigComposerSetText } from '@/sync/rigComposer';
 import { useIsFocused } from '@react-navigation/native';
+import { isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
 
 interface UseDraftOptions {
     autoSaveInterval?: number; // in milliseconds, default 2000
+}
+
+const nativeDraftFlushers = new Map<string, { owner: symbol; flush: () => boolean }>();
+
+/** Explicit local staging only; never dispatches a native operation. */
+export function flushNativeDraft(sessionId: string): boolean {
+    return nativeDraftFlushers.get(sessionId)?.flush() ?? false;
 }
 
 export function useDraft(
@@ -22,15 +30,21 @@ export function useDraft(
     // reads storage synchronously on mount) doesn't trip the autosave into
     // re-writing what we just loaded.
     const lastSavedValue = useRef<string>(value);
+    const loadedSessionId = useRef(sessionId);
+    const adoptedDraft = useRef<string | null>(null);
     const isFocused = useIsFocused();
     // Happy Agent sessions sync the draft through metadata: every edit goes to
     // the mirror at once (the writer debounces the network), and remote edits
     // come back through the store.
-    const isSynced = !!sessionId && isRigMetadataV1(storage.getState().sessions[sessionId]?.metadata);
+    const isNative = !!sessionId && isNoninvasiveBridge(storage.getState().sessions[sessionId]?.metadata);
+    const isSynced = !!sessionId && !isNative && isRigMetadataV1(storage.getState().sessions[sessionId]?.metadata);
 
     // Save draft to storage
     const saveDraft = useCallback((draft: string) => {
         if (!sessionId) return;
+        // An external handoff/parent stage owns a newer baseline than an old debounce.
+        const current = storage.getState().sessions[sessionId];
+        if (isNoninvasiveBridge(current?.metadata) && (current?.draft ?? '') !== lastSavedValue.current && (current?.draft ?? '') !== draft) return;
 
         // Record first: the store notifies its subscribers synchronously.
         lastSavedValue.current = draft;
@@ -39,7 +53,7 @@ export function useDraft(
         saveTimeoutRef.current = null;
         // Read the session at call time so a composer that mounted before metadata
         // arrived does not write an unstamped local-only draft.
-        if (isRigMetadataV1(storage.getState().sessions[sessionId]?.metadata)) {
+        if (!isNoninvasiveBridge(current?.metadata) && isRigMetadataV1(current?.metadata)) {
             rigComposerSetText(sessionId, draft);
         } else {
             storage.getState().updateSessionDraft(sessionId, draft);
@@ -51,18 +65,28 @@ export function useDraft(
         if (!sessionId || !isFocused) return;
 
         const session = storage.getState().sessions[sessionId];
+        if (isNative && (loadedSessionId.current !== sessionId || typeof session?.draft === 'string' && session.draft !== lastSavedValue.current)) {
+            loadedSessionId.current = sessionId;
+            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+            saveTimeoutRef.current = null; pendingDraft.current = null;
+            const stored = session?.draft ?? '';
+            lastSavedValue.current = stored; adoptedDraft.current = stored;
+            if (value !== stored) onChange(stored);
+            return;
+        }
         if (session?.draft && !value) {
+            adoptedDraft.current = session.draft;
             onChange(session.draft);
             lastSavedValue.current = session.draft;
         } else if (!session?.draft) {
             // Ensure lastSavedValue is empty if there's no draft
             lastSavedValue.current = '';
         }
-    }, [sessionId, isFocused, onChange]);
+    }, [sessionId, isFocused, isNative, onChange]);
 
     // The store reconciles remote writes. Applying one is not a local edit.
     useEffect(() => {
-        if (!sessionId || !isSynced) return;
+        if (!sessionId || !isSynced && !isNative) return;
         return storage.subscribe((state, previous) => {
             const draft = state.sessions[sessionId]?.draft ?? '';
             if (draft === (previous.sessions[sessionId]?.draft ?? '') || draft === lastSavedValue.current) return;
@@ -70,13 +94,19 @@ export function useDraft(
             saveTimeoutRef.current = null;
             pendingDraft.current = null;
             lastSavedValue.current = draft;
+            adoptedDraft.current = draft;
             onChange(draft);
         });
-    }, [sessionId, isSynced, onChange]);
+    }, [sessionId, isSynced, isNative, onChange]);
 
     // Auto-save with smart debouncing
     useEffect(() => {
         if (!sessionId) return;
+        // onChange adoption is asynchronous; this render may still contain the old source text.
+        if (adoptedDraft.current !== null) {
+            if (value !== adoptedDraft.current) return;
+            adoptedDraft.current = null;
+        }
 
         // Clear any existing timeout
         if (saveTimeoutRef.current) {
@@ -111,6 +141,24 @@ export function useDraft(
         };
     }, [value, sessionId, autoSaveInterval, saveDraft, isSynced]);
 
+    // Staging needs the latest focused composer render, not a debounced stored value.
+    useEffect(() => {
+        if (!sessionId || !isNative || !isFocused) return;
+        const owner = Symbol(sessionId);
+        const flush = () => {
+            const current = storage.getState().sessions[sessionId];
+            if (!isNoninvasiveBridge(current?.metadata) || loadedSessionId.current !== sessionId
+                || adoptedDraft.current !== null && value !== adoptedDraft.current
+                || (current?.draft ?? '') !== lastSavedValue.current && (current?.draft ?? '') !== value) return false;
+            if (value !== lastSavedValue.current) saveDraft(value);
+            return (storage.getState().sessions[sessionId]?.draft ?? '') === value;
+        };
+        nativeDraftFlushers.set(sessionId, { owner, flush });
+        return () => {
+            if (nativeDraftFlushers.get(sessionId)?.owner === owner) nativeDraftFlushers.delete(sessionId);
+        };
+    }, [sessionId, isNative, isFocused, value, saveDraft]);
+
     // Save on app state change (background/inactive)
     useEffect(() => {
         if (!sessionId) return;
@@ -144,10 +192,12 @@ export function useDraft(
         if (!sessionId) return;
 
         lastSavedValue.current = '';
+        adoptedDraft.current = null;
         pendingDraft.current = null;
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
-        if (isRigMetadataV1(storage.getState().sessions[sessionId]?.metadata)) {
+        const metadata = storage.getState().sessions[sessionId]?.metadata;
+        if (!isNoninvasiveBridge(metadata) && isRigMetadataV1(metadata)) {
             rigComposerClear(sessionId);
         } else {
             storage.getState().updateSessionDraft(sessionId, null);

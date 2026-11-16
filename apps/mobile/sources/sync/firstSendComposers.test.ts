@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import * as spawnLifecycle from './spawnRequestId';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
+import { nativeComposerInputReadOnly } from '@/utils/nativeComposerInputReadOnly';
+import { canSendToNoninvasiveSource } from './noninvasiveBridge';
+import { handleCodeLightSlashSubmission } from '@/utils/codeLightNativeCommands';
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => crypto.randomUUID() }));
 
@@ -141,6 +145,9 @@ describe('chat composer callback boundary', () => {
         const composer = { getMessage: vi.fn(() => 'original'), clearMessage: vi.fn() };
         const session = { draft: 'original', draftUpdatedAt: 5, metadata: { client: { id: 'rig' }, rigMetadataVersion: 1 } };
         const scope = {
+            nativeWriteConnectionBlocked, nativeComposerInputReadOnly, canSendToNoninvasiveSource, handleCodeLightSlashSubmission,
+            apiSocket: { peerConnected: vi.fn(() => true) },
+            session,
             storage: { getState: () => ({ sessions: { 'original-session': session } }) },
             isRigMetadataV1: () => true,
             sessionId: 'original-session', composerHandleRef: { current: composer },
@@ -181,6 +188,48 @@ describe('chat composer callback boundary', () => {
         expect(scope.sessionCancelCommunication).not.toHaveBeenCalled();
         finish(true);
         await vi.waitFor(() => expect(scope.sessionCancelCommunication).toHaveBeenCalledOnce());
+    });
+
+    it('keeps the native draft, attachment and question when the paired Mac disconnects', () => {
+        const { scope, composer, session, send } = chatBoundary();
+        Object.assign(session.metadata, {
+            client: { id: 'noninvasive-bridge' },
+            bridge: {
+                version: 1, source: { app: 'codex', id: 'parent', hostId: 'local', kind: 'session', runtimeGeneration: 'epoch', windowGeneration: null },
+                controlMode: 'session', sourceStatus: 'connected', currentTurnId: null,
+            },
+            capabilities: { steering: true },
+        });
+        // Other admission guards allow this source, so the lost peer connection
+        // is the reason the actual callback must preserve the user's draft.
+        expect(canSendToNoninvasiveSource(session.metadata as any)).toBe(true);
+        expect(nativeComposerInputReadOnly(session as any)).toBe(false);
+        scope.apiSocket.peerConnected.mockReturnValue(false);
+        send();
+        expect(scope.sync.sendMessage).not.toHaveBeenCalled();
+        expect(composer.clearMessage).not.toHaveBeenCalled();
+        expect(scope.removeImage).not.toHaveBeenCalled();
+        expect(scope.sessionCancelCommunication).not.toHaveBeenCalled();
+        expect(scope.sendingSessionsRef.current.size).toBe(0);
+    });
+
+    it('blocks a captured child composer callback after the native session becomes read only', () => {
+        const { scope, composer, session, send } = chatBoundary();
+        Object.assign(session.metadata, {
+            client: { id: 'noninvasive-bridge' },
+            bridge: {
+                version: 1, source: { app: 'codex', id: 'child', hostId: 'local', kind: 'session', protocol: 'codex-desktop-ipc', runtimeGeneration: 'epoch', windowGeneration: null },
+                controlMode: 'session', sourceStatus: 'connected', currentTurnId: null,
+            },
+            capabilities: { steering: true },
+        });
+        expect(canSendToNoninvasiveSource(session.metadata as any)).toBe(true);
+        Object.assign(session.metadata, { nativeSession: { isSubagent: true } });
+        send();
+        expect(scope.sync.sendMessage).not.toHaveBeenCalled();
+        expect(composer.clearMessage).not.toHaveBeenCalled();
+        expect(scope.removeImage).not.toHaveBeenCalled();
+        expect(scope.sessionCancelCommunication).not.toHaveBeenCalled();
     });
 
     it('restores the session guard during Strict Mode effect replay', () => {

@@ -12,6 +12,16 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.cts",
   "exports": {
+    "./native-tasks": {
+      "types": "./native-tasks.d.ts",
+      "import": "./native-tasks.js",
+      "default": "./native-tasks.js"
+    },
+    "./peer-codec": {
+      "types": "./peer-codec.d.ts",
+      "import": "./peer-codec.js",
+      "default": "./peer-codec.js"
+    },
     "./codelight": {
       "types": "./codelight.d.ts",
       "import": "./codelight.js",
@@ -29,6 +39,10 @@
     }
   },
   "files": [
+    "native-tasks.js",
+    "native-tasks.d.ts",
+    "peer-codec.js",
+    "peer-codec.d.ts",
     "codelight.js",
     "codelight.d.ts",
     "dist",
@@ -42,6 +56,7 @@
   },
   "dependencies": {
     "@paralleldrive/cuid2": "^2.2.2",
+    "fflate": "0.8.2",
     "zod": "4.6.6"
   },
   "devDependencies": {

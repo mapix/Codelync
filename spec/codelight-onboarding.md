@@ -1,6 +1,6 @@
 # CodeLight 首次使用与恢复
 
-> **历史手动配对流程（2026-10-31）**：本文件记录此前的服务器选择与匿名账号创建路线。当前 Codex-only 发行使用 Mac App 一次扫码配对，正常手机界面不要求注册、账号创建、服务器选择或 VPN，详见 [一次扫码合同](codelight-one-scan.md) 与 [当前产品合同](codelight-product.md)。高级自建服务诊断不改变正常首次使用流程。
+> **历史手动配对流程（2026-10-31）**：本文件记录此前的服务器选择与匿名账号创建路线。当前发行支持 Codex、Antigravity Desktop 和 Claude Desktop（Gateway），按各原应用已确认能力提供操作；CLI/TUI 家族继续延期。当前使用 Mac App 一次扫码配对，正常手机界面不要求注册、账号创建、服务器选择或 VPN，详见 [一次扫码合同](codelight-one-scan.md) 与 [当前产品合同](codelight-product.md)。高级自建服务诊断不改变正常首次使用流程。
 
 2026-10-29。原生正常 Release 不要求 Harness token，也不访问 Happy 公共默认服务。用户先选择与 Mac `start-codelight.sh --server` 相同的自建服务，再创建或恢复匿名账号，扫描/粘贴 Mac 的 CodeLight 配对链接。
 

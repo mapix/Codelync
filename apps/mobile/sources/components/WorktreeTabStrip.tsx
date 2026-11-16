@@ -28,6 +28,11 @@ import { SessionActionsAnchor, SessionActionsPopover } from './SessionActionsPop
 import { ShimmerText } from './ShimmerText';
 import { StatusDot } from './StatusDot';
 import { ProjectSessionSelect } from './ProjectSessionSelect';
+import { codeLightSourceAppName } from '@/utils/codeLightSourceScope';
+import { config } from '@/config';
+import { sync } from '@/sync/sync';
+import { getCurrentLanguage } from '@/text';
+import { codeLightSubagentKindLabels } from '@/text/codeLightSubagentLabels';
 
 /**
  * The strip is a control in its own right, like the ones in the header above
@@ -109,12 +114,14 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
         pending: pendingChats,
     }), [pendingChats, worktree]);
     const pickerOptions = React.useMemo(() => [
-        ...resolved.tabs.map(tab => ({ key: tab.id, label: tab.name })),
+        ...resolved.tabs.filter(tab => !config.noninvasiveLocal || !tab.isSubagent).map(tab => ({ key: tab.id, label: tab.sourceApp ? `${codeLightSourceAppName(tab.sourceApp)} · ${tab.name}` : tab.name })),
         ...resolved.pending.map(chat => ({ key: chat.id, label: t('session.newChat') })),
     ], [resolved]);
     // The selection follows whichever chip stands for the open chat: the
     // stand-in while the chat is unnamed, its session from the moment it is not.
     const selectedId = pending?.sessionId ?? sessionId;
+    const selectedTab = resolved.tabs.find(tab => tab.id === selectedId);
+    const selectedLabel = selectedTab ? `${selectedTab.isSubagent ? codeLightSubagentKindLabels[getCurrentLanguage()] + ' · ' : ''}${selectedTab.sourceApp ? codeLightSourceAppName(selectedTab.sourceApp) + ' · ' : ''}${selectedTab.name}` : undefined;
     const { startSession } = useStartSessionFromDraft();
 
     const scrollRef = React.useRef<ScrollView>(null);
@@ -153,6 +160,7 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
         if (id === sessionId || id === selectedId) return;
         const session = storage.getState().sessions[id];
         if (session) trackSessionSwitched(session);
+        if (session && config.noninvasiveLocal) sync.onSessionSelected(id);
         router.setParams({ id });
     }, [router, selectedId, sessionId]);
 
@@ -195,6 +203,7 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
      * itself, and only has to retire the tab it was standing in for.
      */
     const newTab = React.useCallback(() => {
+        if (config.noninvasiveLocal) return;
         const sessions = storage.getState().sessions;
         const open = sessions[selectedId] ?? sessions[anchorId];
         if (!open) return;
@@ -284,7 +293,7 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
                 >
                     {/* 手机会话多时横向 tab 放不下；选择器复用同一份会话身份和路由，避免另存选中状态。 */}
                     {Platform.OS !== 'web' ? (
-                        <ProjectSessionSelect options={pickerOptions} selectedId={selectedId} onSelect={select} />
+                        <ProjectSessionSelect options={pickerOptions} selectedId={selectedId} selectedLabel={selectedLabel} onSelect={select} />
                     ) : <ScrollView
                         ref={scrollRef}
                         horizontal
@@ -320,7 +329,7 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
                             />
                         ))}
                     </ScrollView>}
-                    <View style={styles.divider} />
+                    {!config.noninvasiveLocal && <><View style={styles.divider} />
                     <Pressable
                         onPress={newTab}
                         hitSlop={8}
@@ -333,6 +342,7 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
                             to that tab, which says so with its own shimmer. */}
                         <Ionicons name="add" size={20} color={theme.colors.header.tint} />
                     </Pressable>
+                    </>}
                 </MobileGlassSurface>
             </View>
         </View>

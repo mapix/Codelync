@@ -1,12 +1,22 @@
 import type { Session } from '../sync/storageTypes';
+import { codeLightSourceLabel, isCodeLightSessionIdentity } from './codeLightSourceScope';
 
-export type CodeLightBrowserRow = { kind: 'project'; key: string; path: string; label: string; count: number } | { kind: 'session'; key: string; session: Session; title: string; child: boolean; children: number; at: number };
+export type CodeLightBrowserRow = { kind: 'project'; key: string; path: string; label: string; sourceLabel: string; count: number } | { kind: 'session'; key: string; projectId: string; session: Session; title: string; child: boolean; children: number; at: number };
 
 /** A field-only boundary shared by the browser and its catalog total. */
 export function isCodeLightCodexSession(session: Session): boolean {
     const bridge = session.metadata?.bridge;
-    // 旧窗口/其他 harness 缓存不能继续冒充 Codex 会话；仅为缺少 mode 的旧 Codex 会话保留本地兼容。
-    return session.metadata?.nativeSession?.catalogueAvailable !== false && bridge?.source?.app === 'codex' && (bridge.controlMode === 'session' || bridge.controlMode === undefined);
+    return bridge?.source?.app === 'codex' && isCodeLightNativeSession(session);
+}
+
+/** The browser and its total use the same proven native source boundary. */
+export function isCodeLightNativeSession(session: Session): boolean {
+    const bridge = session.metadata?.bridge;
+    return session.metadata?.nativeSession?.archived !== true && session.metadata?.nativeSession?.catalogueAvailable !== false && isCodeLightSessionIdentity(bridge?.source, bridge?.controlMode);
+}
+
+export function isCodeLightConversation(session: Session): boolean {
+    return isCodeLightNativeSession(session) && session.metadata?.nativeSession?.isSubagent !== true;
 }
 
 /** The catalog and lightweight project status use the same scoped identity. */
@@ -25,7 +35,52 @@ type Entry = {
     parentId: string | null | undefined;
     title: string | undefined;
 };
-type Group = { key: string; entries: Entry[]; latestAt: number; order: number };
+type Group = { key: string; project: Session; entries: Entry[]; latestAt: number; order: number };
+
+function parentKey(session: Session, nativeId: string | null | undefined): string | undefined {
+    if (!nativeId) return undefined;
+    const data = session.metadata, source = data?.bridge?.source;
+    return JSON.stringify([data?.machineId ?? null, source?.app, source?.hostId, source?.kind ?? 'session',
+        source?.protocol ?? null, source?.appMode ?? null, source?.nativeCollection ?? null, nativeId]);
+}
+
+/** Only explicit membership may follow a uniquely proven parent across projects. */
+function displayProjects(sessions: Session[]): Map<string, Session> {
+    const index = new Map<string, Session>(), ambiguous = new Set<string>();
+    for (const session of sessions) {
+        const key = parentKey(session, session.metadata?.bridge?.source.id);
+        if (!key || ambiguous.has(key)) continue;
+        if (index.has(key)) { index.delete(key); ambiguous.add(key); }
+        else index.set(key, session);
+    }
+    const parent = new Map<string, Session>();
+    for (const session of sessions) {
+        if (session.metadata?.nativeSession?.isSubagent !== true) continue;
+        const key = parentKey(session, session.metadata.nativeSession.parentId), found = key ? index.get(key) : undefined;
+        if (found && found.id !== session.id) parent.set(session.id, found);
+    }
+    const resolved = new Map<string, Session>();
+    for (const session of sessions) {
+        if (resolved.has(session.id)) continue;
+        const path: Session[] = [], seen = new Map<string, number>();
+        let current = session, project: Session;
+        while (true) {
+            const known = resolved.get(current.id);
+            if (known) { project = known; break; }
+            const cycle = seen.get(current.id);
+            if (cycle !== undefined) {
+                project = path.slice(cycle).reduce((anchor, item) => item.id < anchor.id ? item : anchor);
+                break;
+            }
+            seen.set(current.id, path.length); path.push(current);
+            const next = parent.get(current.id);
+            if (!next) { project = current; break; }
+            current = next;
+        }
+        for (const item of path) resolved.set(item.id, project);
+    }
+    return resolved;
+}
 
 function sessionTitle(session: Session): string {
     return session.metadata?.nativeSession?.title || session.metadata?.summary?.text || session.metadata?.name || session.id.slice(0, 8);
@@ -34,7 +89,7 @@ function sessionTitle(session: Session): string {
 function matchesSearch(session: Session, title: string, needle: string): boolean {
     if (title.toLocaleLowerCase().includes(needle)) return true;
     const data = session.metadata;
-    for (const value of [data?.path, data?.nativeSession?.projectLabel, data?.nativeSession?.projectPath, data?.nativeSession?.agentName, data?.nativeSession?.preview, data?.bridge?.source.id]) {
+    for (const value of [data?.path, data?.nativeSession?.projectLabel, data?.nativeSession?.projectPath, data?.nativeSession?.agentName, data?.nativeSession?.preview, data?.bridge?.source.id, codeLightSourceLabel(data?.bridge?.source)]) {
         if (value?.toLocaleLowerCase().includes(needle)) return true;
     }
     return false;
@@ -111,10 +166,12 @@ function hierarchy(entries: Entry[]): { roots: Entry[]; children: Map<string, En
 
 export function buildCodeLightBrowserRows(sessions: Session[], query: string, projects: Set<string>, parents: Set<string>): CodeLightBrowserRow[] {
     const needle = query.trim().toLocaleLowerCase();
+    const nativeSessions = sessions.filter(isCodeLightNativeSession);
+    const display = displayProjects(nativeSessions);
     const groups = new Map<string, Group>();
     for (let order = 0; order < sessions.length; order++) {
         const session = sessions[order];
-        if (!isCodeLightCodexSession(session)) continue;
+        if (!isCodeLightNativeSession(session)) continue;
         const data = session.metadata;
         const title = needle ? sessionTitle(session) : undefined;
         if (needle && !matchesSearch(session, title!, needle)) continue;
@@ -122,12 +179,12 @@ export function buildCodeLightBrowserRows(sessions: Session[], query: string, pr
             session, order, title,
             at: data?.nativeSession?.updatedAt ?? session.updatedAt,
             pinned: data?.nativeSession?.isPinned === true,
-            nativeId: data?.bridge?.source.id,
-            parentId: data?.nativeSession?.parentId,
+            nativeId: parentKey(session, data?.bridge?.source.id),
+            parentId: parentKey(session, data?.nativeSession?.parentId),
         };
-        const key = codeLightProjectKey(session);
+        const project = display.get(session.id) ?? session, key = codeLightProjectKey(project);
         let group = groups.get(key);
-        if (!group) { group = { key, entries: [], latestAt: entry.at, order }; groups.set(key, group); }
+        if (!group) { group = { key, project, entries: [], latestAt: entry.at, order }; groups.set(key, group); }
         group.entries.push(entry);
         // 巨项目不能用 Math.max(...members)：参数数量会溢出；最大时间在分组时计算一次，排序只读标量。
         if (entry.at > group.latestAt) group.latestAt = entry.at;
@@ -136,12 +193,14 @@ export function buildCodeLightBrowserRows(sessions: Session[], query: string, pr
     const ordered = [...groups.values()].sort((a, b) => b.latestAt - a.latestAt || a.order - b.order);
     const rows: CodeLightBrowserRow[] = [];
     for (const group of ordered) {
-        const data = group.entries[0].session.metadata;
+        const data = group.project.metadata;
         const path = data?.nativeSession?.projectPath || data?.path || '/';
-        rows.push({ kind: 'project', key: group.key, path, label: data?.nativeSession?.projectLabel || path.split(/[\\/]/).filter(Boolean).at(-1) || path, count: group.entries.length });
-        if (!needle && !projects.has(group.key)) continue;
+        const count = group.entries.filter(entry => isCodeLightConversation(entry.session)).length;
+        if (count) rows.push({ kind: 'project', key: group.key, path, label: data?.nativeSession?.projectLabel || path.split(/[\\/]/).filter(Boolean).at(-1) || path,
+            sourceLabel: codeLightSourceLabel(data?.bridge?.source), count });
+        if (!needle && (!count || !projects.has(group.key))) continue;
 
-        // 父 ID 必须在同项目内解析；全局 native 索引会让另一项目的重复 ID 抢走父会话。
+        // 展示桶内仍按完整原生 namespace 解析，不借用其他来源的同名 ID。
         const { roots, children } = hierarchy(group.entries);
         const stack = roots.map(entry => ({ entry, child: false })).reverse();
         const visited = new Set<string>();
@@ -153,7 +212,7 @@ export function buildCodeLightBrowserRows(sessions: Session[], query: string, pr
             visited.add(session.id);
             const descendants = children.get(session.id);
             entry.title ??= sessionTitle(session);
-            rows.push({ kind: 'session', key: session.id, session, title: entry.title, child, children: descendants?.length ?? 0, at: entry.at });
+            rows.push({ kind: 'session', key: session.id, projectId: group.key, session, title: entry.title, child, children: descendants?.length ?? 0, at: entry.at });
             if (descendants && (needle || parents.has(session.id))) {
                 for (let index = descendants.length - 1; index >= 0; index--) stack.push({ entry: descendants[index], child: true });
             }

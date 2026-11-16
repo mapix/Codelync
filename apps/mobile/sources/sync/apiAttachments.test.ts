@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthCredentials } from '@/auth/tokenStorage';
+import type { AuthCredentials } from '@/auth/tokenStorage';
 import {
     downloadEncryptedAttachment,
     requestAttachmentUpload,
@@ -21,6 +21,7 @@ vi.mock('./serverConfig', () => ({
 vi.mock('./uploadFormFile', () => ({
     appendFormFile,
 }));
+vi.mock('./peerNetwork', () => ({ credentialHeaders: (value: AuthCredentials) => ({ Authorization: `Bearer ${value.token}` }) }));
 
 const credentials: AuthCredentials = {
     token: 'test-token',
@@ -220,6 +221,75 @@ describe('uploadEncryptedBlob', () => {
 });
 
 describe('downloadEncryptedAttachment', () => {
+    it('video sends its cap and only GETs after exact encrypted-size and URL proof', async () => {
+        const cap = 1_000_040, read = vi.fn().mockResolvedValueOnce({ done: false, value: new Uint8Array(54) }).mockResolvedValueOnce({ done: true });
+        fetchMock.mockResolvedValueOnce(response({ ok: true, json: { downloadUrl: storageUrl + '&maxBytes=' + cap, maxBytes: cap, encryptedSize: 54 } }))
+            .mockResolvedValueOnce({ ...response({ ok: true }), body: { getReader: () => ({ read, releaseLock: vi.fn(), cancel: vi.fn() }) } });
+        const bytes = await downloadEncryptedAttachment(credentials, 'session', 'ref', { maxBytes: cap, requireSizeGate: true, requireStreaming: true });
+        expect(bytes.length).toBe(54); expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ ref: 'ref', maxBytes: cap });
+        expect(new URL(fetchMock.mock.calls[1][0]).searchParams.getAll('maxBytes')).toEqual([String(cap)]);
+    });
+
+    it.each(['missing-proof', 'wrong-cap', 'oversized', 'fractional-size', 'missing-url-cap', 'duplicate-url-cap'])('video %s response never starts a blob GET', async variant => {
+        const cap = 1_000_040, reply: any = { downloadUrl: storageUrl + '&maxBytes=' + cap, maxBytes: cap, encryptedSize: 54 };
+        if (variant === 'missing-proof') { delete reply.maxBytes; delete reply.encryptedSize; }
+        if (variant === 'wrong-cap') reply.maxBytes = cap + 1;
+        if (variant === 'oversized') reply.encryptedSize = cap + 1;
+        if (variant === 'fractional-size') reply.encryptedSize = 54.5;
+        if (variant === 'missing-url-cap') reply.downloadUrl = storageUrl;
+        if (variant === 'duplicate-url-cap') reply.downloadUrl += '&maxBytes=' + cap;
+        fetchMock.mockResolvedValueOnce(response({ ok: true, json: reply }));
+        const error = await rejectedError(downloadEncryptedAttachment(credentials, 'session', 'ref', { maxBytes: cap, requireSizeGate: true, requireStreaming: true }));
+        expect(getAttachmentDiagnostic(error)?.reason).toBe(variant === 'oversized' ? 'read-limit-exceeded' : 'size-gate-unavailable');
+        expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it('video server 413 stays a size-limit failure with zero blob GET', async () => {
+        fetchMock.mockResolvedValueOnce(response({ ok: false, status: 413 }));
+        const error = await rejectedError(downloadEncryptedAttachment(credentials, 'session', 'ref', { maxBytes: 1_000_040, requireSizeGate: true }));
+        expect(getAttachmentDiagnostic(error)?.reason).toBe('read-limit-exceeded'); expect(fetchMock).toHaveBeenCalledOnce();
+    });
+    it('aborts an oversized video response header before reading any body', async () => {
+        const cancel = vi.fn().mockResolvedValue(undefined), getReader = vi.fn(), arrayBuffer = vi.fn();
+        fetchMock.mockResolvedValueOnce(response({ ok: true, json: { downloadUrl: storageUrl } })).mockResolvedValueOnce({
+            ...response({ ok: true }), headers: new Headers({ 'content-length': '1000041' }), body: { cancel, getReader }, arrayBuffer,
+        });
+        const error = await rejectedError(downloadEncryptedAttachment(credentials, 'session', 'ref', { maxBytes: 1_000_040, requireStreaming: true }));
+        expect(getAttachmentDiagnostic(error)?.reason).toBe('read-limit-exceeded');
+        expect(cancel).toHaveBeenCalledOnce(); expect(getReader).not.toHaveBeenCalled(); expect(arrayBuffer).not.toHaveBeenCalled();
+        expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+    });
+
+    it.each([1_000_040, 1_000_041])('bounds unknown-sized video streams at %s ciphertext bytes and aborts excess', async size => {
+        const read = vi.fn().mockResolvedValueOnce({ done: false, value: new Uint8Array(1_000_040) })
+            .mockResolvedValueOnce(size === 1_000_040 ? { done: true } : { done: false, value: new Uint8Array(1) })
+            .mockResolvedValueOnce({ done: true });
+        const cancel = vi.fn().mockResolvedValue(undefined), releaseLock = vi.fn(), arrayBuffer = vi.fn();
+        fetchMock.mockResolvedValueOnce(response({ ok: true, json: { downloadUrl: storageUrl } })).mockResolvedValueOnce({
+            ...response({ ok: true }), body: { getReader: () => ({ read, cancel, releaseLock }) }, arrayBuffer,
+        });
+        const result = downloadEncryptedAttachment(credentials, 'session', 'ref', { maxBytes: 1_000_040, requireStreaming: true });
+        if (size === 1_000_040) { expect((await result).length).toBe(size); expect(cancel).not.toHaveBeenCalled(); }
+        else { const error = await rejectedError(result); expect(getAttachmentDiagnostic(error)?.reason).toBe('read-limit-exceeded'); expect(cancel).toHaveBeenCalledOnce(); }
+        expect(read).toHaveBeenCalledTimes(2); expect(releaseLock).toHaveBeenCalledOnce(); expect(arrayBuffer).not.toHaveBeenCalled();
+        expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(size > 1_000_040);
+    });
+
+    it('video transport without a stream rejects without a full-body fallback', async () => {
+        const arrayBuffer = vi.fn(), cancel = vi.fn().mockResolvedValue(undefined);
+        fetchMock.mockResolvedValueOnce(response({ ok: true, json: { downloadUrl: storageUrl } })).mockResolvedValueOnce({ ...response({ ok: true }), body: { cancel }, arrayBuffer });
+        await expect(downloadEncryptedAttachment(credentials, 'session', 'ref', { maxBytes: 1_000_040, requireStreaming: true })).rejects.toThrow('streaming unavailable');
+        expect(arrayBuffer).not.toHaveBeenCalled(); expect(cancel).toHaveBeenCalledOnce(); expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
+    });
+
+    it('ordinary file transport retains its 10 MiB plus envelope fallback', async () => {
+        const arrayBuffer = vi.fn().mockResolvedValue(new Uint8Array(10 * 1024 * 1024 + 40).buffer);
+        fetchMock.mockResolvedValueOnce(response({ ok: true, json: { downloadUrl: storageUrl } })).mockResolvedValueOnce({ ...response({ ok: true }), arrayBuffer });
+        const result = await downloadEncryptedAttachment(credentials, 'session', 'ref');
+        expect(result.length).toBe(10 * 1024 * 1024 + 40); expect(arrayBuffer).toHaveBeenCalledOnce();
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ ref: 'ref' });
+    });
     it('classifies request-download network failures without leaking attachment refs', async () => {
         fetchMock.mockRejectedValueOnce(new Error('Failed to fetch'));
 
@@ -385,6 +455,7 @@ function response(init: {
 }): Response {
     return {
         ok: init.ok,
+        headers: new Headers(),
         status: init.status ?? (init.ok ? 200 : 500),
         statusText: init.statusText ?? '',
         json: init.jsonError !== undefined

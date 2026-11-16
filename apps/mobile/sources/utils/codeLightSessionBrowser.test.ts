@@ -1,7 +1,112 @@
 import { expect, it } from 'vitest';
-import { buildCodeLightBrowserRows, codeLightProjectKey, isCodeLightCodexSession } from './codeLightSessionBrowser';
+import { buildCodeLightBrowserRows, codeLightProjectKey, isCodeLightConversation, isCodeLightCodexSession, isCodeLightNativeSession } from './codeLightSessionBrowser';
 import type { Session } from '../sync/storageTypes';
 const session = (id: string, nativeId: string, parentId: string | null, title: string, updatedAt: number) => ({ id, updatedAt: 99999, metadata: { path: '/fixture/project', summary: { text: title }, bridge: { controlMode: 'session', source: { id: nativeId, hostId: 'local', app: 'codex' } }, nativeSession: { title, updatedAt, parentId, agentName: title, preview: title, isPinned: false } } }) as Session;
+
+it('separates native Claude collection identities and mode labels without inferring Cowork from an URL', () => {
+    const code = session('claude-code', 'same-native', null, 'Same title', 1), chat = session('claude-chat', 'same-native', null, 'Same title', 2);
+    Object.assign(code.metadata!.bridge!.source, { app: 'claude-desktop', kind: 'session', protocol: 'claude-desktop-native', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
+        appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: 'owner' });
+    Object.assign(chat.metadata!.bridge!.source, { app: 'claude-desktop', kind: 'session', protocol: 'claude-desktop-native', hostId: 'local:claude-desktop:' + 'b'.repeat(64),
+        appMode: 'chat', nativeCollection: 'local-agent-mode-sessions', runtimeGeneration: 'owner' });
+    chat.metadata!.path = '/cowork/original';
+    expect(codeLightProjectKey(code)).not.toBe(codeLightProjectKey(chat));
+    const projects = buildCodeLightBrowserRows([code, chat], '', new Set(), new Set());
+    expect(projects).toEqual(expect.arrayContaining([expect.objectContaining({ sourceLabel: 'Claude Desktop · Code' }), expect.objectContaining({ sourceLabel: 'Claude Desktop · Chat' })]));
+});
+
+it('counts native subagents separately while retaining them beneath the original parent', () => {
+    const root = session('root', 'native-root', null, 'Root', 1), child = session('child', 'native-child', 'native-root', 'Worker', 2);
+    child.metadata!.nativeSession!.isSubagent = true;
+    expect([root, child].filter(isCodeLightConversation)).toEqual([root]);
+    const groups = buildCodeLightBrowserRows([root, child], '', new Set(), new Set());
+    expect(groups[0]).toMatchObject({ kind: 'project', count: 1 });
+    const rows = buildCodeLightBrowserRows([root, child], '', new Set(groups.map(row => row.key)), new Set(['root']));
+    expect(rows.find(row => row.key === 'child')).toMatchObject({ child: true });
+    expect(rows.find(row => row.key === 'root')).toMatchObject({ children: 1 });
+});
+
+it('an explicit cross-worktree child follows its proven parent project without rewriting native project facts', () => {
+    const parent = session('parent', 'native-parent', null, 'Main', 1), child = session('child', 'native-child', 'native-parent', 'Worker', 20);
+    Object.assign(parent.metadata!.nativeSession!, { projectKey: 'repo', projectPath: '/repo/app', projectLabel: 'app' });
+    Object.assign(child.metadata!.nativeSession!, { isSubagent: true, projectKey: 'worktree', projectPath: '/worktrees/worker', projectLabel: 'worker' });
+    const data = [child, parent], before = JSON.stringify(data), key = codeLightProjectKey(parent);
+    const folded = buildCodeLightBrowserRows(data, '', new Set(), new Set());
+    expect(folded).toEqual([expect.objectContaining({ kind: 'project', key, path: '/repo/app', label: 'app', count: 1 })]);
+    const rows = buildCodeLightBrowserRows(data, '', new Set([key]), new Set(['parent']));
+    expect(rows.find(row => row.key === 'parent')).toMatchObject({ children: 1, at: 1 });
+    expect(rows.find(row => row.key === 'child')).toMatchObject({ child: true, projectId: key, session: child });
+    expect(JSON.stringify(data)).toBe(before); expect(codeLightProjectKey(child)).not.toBe(key);
+    const search = buildCodeLightBrowserRows(data, 'worker', new Set(), new Set());
+    expect(search.filter(row => row.kind === 'project')).toHaveLength(0);
+    expect(search.find(row => row.key === 'child')).toMatchObject({ projectId: key });
+});
+
+it('proven nested explicit children follow the ordinary ancestor across separate native worktrees', () => {
+    const parent = session('parent', 'native-parent', null, 'Main', 1), child = session('child', 'native-child', 'native-parent', 'Worker', 2), grandchild = session('grandchild', 'native-grandchild', 'native-child', 'Worker 2', 3);
+    for (const [index, row] of [parent, child, grandchild].entries()) {
+        row.metadata!.nativeSession!.projectKey = `project-${index}`;
+        if (index) row.metadata!.nativeSession!.isSubagent = true;
+    }
+    const key = codeLightProjectKey(parent), rows = buildCodeLightBrowserRows([grandchild, child, parent], '', new Set([key]), new Set(['parent', 'child']));
+    expect(rows.filter(row => row.kind === 'project')).toEqual([expect.objectContaining({ key, count: 1 })]);
+    expect(rows.filter(row => row.kind === 'session').map(row => row.key)).toEqual(['parent', 'child', 'grandchild']);
+    expect(rows.find(row => row.key === 'grandchild')).toMatchObject({ child: true, projectId: key });
+});
+
+it('ordinary cross-project forks remain independent and explicit orphan buckets have no zero-count header', () => {
+    const parent = session('parent', 'native-parent', null, 'Main', 1), fork = session('fork', 'native-fork', 'native-parent', 'Fork', 2);
+    fork.metadata!.nativeSession!.projectKey = 'fork-project';
+    expect(buildCodeLightBrowserRows([parent, fork], '', new Set(), new Set()).filter(row => row.kind === 'project')).toHaveLength(2);
+    fork.metadata!.nativeSession!.isSubagent = true; fork.metadata!.nativeSession!.parentId = 'absent';
+    const rows = buildCodeLightBrowserRows([parent, fork], '', new Set(), new Set());
+    expect(rows).toEqual([expect.objectContaining({ kind: 'project', count: 1 })]);
+    expect(buildCodeLightBrowserRows([parent, fork], 'fork', new Set(), new Set())).toEqual([expect.objectContaining({ kind: 'session', key: 'fork', child: false })]);
+});
+
+it.each(['machine', 'host', 'app', 'protocol', 'collection'])('cross-project explicit child cannot follow a foreign %s parent', field => {
+    const parent = session('parent', 'native-parent', null, 'Main', 1), child = session('child', 'native-child', 'native-parent', 'Worker', 2);
+    child.metadata!.nativeSession!.isSubagent = true; child.metadata!.nativeSession!.projectKey = 'worktree';
+    if (field === 'machine') parent.metadata!.machineId = 'foreign';
+    if (field === 'host') parent.metadata!.bridge!.source.hostId = 'foreign';
+    if (field === 'app') Object.assign(parent.metadata!.bridge!.source, { app: 'antigravity', hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'owner' });
+    if (field === 'protocol') parent.metadata!.bridge!.source.protocol = 'other-protocol';
+    if (field === 'collection') parent.metadata!.bridge!.source.nativeCollection = 'claude-code-sessions';
+    const rows = buildCodeLightBrowserRows([parent, child], 'worker', new Set(), new Set());
+    expect(rows).toEqual([expect.objectContaining({ kind: 'session', key: 'child', child: false, projectId: codeLightProjectKey(child) })]);
+});
+
+it('ambiguous same-source parent aliases cannot adopt an explicit child project', () => {
+    const parent = session('parent', 'shared', null, 'Main', 1), alias = session('alias', 'shared', null, 'Other', 2), child = session('child', 'child-native', 'shared', 'Worker', 3);
+    parent.metadata!.nativeSession!.projectKey = 'main'; alias.metadata!.nativeSession!.projectKey = 'alias';
+    Object.assign(child.metadata!.nativeSession!, { isSubagent: true, projectKey: 'child' });
+    const search = buildCodeLightBrowserRows([child, parent, alias], 'worker', new Set(), new Set());
+    expect(search).toEqual([expect.objectContaining({ kind: 'session', key: 'child', child: false, projectId: codeLightProjectKey(child) })]);
+});
+
+it('shows both verified desktop apps and keeps equal native IDs and paths in separate families', () => {
+    const codex = session('codex-parent', 'same-native', null, 'Shared parent', 1);
+    const antigravity = session('antigravity-parent', 'same-native', null, 'Shared parent', 2);
+    const child = session('antigravity-child', 'agy-child', 'same-native', 'Shared child', 3);
+    for (const row of [antigravity, child]) Object.assign(row.metadata!.bridge!.source, {
+        app: 'antigravity', hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'verified-agy-owner',
+    });
+    const unsupported = session('old-agy-window', 'old-window', null, 'Old window', 4);
+    Object.assign(unsupported.metadata!.bridge!.source, { app: 'antigravity' });
+    expect([codex, antigravity, child, unsupported].filter(isCodeLightNativeSession)).toEqual([codex, antigravity, child]);
+    expect([codex, antigravity].filter(isCodeLightCodexSession)).toEqual([codex]);
+    const projects = buildCodeLightBrowserRows([codex, antigravity, child, unsupported], '', new Set(), new Set());
+    expect(projects).toHaveLength(2);
+    expect(projects).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sourceLabel: 'Codex', count: 1 }),
+        expect.objectContaining({ sourceLabel: 'Antigravity', count: 2 }),
+    ]));
+    const rows = buildCodeLightBrowserRows([codex, antigravity, child], '', new Set(projects.map(row => row.key)), new Set(['antigravity-parent']));
+    expect(rows.find(row => row.key === 'antigravity-child')).toMatchObject({ child: true });
+    expect(rows.find(row => row.key === 'codex-parent')).toMatchObject({ children: 0 });
+    expect(buildCodeLightBrowserRows([codex, antigravity, child], 'antigravity', new Set(), new Set()).filter(row => row.kind === 'session').map(row => row.key))
+        .toEqual(['antigravity-parent', 'antigravity-child']);
+});
 it('groups native parent identities independently from relay ids and sorts by original recency', () => {
     const data = [session('relay-old', 'native-old', null, 'Old', 1), session('relay-new', 'native-new', null, 'New', 20), session('relay-child', 'native-child', 'native-new', 'Worker', 21)];
     const projects = buildCodeLightBrowserRows(data, '', new Set(), new Set()).map(row => row.key);

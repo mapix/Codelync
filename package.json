@@ -1,9 +1,10 @@
 {
   "name": "codelight",
-  "version": "0.5.8",
+  "version": "0.6.1",
+  "codelightBuild": "2026111605",
   "private": true,
   "type": "module",
-  "description": "CodeLight native mobile access to existing Codex desktop sessions",
+  "description": "CodeLight native mobile access to existing Codex, Antigravity Desktop and Claude Desktop Gateway sessions",
   "engines": {
     "node": ">=24"
   },
@@ -30,20 +31,21 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "@types/ws": "8.18.2",
+    "esbuild": "0.27.2",
     "eslint": "9.39.5",
     "happy-dom": "21.0.4",
-    "typescript": "5.9.3",
-    "esbuild": "0.27.2"
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@slopus/happy-wire": "workspace:*",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "proper-lockfile": "4.1.2",
+    "qrcode-terminal": "0.12.0",
+    "sharp": "0.35.5",
     "socket.io-client": "4.8.4",
     "tweetnacl": "1.0.3",
-    "ws": "8.22.0",
-    "qrcode-terminal": "0.12.0"
+    "ws": "8.22.0"
   },
   "packageManager": "pnpm@10.11.0",
   "license": "MIT",

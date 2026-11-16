@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAgentInputPrimaryAction } from './agentInputPrimaryAction';
+import { agentInputPrimaryActionDisabled, agentInputPrimaryActionLabel, resolveAgentInputPrimaryAction } from './agentInputPrimaryAction';
 
 describe('resolveAgentInputPrimaryAction', () => {
     const base = {
@@ -76,5 +76,43 @@ describe('resolveAgentInputPrimaryAction', () => {
             isSendBlocked: true,
             showAbortButton: true,
         })).toBe('blocked');
+    });
+
+    it('keeps verified Claude cancel reachable when an unverified active send retains a draft', () => {
+        expect(resolveAgentInputPrimaryAction({ ...base, hasComposerContent: true, isSendBlocked: true,
+            showAbortButton: true, stopWhenSendBlocked: true })).toBe('stop');
+        expect(resolveAgentInputPrimaryAction({ ...base, hasComposerContent: true, isSendBlocked: false,
+            showAbortButton: true, stopWhenSendBlocked: true })).toBe('send');
+        expect(resolveAgentInputPrimaryAction({ ...base, hasComposerContent: true, isSendBlocked: true,
+            showAbortButton: true, canAbort: false, stopWhenSendBlocked: true })).toBe('blocked');
+    });
+});
+
+describe('primary action accessibility identity', () => {
+    const labels = { send: 'Send', stop: 'Stop', voice: 'Voice', readOnly: 'Read only', unavailable: 'Unavailable' };
+    const base = { hasComposerContent: false, isSendBlocked: false, isSendDisabled: false, showAbortButton: false, canAbort: true };
+
+    it('names a locked retained draft and a locked empty composer as read-only', () => {
+        for (const hasComposerContent of [true, false]) {
+            const action = resolveAgentInputPrimaryAction({ ...base, hasComposerContent, isSendBlocked: true });
+            expect(agentInputPrimaryActionLabel(action, true, true, labels)).toBe('Read only');
+            expect(agentInputPrimaryActionDisabled(action, action !== 'idle', true)).toBe(true);
+        }
+    });
+
+    it('distinguishes an unavailable editable source from a readonly retained draft', () => {
+        const action = resolveAgentInputPrimaryAction({ ...base, hasComposerContent: true, isSendBlocked: true });
+        expect(agentInputPrimaryActionLabel(action, true, false, labels)).toBe('Unavailable');
+        expect(agentInputPrimaryActionDisabled(action, true, false)).toBe(false);
+    });
+
+    it('retains actual Stop, Send and Voice names including Stop when steering is blocked', () => {
+        const stop = resolveAgentInputPrimaryAction({ ...base, isSendBlocked: true, showAbortButton: true });
+        expect(agentInputPrimaryActionLabel(stop, true, false, labels)).toBe('Stop');
+        expect(agentInputPrimaryActionDisabled(stop, true, true)).toBe(false);
+        const send = resolveAgentInputPrimaryAction({ ...base, hasComposerContent: true, showAbortButton: true });
+        expect(agentInputPrimaryActionLabel(send, false, false, labels)).toBe('Send');
+        const voice = resolveAgentInputPrimaryAction({ ...base, canVoice: true });
+        expect(agentInputPrimaryActionLabel(voice, false, false, labels)).toBe('Voice');
     });
 });

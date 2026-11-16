@@ -47,17 +47,20 @@ import { parseToken } from '@/utils/parseToken';
 import { RevenueCat, LogLevel, PaywallResult } from './revenueCat';
 import { getServerUrl } from './serverConfig';
 import { InitializationGate } from './initializationGate';
-import { canSendToNoninvasiveSource } from './noninvasiveBridge';
+import { canSendToNoninvasiveSource, isNoninvasiveBridge } from './noninvasiveBridge';
+import { isCodeLightSessionIdentity } from '@/utils/codeLightSourceScope';
 import { config } from '@/config';
 import { fetchCodeLightSessionPages, mergeCodeLightCatalog } from './codeLightSessionPages';
 import { activateCodeLightSource } from './codeLightSourceActivation';
 import { codeLightAccountScope, loadCodeLightBackgroundCache, saveCodeLightBackgroundCache, rememberCodeLightSession } from './codeLightBackgroundCache';
 import { registerCodeLightBackgroundTask } from './codeLightBackgroundTask';
-import { startCodeLightPresence } from './codeLightNotifications';
+import { startCodeLightPresence, renewCodeLightPresence } from './codeLightNotifications';
 import { selectCodeLightSession } from './codeLightSessionSelection';
 import { codeLightLoadingProgress } from './codeLightLoadingProgress';
 import { nativeRecentMessages, peerDescriptorSession, isCurrentNativeRecent, type PeerRecentWindow, type PeerSessionDescriptor } from './codeLightRecent';
-import { loadCodeLightPeerCatalog, saveCodeLightPeerCatalog } from './codeLightPeerCatalogCache';
+import { captureNativeDispatchContext, matchesNativeDispatchContext } from '@/utils/nativeDispatchContext';
+import { loadCodeLightPeerCatalog, loadCodeLightPeerCatalogState, saveCodeLightPeerCatalog } from './codeLightPeerCatalogCache';
+import { CodeLightPeerCatalogDelta, reconcileCodeLightCatalogSessions } from './codeLightPeerCatalogDelta';
 import { log } from '@/log';
 import { gitStatusSync } from './gitStatusSync';
 import { AsyncLock } from '@/utils/lock';
@@ -167,6 +170,7 @@ class Sync {
     private codeLightCachedMessages = new Set<string>();
     private codeLightEntryFlights = new Map<string, { credentials: AuthCredentials; selected: boolean; promise: Promise<void> }>();
     private codeLightHistoryCursors = new Map<string, string | null>();
+    private codeLightHistoryOwners = new Map<string, string | null>();
     private olderMessagesPrefetching = new Set<string>();
     private olderMessagesPrefetchAttempts = new Map<string, number>();
     private preloadedPlanModes = new Map<string, Session['permissionMode']>();
@@ -354,7 +358,7 @@ class Sync {
                 const credentials = this.credentials, cached = await loadCodeLightPeerCatalog(credentials);
                 // 同账户的目录先恢复成可浏览行；不用等待标题网络请求，也不据缓存恢复 runtime 活跃事实。
                 if (this.credentials === credentials) {
-                    this.applySessions(cached.map(value => peerDescriptorSession(value, storage.getState().sessions[value.id])));
+                    this.applySessions(cached.map(value => peerDescriptorSession(value, storage.getState().sessions[value.id], true)), { nativeCatalog: 'cached' });
                     storage.getState().applyReady();
                 }
             }
@@ -409,6 +413,12 @@ class Sync {
         void selectCodeLightSession(storage.getState().sessions[sessionId] ?? null).then(() => this.refreshSessionData(sessionId)).catch(() => {});
     }
 
+    /** Explicit read retry for an unavailable native route; never selects Desktop. */
+    retryCodeLightSession = (sessionId: string): Promise<void> => {
+        if (!config.noninvasiveLocal) return Promise.resolve();
+        return this.enterCodeLightSession(sessionId, false);
+    }
+
     onSessionVisible = (sessionId: string) => {
         // 可见性/恢复只确保观察订阅，不产生桌面切换；真正点击由 onSessionSelected 唯一派发。
         if (config.noninvasiveLocal) void this.enterCodeLightSession(sessionId, false).catch(() => {});
@@ -445,6 +455,7 @@ class Sync {
     }
 
     private enterCodeLightSession = (sessionId: string, selected: boolean): Promise<void> => {
+        renewCodeLightPresence();
         const credentials = this.credentials, pending = this.codeLightEntryFlights.get(sessionId);
         if (pending && pending.credentials === credentials) {
             if (selected && !pending.selected) {
@@ -455,17 +466,23 @@ class Sync {
             }
             return pending.promise;
         }
-        // 点击与 screen focus 共用一次入口加载；读旧历史/预加载不能抢在 observer 就绪前满足首屏。
+        // Tap and focus share one fresh read; cached/hover history cannot satisfy it.
         const navigation = selected ? selectCodeLightSession(storage.getState().sessions[sessionId] ?? null) : null;
-        // peer recent 已在 Mac 合并 observation；桌面导航的 ACK 不能挡住最新消息首屏。
-        const ready = this.hasCodeLightPeer() ? Promise.resolve() : navigation ?? activateCodeLightSource(storage.getState().sessions[sessionId] ?? null);
+        // Authenticated peer recent owns exact-source observation preparation.
+        // A separate WS observation receipt must not block the HTTP read.
+        const authority = credentials?.peer ? 'peer:' + credentials.peer.id : getServerUrl();
+        const observation = () => activateCodeLightSource(storage.getState().sessions[sessionId] ?? null, { force: true, authority });
+        const ready = this.hasCodeLightPeer() ? Promise.resolve() : navigation ?? observation();
         if (this.hasCodeLightPeer() && navigation) void navigation.catch(() => {});
         const entry = { credentials, selected, promise: Promise.resolve() as Promise<void> };
         // 新入口先拥有同步状态，不能在异步 fetch 开始前显示上次缓存的断连错误。
         const queuedProgress = codeLightLoadingProgress.queueSession(sessionId);
         entry.promise = ready.then(async () => {
             if (this.credentials !== credentials) return;
-            await this.getMessagesSync(sessionId).invalidateAndAwait();
+            // Foreground peer reads have one bounded attempt. InvalidateSync's
+            // background backoff must not keep an explicit Retry busy forever.
+            if (this.hasCodeLightPeer()) await this.fetchMessages(sessionId);
+            else await this.getMessagesSync(sessionId).invalidateAndAwait();
         }).catch(error => {
             const progress = codeLightLoadingProgress.getSession(sessionId);
             if (progress.generation === queuedProgress && progress.queued) codeLightLoadingProgress.endSession(sessionId, queuedProgress, true);
@@ -851,7 +868,7 @@ class Sync {
     async sendMessage(sessionId: string, text: string, options?: SendMessageOptions): Promise<boolean> {
         const accountEncryption = this.encryption;
         const canSend = () => !options?.signal?.aborted && this.encryption === accountEncryption
-            && canSendToNoninvasiveSource(storage.getState().sessions[sessionId]?.metadata)
+            && canSendToNoninvasiveSource(storage.getState().sessions[sessionId]?.metadata, storage.getState().sessions[sessionId]?.agentState)
             && (options?.isCurrent?.() ?? true);
         if (!canSend()) return false;
         try {
@@ -993,6 +1010,7 @@ class Sync {
         // while uploading. Persist this so echoes and remounts keep the same UI.
         const sendingSession = storage.getState().sessions[sessionId];
         if (!canSend() || !sendingSession) return false;
+        const nativeDispatchContext = captureNativeDispatchContext(sendingSession);
         const hasPendingUserMessage = this.pendingOutbox.get(sessionId)?.some(message => message.kind === 'user') === true
             || storage.getState().sessionMessages[sessionId]?.messages.some(
                 message => message.kind === 'user-text' && message.pending === true,
@@ -1007,6 +1025,7 @@ class Sync {
             },
             meta: {
                 sentFrom,
+                ...(nativeDispatchContext ? { nativeDispatchContext } : {}),
                 ...resolveMessageDeliveryMeta(sendingSession, source === 'new_session', hasPendingUserMessage),
                 appendSystemPrompt: systemPrompt,
                 ...(modeMeta.permissionMode !== undefined ? { permissionMode: modeMeta.permissionMode } : {}),
@@ -1023,6 +1042,7 @@ class Sync {
         // change, deletion, or Stop must never redirect or replay this send.
         if (!canSend()
             || !storage.getState().sessions[sessionId]
+            || nativeDispatchContext && !matchesNativeDispatchContext(storage.getState().sessions[sessionId], nativeDispatchContext)
             || this.encryption.getSessionEncryption(sessionId) !== encryption) return false;
 
         for (const attachment of stagedAttachments) {
@@ -1431,35 +1451,52 @@ class Sync {
     private fetchPeerCatalog = async () => {
         const credentials = this.credentials, generation = codeLightLoadingProgress.beginDiscovery();
         if (!credentials) return;
-        let cursor: string | null = null, page = 0, found = 0;
-        const seen = new Set<string>();
-        const catalog = new Map((await loadCodeLightPeerCatalog(credentials)).map(row => [row.id, row]));
-        const freshIds = new Set<string>();
+        const cached = await loadCodeLightPeerCatalogState(credentials);
+        let since = cached.watermark, version2 = true, found = cached.sessions.length;
         const current = () => this.credentials === credentials && codeLightLoadingProgress.isCurrent(generation);
         try {
-        do {
-            const query = new URLSearchParams({ limit: page === 0 ? '200' : '1000' }); if (cursor) query.set('cursor', cursor);
-            const response = await apiSocket.peerRequest(`/api/peer/catalog?${query}`);
-            if (!response.ok) throw Error(`Native directory unavailable: ${response.status}`);
-            const data = await response.json() as { version: number; sessions: PeerSessionDescriptor[]; nextCursor: string | null; hasMore: boolean };
-            if (this.credentials !== credentials || !codeLightLoadingProgress.isCurrent(generation)) return;
-            if (data.version !== 1 || !Array.isArray(data.sessions)) throw Error('Invalid native directory page');
-            for (const row of data.sessions) { catalog.set(row.id, row); freshIds.add(row.id); }
-            for (let offset = 0; offset < data.sessions.length; offset += 50) {
-                if (this.credentials !== credentials || !codeLightLoadingProgress.isCurrent(generation)) return;
-                const current = storage.getState().sessions;
-                this.applySessions(data.sessions.slice(offset, offset + 50).map(value => peerDescriptorSession(value, current[value.id])));
-                storage.getState().applyReady(); found += Math.min(50, data.sessions.length - offset);
-                codeLightLoadingProgress.updateDiscovery(generation, { found, pages: page + 1 }); await delay(0);
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const scan = new CodeLightPeerCatalogDelta(cached.sessions, since), seen = new Set<string>();
+                let cursor: string | null = null, page = 0, restart = false;
+                do {
+                    if (!current()) return;
+                    const query = new URLSearchParams({ limit: page === 0 ? '200' : '1000' });
+                    if (version2) { query.set('catalogVersion', '2'); if (since) query.set('since', since); }
+                    if (cursor) query.set('cursor', cursor);
+                    const response = await apiSocket.peerRequest(`/api/peer/catalog?${query}`);
+                    if (!current()) return;
+                    if (!response.ok) {
+                        if (version2 && page === 0 && [400, 404].includes(response.status)) { version2 = false; since = null; restart = true; break; }
+                        if (version2 && response.status === 409 && attempt === 0) { since = null; restart = true; break; }
+                        throw Error(`Native directory unavailable: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (!current()) return;
+                    const changed = scan.apply(data);
+                    for (let offset = 0; offset < changed.length; offset += 50) {
+                        if (!current()) return;
+                        const sessions = storage.getState().sessions;
+                        this.applySessions(changed.slice(offset, offset + 50).map(value => peerDescriptorSession(value, sessions[value.id], true)), { nativeCatalog: true });
+                        storage.getState().applyReady(); await delay(0);
+                    }
+                    found = scan.catalog.size;
+                    codeLightLoadingProgress.updateDiscovery(generation, { found, pages: page + 1 });
+                    cursor = data.hasMore ? data.nextCursor : null;
+                    if (data.hasMore && (!cursor || seen.has(cursor))) throw Error('Invalid native directory cursor'); if (cursor) seen.add(cursor);
+                    page++;
+                } while (cursor);
+                if (restart) continue;
+                const result = scan.finish();
+                if (!current()) return;
+                const hidden = reconcileCodeLightCatalogSessions(storage.getState().sessions, result);
+                if (hidden.length) { this.applySessions(hidden, { nativeCatalog: true }); storage.getState().applyReady(); }
+                if (!result.unchanged) await saveCodeLightPeerCatalog(credentials, result.sessions, current, result.watermark);
+                if (current()) codeLightLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: result.sessions.length });
+                return;
             }
-            cursor = data.hasMore ? data.nextCursor : null;
-            if (data.hasMore && (!cursor || seen.has(cursor))) throw Error('Invalid native directory cursor'); if (cursor) seen.add(cursor);
-            await saveCodeLightPeerCatalog(credentials, [...catalog.values()].filter(row => data.hasMore || freshIds.has(row.id)), current);
-            page++;
-        } while (cursor);
-        if (this.credentials === credentials && codeLightLoadingProgress.isCurrent(generation)) codeLightLoadingProgress.updateDiscovery(generation, { phase: 'complete', found });
+            throw Error('Native directory could not establish a current snapshot');
         } catch (error) {
-            if (this.credentials === credentials && codeLightLoadingProgress.isCurrent(generation)) codeLightLoadingProgress.updateDiscovery(generation, { phase: 'error', found });
+            if (current()) codeLightLoadingProgress.updateDiscovery(generation, { phase: 'error', found });
             throw error;
         }
     }
@@ -1594,7 +1631,10 @@ class Sync {
         // 先撤销旧失败的显示资格，再广播 connected；fetch 排队的间隙不能闪回 Retry。
         codeLightLoadingProgress.queueDiscovery();
         const visible = storage.getState().currentViewingSessionId;
-        if (visible) codeLightLoadingProgress.queueSession(visible);
+        if (visible) {
+            codeLightLoadingProgress.queueSession(visible);
+            if (this.credentials) void this.enterCodeLightSession(visible, false).catch(() => {});
+        }
     }
 
     public getCredentials() {
@@ -2526,45 +2566,61 @@ class Sync {
 
     private fetchPeerRecentWindow = async (sessionId: string) => {
         const credentials = this.credentials;
-        const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 50 }) });
+        const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1 }) });
         if (!response.ok) throw Error(`Fresh native messages unavailable: ${response.status}`);
         const data = await response.json() as PeerRecentWindow;
         const current = storage.getState();
-        if (this.credentials !== credentials || !current.sessions[sessionId] || current.currentViewingSessionId && current.currentViewingSessionId !== sessionId) return;
+        if (this.credentials !== credentials || current.currentViewingSessionId && current.currentViewingSessionId !== sessionId) return;
         if (data.session?.id !== sessionId || typeof data.session.sessionKey !== 'string') throw Error('Invalid selected native session');
-        peerDescriptorSession(data.session, current.sessions[sessionId]);
+        const previous = current.sessions[sessionId];
+        const incoming = peerDescriptorSession(data.session, previous);
+        // The paired peer can prepare this exact uncached child, but only for
+        // the current foreground route and a verified original-source identity.
+        if (!previous && (current.currentViewingSessionId !== sessionId || data.session.basicOnly || !isNoninvasiveBridge(incoming.metadata)
+            || incoming.metadata?.nativeSession?.archived === true || incoming.metadata?.nativeSession?.catalogueAvailable === false
+            || !isCodeLightSessionIdentity(incoming.metadata?.bridge?.source, incoming.metadata?.bridge?.controlMode)
+            || typeof incoming.metadata?.machineId !== 'string' || !incoming.metadata.machineId.trim()
+            || !data.historicalRead && (typeof data.ownerGeneration !== 'string' || data.ownerGeneration !== incoming.metadata?.bridge?.source.runtimeGeneration))) {
+            throw Error('Uncached native source could not be confirmed');
+        }
         const messages = nativeRecentMessages(data);
-        if (!isCurrentNativeRecent(data, current.sessions[sessionId])) return;
+        if (!isCurrentNativeRecent(data, previous ?? incoming)) return;
         const key = decodeBase64(data.session.sessionKey, 'base64'); if (key.length !== 32) throw Error('Invalid native session key');
         await this.encryption.initializeSessions(new Map([[sessionId, key]]));
         const afterKey = storage.getState();
-        if (this.credentials !== credentials || !afterKey.sessions[sessionId] || afterKey.currentViewingSessionId && afterKey.currentViewingSessionId !== sessionId
-            || !isCurrentNativeRecent(data, afterKey.sessions[sessionId])) return;
+        if (this.credentials !== credentials || afterKey.currentViewingSessionId && afterKey.currentViewingSessionId !== sessionId
+            || !afterKey.sessions[sessionId] && afterKey.currentViewingSessionId !== sessionId
+            || !isCurrentNativeRecent(data, afterKey.sessions[sessionId] ?? incoming)) return;
         this.applySessions([peerDescriptorSession(data.session, afterKey.sessions[sessionId])]);
         this.applyMessages(sessionId, messages);
         this.sessionLastSeq.set(sessionId, data.seq);
         this.codeLightHistoryCursors.set(sessionId, data.nextCursor);
+        this.codeLightHistoryOwners.set(sessionId, data.ownerGeneration);
         storage.getState().applyMessagesLoaded(sessionId);
         storage.getState().applyOlderMessagesPagination(sessionId, { hasMore: data.hasMore && !!data.nextCursor });
         // 选中会话的 key 已就绪后只读恢复原回执；不阻塞最新消息显示，也不重放旧提交。
         void import('./noninvasiveRpc').then(module => module.recoverNoninvasiveRpc(sessionId, 'communication')).catch(() => {});
     }
 
-    private fetchPeerOlderWindow = async (sessionId: string): Promise<boolean> => {
-        const state = storage.getState().sessionMessages[sessionId], cursor = this.codeLightHistoryCursors.get(sessionId);
+    private fetchPeerOlderWindow = async (sessionId: string, count = 8): Promise<boolean> => {
+        const state = storage.getState().sessionMessages[sessionId], cursor = this.codeLightHistoryCursors.get(sessionId), owner = this.codeLightHistoryOwners.get(sessionId);
         if (!cursor || !state?.hasMoreOlder || state.isLoadingOlder) return false;
+        if (!Number.isSafeInteger(count) || count < 1 || count > 8) throw Error('A bounded native viewport history batch is required');
         storage.getState().applyOlderMessagesLoading(sessionId, true);
         const credentials = this.credentials;
         try {
             return await this.getSessionMessageLock(sessionId).inLock(async () => {
-                if (this.codeLightHistoryCursors.get(sessionId) !== cursor) return false;
-                const query = new URLSearchParams({ cursor, limit: '50' });
+                if (this.codeLightHistoryCursors.get(sessionId) !== cursor || this.codeLightHistoryOwners.get(sessionId) !== owner) return false;
+                const query = new URLSearchParams({ cursor, limit: String(count) });
                 const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/history?${query}`);
                 if (!response.ok) throw Error(`Earlier native messages unavailable: ${response.status}`);
                 const data = await response.json() as PeerRecentWindow;
-                if (this.credentials !== credentials || data.session?.id !== sessionId || this.codeLightHistoryCursors.get(sessionId) !== cursor) return false;
+                if (this.credentials !== credentials || data.session?.id !== sessionId || this.codeLightHistoryCursors.get(sessionId) !== cursor
+                    || this.codeLightHistoryOwners.get(sessionId) !== owner || owner && data.ownerGeneration !== owner
+                    || storage.getState().currentViewingSessionId && storage.getState().currentViewingSessionId !== sessionId) return false;
                 const currentSession = storage.getState().sessions[sessionId];
-                if (!currentSession || !isCurrentNativeRecent(data, currentSession)) return false;
+                const currentOwner = currentSession?.metadata?.bridge?.source.runtimeGeneration;
+                if (!currentSession || !isCurrentNativeRecent(data, currentSession) || owner && currentOwner && owner !== currentOwner) return false;
                 this.applyMessages(sessionId, nativeRecentMessages(data));
                 const advanced = data.nextCursor !== cursor;
                 this.codeLightHistoryCursors.set(sessionId, advanced ? data.nextCursor : null);
@@ -2744,8 +2800,8 @@ class Sync {
      * Resolves true only when the cursor moved back: callers that page
      * automatically continue on true and rest on false.
      */
-    loadOlderMessages = async (sessionId: string): Promise<boolean> => {
-        if (this.hasCodeLightPeer()) return this.fetchPeerOlderWindow(sessionId);
+    loadOlderMessages = async (sessionId: string, options: { limit?: number } = {}): Promise<boolean> => {
+        if (this.hasCodeLightPeer()) return this.fetchPeerOlderWindow(sessionId, options.limit ?? 8);
         const oldestSeq = this.sessionOldestSeq.get(sessionId);
         if (oldestSeq === undefined || oldestSeq <= 1) {
             return false;
@@ -3536,9 +3592,9 @@ class Sync {
 
     private applySessions = (sessions: (Omit<Session, "presence"> & {
         presence?: "online" | number;
-    })[]) => {
+    })[], options?: { nativeCatalog?: boolean | 'cached' }) => {
         const active = storage.getState().getActiveSessions();
-        storage.getState().applySessions(sessions);
+        storage.getState().applySessions(sessions, options);
         for (const session of sessions) this.sessionAvatars.refresh(session.id);
         const newActive = storage.getState().getActiveSessions();
         this.applySessionDiff(active, newActive);

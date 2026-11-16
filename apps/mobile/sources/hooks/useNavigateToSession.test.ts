@@ -24,7 +24,7 @@ vi.mock('@/config', () => ({ config: mocks.config }));
 vi.mock('@/track', () => ({ trackSessionSwitched: mocks.trackSessionSwitched }));
 vi.mock('@/utils/perfLog', () => ({ perfMark: mocks.perfMark }));
 
-import { replaceToSession, singularSessionRoute, useSessionPressHandlers } from './useNavigateToSession';
+import { navigateToObservedSession, replaceToSession, singularSessionRoute, useSessionPressHandlers } from './useNavigateToSession';
 
 let renderer: ReturnType<typeof create>;
 let handlers: ReturnType<typeof useSessionPressHandlers>;
@@ -49,6 +49,12 @@ beforeEach(() => {
 afterEach(() => act(() => renderer.unmount()));
 
 describe('session row press contract', () => {
+    it('opens a child observation route without a Desktop selection or speculative read', () => {
+        navigateToObservedSession(mocks.router as any, 'a/b?c');
+        expect(mocks.router.push).toHaveBeenCalledExactlyOnceWith('/session/a%2Fb%3Fc', { dangerouslySingular: singularSessionRoute });
+        expect(mocks.onSessionSelected).not.toHaveBeenCalled(); expect(mocks.preloadSession).not.toHaveBeenCalled();
+        expect(mocks.trackSessionSwitched).toHaveBeenCalledExactlyOnceWith({ id: 'a/b?c' });
+    });
     it('prepares on touch-down without navigating or tracking a switch', () => {
         handlers.onPressIn();
         expect(mocks.preloadSession).toHaveBeenCalledWith('a');

@@ -10,10 +10,11 @@ import { useHeaderHeight } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageView } from './MessageView';
 import { AgentWorkGroupHeader } from './AgentWorkGroupHeader';
+import { ToolsGroupHeader } from './ToolsGroupHeader';
 import { Metadata, Session } from '@/sync/storageTypes';
 import { ChatFooter } from './ChatFooter';
 import { Message } from '@/sync/typesMessage';
-import { AgentWorkGroupItem, DisplayItem, TextItem, useGroupedMessages } from '@/hooks/useGroupedMessages';
+import { AgentWorkGroupItem, DisplayItem, TextItem, ToolsGroupItem, ordinaryToolRunWindowEnd, useGroupedMessages } from '@/hooks/useGroupedMessages';
 import { Octicons } from '@expo/vector-icons';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { resolveControlMode } from '@/sync/controlHandoff';
@@ -22,7 +23,12 @@ import { perfSince, useCommitPerf } from '@/utils/perfLog';
 import { handleInvertedChatWheel } from '@/utils/invertedChatWheel';
 import { DiffSyntaxCell, SyntaxViewport, SYNTAX_VIEWABILITY } from './diff/syntax/viewport';
 import { RoundButton } from './RoundButton';
-import { t } from '@/text';
+import { getCurrentLanguage, t } from '@/text';
+import { codeLightLatestViewportLabels } from '@/text/codeLightViewportLabels';
+import { CodeLightViewportFill, codeLightNativeWindowEnd, codeLightViewportBatch, type NativeViewportMeasurement } from '@/utils/codeLightViewport';
+import { useCodeLightMessageProgress } from '@/sync/codeLightLoadingProgress';
+import { subscribeCodeLightLatestViewport } from '@/utils/codeLightSubagentActivityIntent';
+import { useNativeReadingWindow } from '@/hooks/useNativeReadingWindow';
 
 const SCROLL_THRESHOLD = 300;
 const DOCK_DETAILS_SHOW_OFFSET = 16;
@@ -112,7 +118,8 @@ const SCROLL_BUTTON_DOCK_GAP = 4;
  */
 type ListItem =
     | TextItem
-    | { type: 'work-header'; id: string; group: AgentWorkGroupItem; placement: 'leading' | 'trailing' };
+    | { type: 'work-header'; id: string; group: AgentWorkGroupItem; placement: 'leading' | 'trailing' }
+    | { type: 'tools-header'; id: string; group: ToolsGroupItem; placement: 'leading' | 'trailing' };
 
 const EMPTY_MESSAGES: Message[] = [];
 /** Shared so "no toggles" is always the same object identity. */
@@ -158,7 +165,7 @@ function stringSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolea
 function oldestBoundary(items: readonly ListItem[]): string | null {
     const oldest = items[items.length - 1];
     if (!oldest) return null;
-    if (oldest.type === 'work-header') return `${oldest.id}:${oldest.group.messages[0]?.id ?? ''}`;
+    if (oldest.type === 'work-header' || oldest.type === 'tools-header') return `${oldest.id}:${oldest.group.messages[0]?.id ?? ''}`;
     return oldest.id;
 }
 
@@ -215,10 +222,10 @@ const OlderEnd = React.memo((props: { status: 'idle' | 'loading' | 'error' | 'lo
     return (
         <View>
             <View style={{ height: props.topContentInset ?? headerHeight + safeArea.top + 32 }} />
-            <View style={{ height: 32, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
                 {props.status === 'loading' && <ActivityIndicator size="small" />}
-                {props.status === 'error' && <RoundButton size="small" display="inverted" title={t('common.retry')} onPress={props.onAction} />}
-                {props.status === 'load-more' && <RoundButton size="small" display="inverted" title={t('common.loadMore')} onPress={props.onAction} />}
+                {props.status === 'error' && <RoundButton size="normal" display="inverted" title={t('common.retry')} onPress={props.onAction} />}
+                {props.status === 'load-more' && <RoundButton size="normal" display="inverted" title={t('common.loadMore')} onPress={props.onAction} />}
             </View>
         </View>
     );
@@ -273,6 +280,14 @@ const ChatListInternal = React.memo((props: {
     // Perf reporting only; history paging keys off measured layout instead.
     const listReadyRef = React.useRef(false);
     const session = useSession(props.sessionId);
+    const nativeProgress = useCodeLightMessageProgress(props.sessionId);
+    const nativeProgressRef = React.useRef(nativeProgress); nativeProgressRef.current = nativeProgress;
+    const nativeReadingScope = useNativeReadingWindow(props.sessionId, props.metadata);
+    const nativeFill = React.useMemo(() => new CodeLightViewportFill(), [props.sessionId, nativeReadingScope]);
+    const nativeAnchorScopeRef = React.useRef(nativeFill);
+    const contentMeasureVersionRef = React.useRef(0);
+    const nativePageReadyRef = React.useRef(false);
+    const previousActiveRef = React.useRef(props.active);
     const controlMode = resolveControlMode(usesControlledSessionUi(session?.metadata) ? session?.agentState?.controlledByUser : false);
     const previousControlModeRef = React.useRef(controlMode);
 
@@ -305,8 +320,9 @@ const ChatListInternal = React.memo((props: {
     const currentTurnComplete = session?.thinking !== true
         && !hasPendingPermission;
     const groupingOptions = React.useMemo(
-        () => ({ collapseCurrentTurn: currentTurnComplete }),
-        [currentTurnComplete],
+        () => ({ collapseCurrentTurn: currentTurnComplete, collapseAgentWork: !config.noninvasiveLocal,
+            adjacentTools: config.noninvasiveLocal, sessionId: props.sessionId }),
+        [currentTurnComplete, props.sessionId],
     );
 
     // Messages arrive newest-first, so the window is a prefix of the array and
@@ -317,14 +333,14 @@ const ChatListInternal = React.memo((props: {
     const messages = props.messages;
     const windowRef = React.useRef<Message[]>(EMPTY_MESSAGES);
     const windowedMessages = React.useMemo(() => {
-        if (messages.length === 0) return EMPTY_MESSAGES;
-        let desiredEnd = INITIAL_WINDOW, anchored = false;
-        if (oldestRenderedId !== null) {
+        if (messages.length === 0) { windowRef.current = EMPTY_MESSAGES; return EMPTY_MESSAGES; }
+        let desiredEnd = config.noninvasiveLocal ? 1 : INITIAL_WINDOW;
+        if (oldestRenderedId !== null && (!config.noninvasiveLocal || nativeAnchorScopeRef.current === nativeFill)) {
             const index = messages.findIndex((msg) => msg.id === oldestRenderedId);
-            if (index >= 0) { desiredEnd = index + 1; anchored = true; }
+            if (index >= 0) desiredEnd = index + 1;
         }
         // 已选择的手机边界不再追加 turn allowance，否则锚点提交会从 120 行无意增长到 180 行。
-        const end = config.noninvasiveLocal && anchored ? desiredEnd : messageWindowEnd(messages, desiredEnd, config.noninvasiveLocal === true);
+        const end = config.noninvasiveLocal ? ordinaryToolRunWindowEnd(messages, codeLightNativeWindowEnd(messages.length, desiredEnd)) : messageWindowEnd(messages, desiredEnd, false);
         const next = messages.slice(0, end);
         const prev = windowRef.current;
         if (prev.length === next.length && prev.every((msg, i) => msg === next[i])) {
@@ -332,16 +348,19 @@ const ChatListInternal = React.memo((props: {
         }
         windowRef.current = next;
         return next;
-    }, [messages, oldestRenderedId]);
+    }, [messages, oldestRenderedId, nativeFill]);
 
     // 先重置再初始化锚点，避免首挂载的 reset 覆盖刚选择的边界，导致下一条消息重新扩窗。
     React.useEffect(() => {
         listReadyRef.current = false;
         requestedWindowEndRef.current = 0;
+        nativeAnchorScopeRef.current = nativeFill;
+        pendingOlderRef.current = null; olderPageRef.current = undefined;
         setOldestRenderedId(null);
         olderGestureRef.current = false; olderGestureSeenRef.current = false; olderGesturePermitRef.current = false;
+        nativeFill.reset(); nativePageReadyRef.current = false; contentMeasureVersionRef.current = 0;
         setOlderBlocked(null);
-    }, [props.sessionId]);
+    }, [props.sessionId, nativeFill]);
 
     // Pin the window's oldest message once history is available, so a new
     // message extends the window rather than pushing the oldest rendered one
@@ -376,6 +395,10 @@ const ChatListInternal = React.memo((props: {
         sessionId: props.sessionId,
         ids: EMPTY_WATCHED_TURN_IDS,
     }));
+    React.useEffect(() => {
+        setGroupToggles(EMPTY_GROUP_TOGGLES);
+        setWatchedTurns({ sessionId: props.sessionId, ids: EMPTY_WATCHED_TURN_IDS });
+    }, [props.sessionId, nativeReadingScope]);
     const sessionChanged = watchedTurns.sessionId !== props.sessionId;
     const nextWatchedTurnIds = new Set<string>();
     if (!sessionChanged && sessionInForeground) {
@@ -409,6 +432,7 @@ const ChatListInternal = React.memo((props: {
             && !groupToggles.closed.has(group.id))
         || ((group.hasPendingPermission || group.hasRunning) && !groupToggles.closed.has(group.id))
     ), [groupToggles, props.sessionId, sessionInForeground, watchedTurns]);
+    const isToolsGroupExpanded = useCallback((group: ToolsGroupItem) => group.messages.some(message => groupToggles.expanded.has(JSON.stringify(['tool-member', props.sessionId, message.id]))), [groupToggles, props.sessionId]);
 
     // Ref so the AppState handler reads fresh items without re-subscribing
     const displayItemsRef = React.useRef(displayItems);
@@ -462,6 +486,17 @@ const ChatListInternal = React.memo((props: {
             return { expanded, closed };
         });
     }, [props.sessionId, sessionInForeground, watchedTurns]);
+    const handleToggleToolsGroup = useCallback((group: ToolsGroupItem) => {
+        setGroupToggles(prev => {
+            const expanded = new Set(prev.expanded);
+            const open = group.messages.some(message => expanded.has(JSON.stringify(['tool-member', props.sessionId, message.id])));
+            for (const message of group.messages) {
+                const key = JSON.stringify(['tool-member', props.sessionId, message.id]);
+                if (open) expanded.delete(key); else expanded.add(key);
+            }
+            return { expanded, closed: prev.closed };
+        });
+    }, [props.sessionId]);
 
     // Expanded groups contribute their members as ordinary list items right
     // after the header, so the list itself virtualizes them and an expansion
@@ -488,13 +523,19 @@ const ChatListInternal = React.memo((props: {
                     }
                     out.push({ type: 'work-header', id: `${item.id}:collapse`, group: item, placement: 'trailing' });
                 }
+            } else if (item.type === 'tools-group') {
+                out.push({ type: 'tools-header', id: item.id, group: item, placement: 'leading' });
+                if (isToolsGroupExpanded(item)) {
+                    for (const message of item.messages) out.push({ type: 'message', id: message.id, message });
+                    out.push({ type: 'tools-header', id: `${item.id}:collapse`, group: item, placement: 'trailing' });
+                }
             } else {
                 out.push(item);
             }
         }
         out.reverse();
         return out;
-    }, [displayItems, isGroupExpanded]);
+    }, [displayItems, isGroupExpanded, isToolsGroupExpanded]);
     const listItemsRef = React.useRef(listItems);
     listItemsRef.current = listItems;
     useCommitPerf(`ChatList ${props.sessionId}`, `items=${listItems.length} window=${windowedMessages.length}/${messages.length}`, 30, props.sessionId);
@@ -522,7 +563,7 @@ const ChatListInternal = React.memo((props: {
     // rows that differ in height. One "message" bucket averaged a one-line
     // status together with a full diff and estimated both badly.
     const getItemType = useCallback((item: ListItem) => {
-        if (item.type === 'work-header') return 'work-header';
+        if (item.type === 'work-header' || item.type === 'tools-header') return item.type;
         const message = item.message;
         return message.kind === 'tool-call' ? `tool:${message.tool.name}` : message.kind;
     }, []);
@@ -595,6 +636,9 @@ const ChatListInternal = React.memo((props: {
                 />
             );
         }
+        if (item.type === 'tools-header') return <ToolsGroupHeader key={`${props.sessionId}:${item.id}`} group={item.group}
+            metadata={props.metadata} expanded={isToolsGroupExpanded(item.group)} placement={item.placement}
+            onToggle={() => handleToggleToolsGroup(item.group)} />;
         return (
             <DiffSyntaxCell key={item.message.id} viewport={syntaxViewport} itemKey={item.id} enabled={target !== 'Measurement'}>
                 <MessageView
@@ -604,7 +648,7 @@ const ChatListInternal = React.memo((props: {
                 />
             </DiffSyntaxCell>
         );
-    }, [props.metadata, props.sessionId, syntaxViewport, isGroupExpanded, handleToggleGroup]);
+    }, [props.metadata, props.sessionId, syntaxViewport, isGroupExpanded, handleToggleGroup, isToolsGroupExpanded, handleToggleToolsGroup]);
 
     // The list is inverted, so offset 0 is the newest message and growing
     // offsets walk back through history.
@@ -631,6 +675,7 @@ const ChatListInternal = React.memo((props: {
 
     const handleContentSizeChange = useCallback((_width: number, height: number) => {
         scrollMetricsRef.current.contentHeight = height;
+        contentMeasureVersionRef.current++;
         fillOlderRef.current();
         updateHeaderBackdropVisibility();
     }, [updateHeaderBackdropVisibility]);
@@ -650,6 +695,19 @@ const ChatListInternal = React.memo((props: {
     const scrollToBottom = useCallback(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
     }, []);
+    React.useEffect(() => subscribeCodeLightLatestViewport(props.sessionId, () => {
+        if (!props.active) return;
+        // Messages/Logs navigation is UI-only and cannot advance a history cursor.
+        nativeFill.stop(); nativePageReadyRef.current = false; olderGesturePermitRef.current = false;
+        requestedWindowEndRef.current = 0; setOldestRenderedId(null); scrollToBottom();
+    }), [props.sessionId, props.active, nativeFill, scrollToBottom]);
+    React.useEffect(() => {
+        const entered = props.active && !previousActiveRef.current; previousActiveRef.current = props.active;
+        if (!config.noninvasiveLocal || !entered) return;
+        nativeFill.reset(); nativePageReadyRef.current = false; requestedWindowEndRef.current = 0;
+        pendingOlderRef.current = null; olderPageRef.current = undefined;
+        setOldestRenderedId(null); listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }, [props.active, nativeFill]);
 
     // History fills in ahead of the reader. Whenever the oldest rendered
     // message is within a viewport of the screen — which includes a list too
@@ -693,20 +751,50 @@ const ChatListInternal = React.memo((props: {
         invisibleOlderPagesRef.current = 0;
     }, [sessionId]);
     const fillOlder = useCallback(() => {
+        const native = config.noninvasiveLocal;
+        const { contentHeight, viewportHeight, offsetY } = scrollMetricsRef.current;
+        const all = messagesRef.current, currentEnd = windowRef.current.length;
+        const { hasMoreOlder: more, isLoadingOlder: loading, olderBlocked: blocked, active } = paginationRef.current;
+        if (native && active && !olderGesturePermitRef.current && !nativeFill.reason) {
+            const measurement: NativeViewportMeasurement = { viewportHeight, contentHeight, windowEnd: currentEnd,
+                visibleKey: listItemsRef.current.map(item => item.id).join('\n'), measureVersion: contentMeasureVersionRef.current,
+                ready: nativeProgressRef.current.phase === 'complete' };
+            if (nativePageReadyRef.current && !loading && measurement.ready) {
+                nativePageReadyRef.current = false;
+                if (all.length > currentEnd) { const next = codeLightNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
+                nativeFill.stop('no-progress'); setOlderBlocked('limit'); return;
+            }
+            if (currentEnd < requestedWindowEndRef.current || loading || pendingOlderRef.current || blocked) return;
+            const decision = nativeFill.decide(measurement);
+            if (decision === 'no-progress') { setOlderBlocked('limit'); return; }
+            if (decision !== 'advance') return;
+            nativeFill.requested(measurement);
+            if (all.length > currentEnd) { const next = codeLightNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
+            if (!more) { nativeFill.stop(); return; }
+            const oldest = listItemsRef.current[listItemsRef.current.length - 1];
+            // A collapsed summary cannot fill a viewport by downloading more
+            // tool payloads into the same row. History still follows a gesture.
+            if (oldest?.type === 'tools-header' && !isToolsGroupExpanded(oldest.group)) { nativeFill.stop(); return; }
+            const request = sync.loadOlderMessages(sessionId, { limit: 1 }); pendingOlderRef.current = request;
+            request.then(advanced => {
+                if (pendingOlderRef.current !== request) return; pendingOlderRef.current = null;
+                if (advanced) nativePageReadyRef.current = true; else nativeFill.stop(); setOlderSettled(n => n + 1);
+            }, () => { if (pendingOlderRef.current === request) { pendingOlderRef.current = null; nativeFill.stop(); setOlderBlocked('error'); } });
+            return;
+        }
         // 布局/新消息也会进入短列表的阈值；CodeLight 必须有新的用户向旧历史滚动意图，不能首屏自动翻页。
-        if (config.noninvasiveLocal && !olderGesturePermitRef.current) return;
+        if (native && !olderGesturePermitRef.current) return;
+        if (native) nativeFill.stop(nativeFill.reason === 'no-progress' ? 'no-progress' : 'covered');
         // Measured layout only, not onLoad: FlashList never reports a first
         // layout for zero rows, and a window whose rows all group away is
         // exactly the case that must keep paging.
-        const { contentHeight, viewportHeight, offsetY } = scrollMetricsRef.current;
         if (viewportHeight <= 0 || contentHeight <= 0) return;
         if (contentHeight - viewportHeight - offsetY >= viewportHeight * START_REACHED_VIEWPORTS) return;
-        const all = messagesRef.current;
-        const currentEnd = windowRef.current.length;
         if ((all.length === 0 || currentEnd <= 0) && !config.noninvasiveLocal) return;
         // A growth already requested but not yet rendered.
         if (currentEnd < requestedWindowEndRef.current) return;
-        const nextEnd = messageWindowEnd(all, currentEnd + WINDOW_PAGE, config.noninvasiveLocal === true);
+        const pageSize = native ? codeLightViewportBatch(viewportHeight, contentHeight, listItemsRef.current.length) : WINDOW_PAGE;
+        const nextEnd = native ? codeLightNativeWindowEnd(all.length, currentEnd + pageSize) : messageWindowEnd(all, currentEnd + WINDOW_PAGE, false);
         if (nextEnd > currentEnd) {
             if (config.noninvasiveLocal) olderGesturePermitRef.current = false;
             requestedWindowEndRef.current = nextEnd;
@@ -733,7 +821,6 @@ const ChatListInternal = React.memo((props: {
         // The store's flag also covers background pages, but it drops before
         // this list's own request settles — a failed page would be retried by
         // that very transition — so the pending promise is tracked here too.
-        const { hasMoreOlder: more, isLoadingOlder: loading, olderBlocked: blocked, active } = paginationRef.current;
         if (!active || !more || loading || blocked || pendingOlderRef.current
             || invisibleOlderPagesRef.current >= MAX_INVISIBLE_OLDER_PAGES) return;
         if (config.noninvasiveLocal) olderGesturePermitRef.current = false;
@@ -741,7 +828,7 @@ const ChatListInternal = React.memo((props: {
         // settle before React has committed the store's new flags. Only a page
         // that moved the cursor re-checks; a no-op rests until the next
         // scroll or store change, so it cannot spin.
-        const request = sync.loadOlderMessages(sessionId);
+        const request = native ? sync.loadOlderMessages(sessionId, { limit: pageSize }) : sync.loadOlderMessages(sessionId);
         pendingOlderRef.current = request;
         olderPageRef.current = oldestBoundary(listItemsRef.current);
         request.then(
@@ -762,28 +849,31 @@ const ChatListInternal = React.memo((props: {
                 setOlderBlocked('error');
             },
         );
-    }, [sessionId]);
+    }, [sessionId, nativeFill, isToolsGroupExpanded]);
     const fillOlderRef = React.useRef(fillOlder);
     fillOlderRef.current = fillOlder;
     // A page landing, or the window growing, is checked without waiting for a
     // scroll event: a reader parked at the oldest message is holding still.
     React.useEffect(() => {
         fillOlder();
-    }, [fillOlder, messages, windowedMessages, props.isLoadingOlder, props.hasMoreOlder, props.active, olderBlocked, olderSettled]);
+    }, [fillOlder, messages, windowedMessages, props.isLoadingOlder, props.hasMoreOlder, props.active, olderBlocked, olderSettled, nativeProgress]);
     const retryOlder = useCallback(() => {
+        nativeFill.stop(nativeFill.reason === 'no-progress' ? 'no-progress' : 'covered');
         olderGesturePermitRef.current = true;
         pendingOlderRef.current = null;
         setOlderBlocked(null);
-    }, []);
+    }, [nativeFill]);
     const loadMoreOlder = useCallback(() => {
+        nativeFill.stop(nativeFill.reason === 'no-progress' ? 'no-progress' : 'covered');
         olderGesturePermitRef.current = true;
         invisibleOlderPagesRef.current = 0;
         setOlderBlocked(null);
         fillOlderRef.current();
-    }, []);
+    }, [nativeFill]);
     const olderStatus = olderBlocked === 'error' && props.hasMoreOlder ? 'error'
         : olderBlocked === 'limit' && props.hasMoreOlder ? 'load-more'
         : props.isLoadingOlder && windowedMessages.length >= messages.length ? 'loading'
+        : config.noninvasiveLocal && (props.hasMoreOlder || windowedMessages.length < messages.length) && nativeFill.reason === 'no-progress' ? 'load-more'
         : config.noninvasiveLocal && props.hasMoreOlder && messages.length === 0 ? 'load-more' : 'idle';
 
     // FlashList lacks React Native Web FlatList's inverted-wheel correction.
@@ -862,6 +952,8 @@ const ChatListInternal = React.memo((props: {
                             pressed ? styles.scrollButtonPressed : styles.scrollButtonDefault
                         ]}
                         onPress={scrollToBottom}
+                        accessibilityRole="button"
+                        accessibilityLabel={codeLightLatestViewportLabels[getCurrentLanguage()]}
                     >
                         <Octicons name="arrow-down" size={14} color={theme.colors.text} />
                     </Pressable>
@@ -882,9 +974,9 @@ const styles = StyleSheet.create((theme) => ({
         pointerEvents: 'box-none',
     },
     scrollButton: {
-        borderRadius: 16,
-        width: 32,
-        height: 32,
+        borderRadius: 22,
+        width: 44,
+        height: 44,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,

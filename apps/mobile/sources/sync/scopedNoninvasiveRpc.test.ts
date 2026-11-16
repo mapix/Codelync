@@ -4,7 +4,7 @@ import { ScopedNoninvasiveRpc } from './scopedNoninvasiveRpc';
 import type { BridgeRpcReply } from './noninvasiveRpcJournal';
 import { rpcTarget } from '@slopus/happy-wire/codelight';
 
-function fixture() {
+function fixture(sourceContext?: ConstructorParameters<typeof ScopedNoninvasiveRpc>[0]['sourceContext']) {
     const values = new Map<string, string>();
     let origin = 'https://relay.example/r/fixture';
     let nextId = 0;
@@ -13,7 +13,7 @@ function fixture() {
     const client = new ScopedNoninvasiveRpc({
         storage: { getItem: async key => values.get(key) ?? null, setItem: async (key, value) => { values.set(key, value); }, removeItem: async key => { values.delete(key); }, getAllKeys: async () => [...values.keys()] },
         legacyKey: 'legacy', keyPrefix: 'v2:', serverUrl: () => origin, rpc, id,
-        digest: async value => createHash('sha256').update(value).digest('hex'),
+        digest: async value => createHash('sha256').update(value).digest('hex'), sourceContext,
     });
     const pending = () => [...values].filter(([key]) => !key.endsWith(':diagnostics')).map(([, value]) => value);
     return { client, values, rpc, id, pending, setOrigin: (value: string) => { origin = value; } };
@@ -21,6 +21,31 @@ function fixture() {
 const legacy = { serverUrl: 'https://old-entry.example', sessionId: 'old-session', method: 'communication', commandId: 'old-original-id', digest: 'old-digest', createdAt: 1 };
 
 describe('scoped native operation journals', () => {
+    it('an explicit missing original-ID check does not probe a foreign legacy receipt', async () => {
+        const f = fixture(), original = { ...legacy, serverUrl: 'https://relay.example/r/fixture', sessionId: 'parent', method: 'native-task-stop' };
+        f.values.set('legacy', JSON.stringify(original));
+        expect(await f.client.recoverDetailed('parent', 'native-task-stop', { taskId: 'task-A', scope: { queryToken: 'query' } }, 'expected-original')).toEqual({ confirmed: false });
+        expect(f.rpc).not.toHaveBeenCalled(); expect(f.id).not.toHaveBeenCalled(); expect(f.values.get('legacy')).toBe(JSON.stringify(original));
+    });
+    it('a foreign command stored under the same task target remains untouched and is never queried', async () => {
+        const f = fixture(), origin = 'https://relay.example/r/fixture', params = { taskId: 'task-A', scope: { queryToken: 'query' } }, target = rpcTarget('native-task-stop', params);
+        const key = 'v2:' + createHash('sha256').update(JSON.stringify([origin, 'parent', target])).digest('hex');
+        const record = JSON.stringify({ serverUrl: origin, sessionId: 'parent', method: 'native-task-stop', target, commandId: 'foreign-command', digest: 'kept', createdAt: 1 });
+        f.values.set(key, record);
+        expect(await f.client.recoverDetailed('parent', 'native-task-stop', params, 'expected-original')).toEqual({ confirmed: false });
+        expect(f.rpc).not.toHaveBeenCalled(); expect(f.id).not.toHaveBeenCalled(); expect(f.values.get(key)).toBe(record);
+    });
+    it('reads content-free diagnostics without dispatch and retains the original owner across a reply', async () => {
+        let owner = 'original-owner';
+        const f = fixture(id => ({ sessionId: id, app: 'codex', nativeConversationId: 'native-child', hostId: 'local', ownerGeneration: owner }));
+        f.rpc.mockImplementationOnce(async (_id, _method, params) => { owner = 'later-owner'; return { receipt: { id: params.commandId, status: 'complete' } }; });
+        await f.client.execute('child', 'communication', { text: 'PRIVATE_LOG_BODY', token: 'PRIVATE_LOG_TOKEN' });
+        const calls = f.rpc.mock.calls.length, diagnostics = await f.client.readDiagnostics('child');
+        expect(f.rpc.mock.calls).toHaveLength(calls); expect(diagnostics).toHaveLength(2);
+        expect(diagnostics.every(row => row.source.ownerGeneration === 'original-owner')).toBe(true);
+        expect(JSON.stringify(diagnostics)).not.toContain('PRIVATE_LOG_BODY'); expect(JSON.stringify(diagnostics)).not.toContain('PRIVATE_LOG_TOKEN');
+        expect(await f.client.readDiagnostics('different-child')).toEqual([]);
+    });
     it('an unresolved old entry/session does not block a new answer or delete the old record', async () => {
         const f = fixture(), saved = JSON.stringify(legacy);
         f.values.set('legacy', saved);

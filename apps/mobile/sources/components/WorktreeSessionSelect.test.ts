@@ -17,7 +17,9 @@ vi.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ setParams: mocks.setParams, back: mocks.back }) }));
 vi.mock('@/components/StyledText', () => ({ Text: 'Text' }));
 vi.mock('@/constants/Typography', () => ({ Typography: { default: () => ({}) } }));
-vi.mock('@/text', () => ({ t: (key: string) => key }));
+vi.mock('@/text', () => ({ t: (key: string) => key, getCurrentLanguage: () => 'en' }));
+vi.mock('@/config', () => ({ config: { noninvasiveLocal: true } }));
+vi.mock('@/sync/sync', () => ({ sync: { onSessionSelected: vi.fn() } }));
 vi.mock('@/sync/storage', () => ({ useSessionListViewData: () => [], storage: { getState: () => ({ sessions: mocks.sessions, sessionListViewData: [] }) } }));
 vi.mock('@/sync/pendingChats', () => ({ usePendingChat: () => mocks.pending, usePendingChatsBeside: () => mocks.pendingChats, openPendingChat: vi.fn() }));
 vi.mock('@/sync/pendingChatHandover', () => ({ handOverPendingChat: vi.fn(), retirePendingChat: vi.fn() }));
@@ -70,6 +72,16 @@ it('a large native project uses one select with every full title and the exact c
     act(() => picker.props.onSelect('session-149'));
     expect(mocks.setParams).toHaveBeenCalledExactlyOnceWith({ id: 'session-149' });
     expect(mocks.track).toHaveBeenCalledWith(mocks.sessions['session-149']);
+    act(() => renderer.unmount());
+});
+
+it('keeps an opened subagent label but excludes agents from the ordinary conversation picker', () => {
+    mocks.worktree.tabs[75].isSubagent = true;
+    const renderer = render('session-75'), picker = renderer.root.findByType('NativeOptionsPicker');
+    expect(picker.props.sections[0].options).toHaveLength(149);
+    expect(picker.props.sections[0].options.some((option: any) => option.key === 'session-75')).toBe(false);
+    expect(picker.props.triggerLabel).toBe('Subagent · Long conversation title 75');
+    expect(mocks.setParams).not.toHaveBeenCalled();
     act(() => renderer.unmount());
 });
 

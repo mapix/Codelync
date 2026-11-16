@@ -110,7 +110,7 @@
  * - Updated internal state for future processing
  */
 
-import { Message, PENDING_SORT_OFFSET, ToolCall } from "../typesMessage";
+import { Message, PENDING_SORT_OFFSET, ToolCall, type NativeMessageAdmission } from "../typesMessage";
 import { applyNativeProjection, applyNativeToolUpdates } from './nativeProjection';
 import { AgentEvent, NormalizedMessage, SessionAuthor, UsageData } from "../typesRaw";
 import { createTracer, traceMessages, TracerState } from "./reducerTracer";
@@ -134,6 +134,7 @@ type ReducerMessage = {
     pending?: boolean;
     sendError?: string;
     deliveryUnconfirmed?: boolean;
+    nativeAdmission?: NativeMessageAdmission;
     sortAt?: number;
     turn?: string;
     author?: SessionAuthor;
@@ -175,7 +176,7 @@ export type ReducerState = {
      * here, so a receipt is remembered rather than dropped, and a message that
      * later claims that server id settles at once.
      */
-    pendingReceipts: Map<string, { createdAt: number; error?: string; deliveryUnconfirmed?: boolean }>;
+    pendingReceipts: Map<string, { createdAt: number; error?: string; deliveryUnconfirmed?: boolean; nativeAdmission?: NativeMessageAdmission }>;
     /**
      * Send acks whose optimistic row has not been reduced yet. The POST ack
      * runs outside the session message lock, so it can beat the queued
@@ -322,7 +323,7 @@ function updateLatestTodos(state: ReducerState, value: unknown, timestamp: numbe
 }
 
 /** Applies one terminal send outcome without replacing the visible row. */
-function settleUserMessage(state: ReducerState, internalId: string, receipt: { createdAt: number; error?: string; deliveryUnconfirmed?: boolean }): boolean {
+function settleUserMessage(state: ReducerState, internalId: string, receipt: { createdAt: number; error?: string; deliveryUnconfirmed?: boolean; nativeAdmission?: NativeMessageAdmission }): boolean {
     const message = state.messages.get(internalId);
     if (!message || message.role !== 'user') {
         return false;
@@ -348,6 +349,8 @@ function settleUserMessage(state: ReducerState, internalId: string, receipt: { c
     message.sortAt = receipt.createdAt;
     message.sendError = receipt.error;
     message.deliveryUnconfirmed = undefined;
+    // A canonical native UUID row cannot regain an old queue-admission hint.
+    message.nativeAdmission = receipt.nativeAdmission && !message.meta?.nativeRow ? receipt.nativeAdmission : undefined;
     return true;
 }
 
@@ -465,6 +468,8 @@ export function reducer(state: ReducerState, messages: NormalizedMessage[], agen
                 createdAt: msg.createdAt,
                 ...(msg.content.type === 'user-message-rejected' ? { error: msg.content.reason } : {}),
                 ...(msg.content.type === 'user-message-delivery-unknown' ? { deliveryUnconfirmed: true } : {}),
+                ...(msg.content.type === 'user-message-accepted' && msg.content.nativeMessageId && msg.content.disposition
+                    ? { nativeAdmission: { nativeMessageId: msg.content.nativeMessageId, disposition: msg.content.disposition } } : {}),
             };
             const internalId = state.messageIds.get(ref);
             if (internalId) {
@@ -1452,6 +1457,7 @@ function convertReducerMessageToMessage(reducerMsg: ReducerMessage, state: Reduc
             ...(reducerMsg.pending && { pending: true }),
             ...(reducerMsg.sendError !== undefined && { sendError: reducerMsg.sendError }),
             ...(reducerMsg.deliveryUnconfirmed !== undefined && { deliveryUnconfirmed: reducerMsg.deliveryUnconfirmed }),
+            ...(reducerMsg.nativeAdmission !== undefined && { nativeAdmission: reducerMsg.nativeAdmission }),
             ...(reducerMsg.sortAt !== undefined && { sortAt: reducerMsg.sortAt }),
             ...(reducerMsg.author && { author: reducerMsg.author }),
             meta: reducerMsg.meta

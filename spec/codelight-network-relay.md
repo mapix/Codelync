@@ -20,6 +20,90 @@ budgets and publish a visible retry state on failure.
 The sealed WebSocket proof signs the exact Engine.IO path, including its trailing
 slash. A strict receiver is not relaxed to accept a differently signed path.
 
+### LAN listener continuity
+
+The running Mac connection owner checks its current private IPv4 interface set
+every three seconds. Only an interface change or a missing owned listener triggers
+local reconciliation. Existing listeners on retained interfaces keep their URLs
+and ports; removed interfaces are closed and omitted from the authenticated
+manifest, and new interfaces receive new owned listeners. Local reconciliation
+does not restart the daemon, account, Cloudflare/Relay tunnels or original desktop
+owners. An unavailable local bind is retried while the channel remains enabled.
+Disable and shutdown cancel late refresh results and close their listeners.
+
+Changed channels are published through the existing Mac channel events and sealed
+`/api/peer/channels` response. A phone can recover through any surviving paired
+channel, prove the new same-peer candidate and retain its credential/cache/command
+identity. If every previously known route is unreachable, same-peer USB bootstrap
+or a new location scan is still required; no new account or key is a recovery step.
+Acceptance changes the live interface inventory without restarting the connection
+service and verifies retained ports, retired sockets, fresh proof on new routes,
+same peer identity and fallback from an occupied saved port.
+
+The Mac connection owner saves the actual listener port for each currently bound
+private IPv4 interface in private `lan-listeners.json`. The file is a bounded
+port hint for the same profile, not an authentication or routing authority. On
+restart or a local-channel re-enable, the owner first tries that host's saved
+port so a paired phone can authenticate and reconnect through its existing URL.
+Invalid state is ignored; public, loopback and absent interfaces are never bound
+or advertised from saved data. At most three current private hosts are used.
+
+If another process owns the saved port, CodeLight binds a new available port and
+publishes the new authenticated channel manifest. It never dials, trusts or
+proxies the occupying process. Cancellation closes late listeners, and a failed
+state write does not retire a working entry. Saved ports contain no account,
+device, invitation or credential data. Existing device proof, peer identity and
+unknown-operation receipt rules are unchanged.
+
+## Desktop connection recovery and cleanup
+
+The connection owner retries a failed enabled transport without requiring a
+checkbox change or restarting the desktop service. Each kind owns at most one
+retry timer and one candidate; startup failures use exponential delays from one
+to thirty seconds. Disable, explicit replacement and shutdown cancel that kind's
+queued recovery. A successful ready proof resets its delay. A stopped Cloudflare
+process retires its dead route before a new owned process can publish a URL;
+local probe failure on a still-running tunnel retains an unverified candidate.
+Retries establish network routes only, with the existing signing identity. They
+never load native histories, replay HTTP/WS streams, or resubmit commands.
+
+Concurrent Relay replacements fence both configuration and reconnect suspension.
+A superseded candidate cannot resume the old same-server route while a newer
+candidate still requires it paused. Failed replacement retains the old saved
+configuration; a replacement is committed only after the existing entry proof.
+Reaffirming the current working configuration cancels an older pending replacement
+instead of letting that older intent overwrite the user's latest choice.
+
+A transport generation owns one current read-only reconnect probe. Another
+connection event, disconnect, paired confirmation, disable or close cancels its
+previous probe. Synchronous probe failures are contained as unavailable proof,
+and a late result cannot promote a superseded or disconnected generation.
+
+Repeated close calls await the same cleanup flight. Cloudflare shutdown clears
+its grace deadline when the owned child exits; no losing deadline may keep the
+service event loop alive. A child that exceeds the five-second SIGTERM grace
+period is killed and its exit is awaited. Failed spawn has no live child to wait
+for. Closing an owned LAN socket
+withdraws that socket's route immediately, retaining other listeners and the
+stable peer identity; the existing interface watcher then repairs missing binds.
+No route may be advertised after its owned listener is closed.
+
+LAN binding requires a syntactically valid numeric private IPv4 address matching
+the reported family. Hostnames, abbreviated/empty IPv4 components, IPv6 rows and
+loopback are excluded before binding, even if a malformed interface record
+claims IPv4. IPv6-only networks continue through proven public channels; this
+change does not advertise unverified IPv6 LAN support. Saved port hints are read
+through a single no-follow file descriptor, checked as a private owned regular
+file and limited to 4 KiB even if it grows during the read. Invalid hints remain
+optional and cannot prevent a new owned listener.
+
+Acceptance uses isolated connection helpers, local HTTP/WS listeners and
+explicitly synthetic tunnel/upstream fixtures. It covers failed startup,
+Cloudflare process loss, overlapping replacement, cancelled/stale reconnect
+proofs, concurrent cleanup, live listener retirement, address validation and
+bounded port-hint reads. It does not exercise original desktop model actions or
+replace the paired proof and original operation-receipt acceptance.
+
 ## Embedded mirror shutdown and recovery
 
 The embedded PGlite process owns its database. Shutdown drains the Prisma client
@@ -75,12 +159,15 @@ the question banner. It remains reachable while reading older history, with no
 floating global overlay over the header or pending question. Its independent
 subscription does not invalidate the message list or regroup the directory.
 All Sync account/machine/settings/profile HTTP requests use the peer-aware
-transport on v2 connections; ordinary LAN requests must not bypass its sealed
-authorization by sending a raw reusable bearer token.
+transport on v2 connections. Every client-facing gateway, including Cloudflare
+and Relay, requires a sealed device proof for authenticated HTTP requests and
+WebSocket upgrades. Legacy raw bearer tokens are no longer accepted, even when
+the token belongs to an approved device; missing or invalid proof verification
+fails closed. Legacy phones must upgrade and pair through the v2 flow.
 
 Local HTTP must retain encrypted content and must not send reusable bearer
 tokens in cleartext. V2 phones retain their device box key in native secure
-storage and use key-bound, short-lived sealed authorization for local requests.
+storage and use key-bound, short-lived sealed authorization for every channel.
 The Mac validates nonce/time/request scope and approved-device identity, then
 supplies its backend token only on the owned loopback link. Public channels keep
 HTTPS/WSS certificate validation. Device revocation applies across all entries.

@@ -1,6 +1,7 @@
 import * as z from 'zod';
 import { isCuid } from '@paralleldrive/cuid2';
 import { stripLeadingTaskNotificationWrappers } from '@slopus/happy-wire';
+import { isNativeToolInput, type NativeToolInput } from '@slopus/happy-wire/codelight';
 import { MessageMetaSchema, MessageMeta } from './typesMessageMeta';
 
 //
@@ -19,6 +20,19 @@ const usageDataSchema = z.object({
 
 export type UsageData = z.infer<typeof usageDataSchema>;
 
+// 原生图片只投影已绑定附件参数；不会将原 owner 的任意工具输入扩展到手机。
+export const NativeFileArgumentsSchema = z.union([z.object({ nativeImageId: z.string().min(1), name: z.string() }), z.object({
+    ref: z.string().min(1), name: z.string(), size: z.number().nonnegative().optional(),
+    mimeType: z.string().max(128).optional(),
+    image: z.object({ width: z.number().positive(), height: z.number().positive(), thumbhash: z.string().optional() }).optional(),
+})]);
+export type NativeFileArguments = z.infer<typeof NativeFileArgumentsSchema>;
+export const NativeToolInputSchema = z.custom<NativeToolInput>(isNativeToolInput, 'Invalid bounded native tool input');
+const NativeRowToolSchema = z.object({
+    id: z.string(), name: z.string().optional(), output: z.string(), status: z.string(),
+    arguments: NativeFileArgumentsSchema.optional(), input: NativeToolInputSchema.optional(), inputUnavailable: z.boolean().optional(),
+}).refine(tool => tool.name !== 'file' || tool.input === undefined, 'File attachment markers cannot use ordinary tool input');
+
 const agentEventSchema = z.discriminatedUnion('type', [z.object({
     type: z.literal('native-row-upsert'),
     sourceRowId: z.string().min(1),
@@ -30,7 +44,7 @@ const agentEventSchema = z.discriminatedUnion('type', [z.object({
     ownerGeneration: z.string().optional(),
     replaceIds: z.array(z.string()),
     replaceSourceRowIds: z.array(z.string().min(1)).optional(),
-    tools: z.array(z.object({ id: z.string(), name: z.string().optional(), output: z.string(), status: z.string() })).optional(),
+    tools: z.array(NativeRowToolSchema).optional(),
 }), z.object({
     type: z.literal('switch'),
     mode: z.enum(['local', 'remote'])
@@ -48,6 +62,9 @@ const agentEventSchema = z.discriminatedUnion('type', [z.object({
     // the reducer to settle the pending message; never rendered as a row.
     type: z.literal('user-message-accepted'),
     ref: z.string(),
+    runId: z.string().nullable().optional(),
+    nativeMessageId: z.string().min(1).max(512).optional(),
+    disposition: z.enum(['queued', 'admitted']).optional(),
 }), z.object({
     type: z.literal('user-message-rejected'),
     ref: z.string(),
@@ -81,7 +98,7 @@ const sessionNativeRowUpsertSchema = z.object({
     ownerGeneration: z.string().optional(),
     replaceIds: z.array(z.string()),
     replaceSourceRowIds: z.array(z.string().min(1)).optional(),
-    tools: z.array(z.object({ id: z.string(), name: z.string().optional(), output: z.string(), status: z.string() })).optional(),
+    tools: z.array(NativeRowToolSchema).optional(),
 });
 
 const sessionToolCallStartEventSchema = z.object({
@@ -105,6 +122,7 @@ const sessionFileEventSchema = z.object({
     ref: z.string(),
     name: z.string(),
     size: z.number(),
+    mimeType: z.string().max(128).optional(),
     image: z.object({
         width: z.number(),
         height: z.number(),
@@ -141,8 +159,10 @@ const sessionUserMessageAcceptedEventSchema = z.object({
     t: z.literal('user-message-accepted'),
     id: z.string(),
     ref: z.string(),
-    runId: z.string(),
-});
+    runId: z.string().nullable(),
+    nativeMessageId: z.string().min(1).max(512).optional(),
+    disposition: z.enum(['queued', 'admitted']).optional(),
+}).refine(value => value.runId !== null || !!value.nativeMessageId && value.disposition !== undefined);
 
 const sessionUserMessageRejectedEventSchema = z.object({
     t: z.literal('user-message-rejected'),
@@ -685,7 +705,9 @@ function normalizeSessionEnvelope(
             createdAt: messageCreatedAt,
             role: 'event',
             isSidechain: false,
-            content: { type: 'user-message-accepted', ref: envelope.ev.ref },
+            content: { type: 'user-message-accepted', ref: envelope.ev.ref,
+                ...(envelope.ev.nativeMessageId ? { runId: envelope.ev.runId, nativeMessageId: envelope.ev.nativeMessageId,
+                    ...(envelope.ev.disposition ? { disposition: envelope.ev.disposition } : {}) } : {}) },
             meta
         } satisfies NormalizedMessage;
     }
@@ -872,6 +894,7 @@ function normalizeSessionEnvelope(
                         ref: envelope.ev.ref,
                         name: envelope.ev.name,
                         size: envelope.ev.size,
+                        ...(envelope.ev.mimeType ? { mimeType: envelope.ev.mimeType } : {}),
                         ...maybeImageMetadata
                     },
                     description: envelope.ev.image

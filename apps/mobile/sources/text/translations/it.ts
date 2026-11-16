@@ -15,12 +15,18 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
  * Must match the exact structure of the English translations
  */
 export const it: TranslationStructure = {
+    codeLightHandoff: {
+        action: "Passa a…",
+        noTargets: "Nessun’altra sessione desktop connessa su questo Mac.",
+        unavailable: "La sessione di origine o destinazione non è più disponibile.",
+    },
+
     codeLightSetup: {
         createFailed: "Impossibile configurare la connessione. Verifica la connessione al Mac e riprova.",
         storageFailed: "Impossibile salvare la connessione in modo sicuro. Controlla lo spazio sul dispositivo e riprova.",
         reloadFailed: "Chiudi e riapri CodeLight per connetterti con le impostazioni salvate.",
         pairFailed: "Questo link di abbinamento non è disponibile. Scansiona un nuovo codice QR mostrato in CodeLight sul Mac.",
-        macHelp: "Apri CodeLight sul Mac e lascia in esecuzione le sessioni Codex esistenti.",
+        macHelp: "Apri CodeLight sul Mac e lascia in esecuzione le sessioni Codex / Antigravity / Claude Desktop esistenti.",
         helpBody: "Apri CodeLight sul Mac e lascialo in esecuzione. Scansiona il suo codice QR con questo telefono. Se cambia l’indirizzo della connessione, aggiorna e scansiona il nuovo codice. Non servono registrazione o VPN.",
     },
 
@@ -33,23 +39,26 @@ export const it: TranslationStructure = {
         network: "Impossibile connettersi al Mac. Lascia CodeLight in esecuzione e riprova.",
     },
 
+    codeLightCommands: { modelMenu: 'Usa il pulsante del modello accanto al campo di testo per scegliere il modello della sessione.', unsupported: "Questo comando dell’app non è disponibile in CodeLight. La bozza è stata conservata.", busy: "Questa sessione è occupata. La bozza è stata conservata.", unconfirmed: "Il risultato del comando non è confermato. Controlla il risultato." },
     codeLightModels: {
+        nextMessage: 'Messaggio successivo',
         default: "Predefinito",
         check: "Verifica impostazioni",
         saving: "Aggiornamento delle impostazioni del modello sul Mac…",
-        failed: "Le impostazioni sono cambiate o non sono state aggiornate. Verifica la scelta attuale e seleziona di nuovo.",
-        unconfirmed: "Aggiornamento non confermato. Verifica delle impostazioni originali; non ripetere la modifica.",
+        readFailed: "Impossibile leggere le impostazioni del modello. Controlla la connessione al Mac.",
+        failed: "Impossibile aggiornare il modello. Controlla la scelta attuale.",
+        unconfirmed: "La modifica non è confermata. Controlla il risultato senza ripeterla.",
     },
 
     codeLightChannels: {
         title: "Connessione",
         automatic: "Automatica",
-        automaticDetail: "Usa una connessione disponibile e verificata.",
+        automaticDetail: "Controlla le connessioni salvate e connettiti a questo Mac.",
         local: "Rete locale",
         cloudflare: "Cloudflare",
         relay: "Relay",
         connected: "Connesso",
-        available: "Disponibile",
+        available: "Salvata",
         probing: "Verifica",
         failed: "Non disponibile",
         switching: "Connessione…",
@@ -57,16 +66,24 @@ export const it: TranslationStructure = {
         current: "Percorso attuale",
         latency: ({ ms }: { ms: number }) => "{ms} ms".replace("{ms}", String(ms)),
         latencyUnknown: "Latenza sconosciuta",
-        switchFailed: "Impossibile cambiare connessione. Il percorso attuale rimane invariato.",
+        switchFailed: "Connessione non riuscita. La scelta precedente è stata conservata.",
+        connectingTitle: "Connessione al Mac…",
+        failedTitle: "Impossibile connettersi al Mac",
+        failedHelp: "Apri CodeLight sul Mac e controlla la rete. Riprova o scegli un’altra connessione.",
+        accessEndedTitle: "Connessione al Mac non verificata",
+        accessEndedHelp: "Scansiona il codice QR attuale in CodeLight su quel Mac. Messaggi e bozze salvati vengono conservati.",
+        retryConnection: "Riprova connessione",
+        scanMac: "Scansiona codice Mac",
     },
 
     codeLightLoading: {
-        titles: "Caricamento dei titoli delle sessioni Codex…",
-        discovered: ({ count }: { count: number }) => "Sessioni Codex trovate: {count} · caricamento in corso…".replace("{count}", String(count)),
-        messages: "Sincronizzazione della sessione…",
+        titles: "Caricamento delle sessioni Codex, Antigravity e Claude Desktop…",
+        discovered: ({ count }: { count: number }) => "{count} elementi caricati · caricamento in corso…".replace("{count}", String(count)),
+        messages: "Caricamento di questa sessione…",
         older: "Caricamento dei messaggi precedenti…",
-        failed: "Impossibile completare la sincronizzazione. Riprova per continuare.",
-        empty: "Nessuna sessione Codex trovata su questo Mac.",
+        unavailable: "Non disponibile",
+        failed: "Impossibile aggiornare le sessioni. Riprova per continuare.",
+        empty: "Non ci sono sessioni Codex, Antigravity o Claude Desktop disponibili su questo Mac.",
     },
 
     codeLightProjects: {
@@ -89,10 +106,10 @@ export const it: TranslationStructure = {
     },
 
     sourceBridge: {
-        deliveryUnconfirmed: "Consegna non confermata. Verifica della sessione Codex originale; non inviare di nuovo.",
-        waiting: "In attesa della sessione Codex originale sul computer.",
+        deliveryUnconfirmed: "Consegna non confermata. Verifica della sessione originale; non inviare di nuovo.",
+        waiting: "In attesa della sessione desktop originale.",
         openDesktop: "Apri sul computer",
-        openFailed: "Impossibile aprire la sessione Codex originale. Verifica che Codex sia in esecuzione.",
+        openFailed: "Impossibile aprire la sessione originale. Verifica che la relativa app desktop sia in esecuzione.",
     },
 
     voiceStatusBar: {
@@ -209,7 +226,7 @@ export const it: TranslationStructure = {
         developer: 'Sviluppatore',
         developerTools: 'Strumenti sviluppatore',
         about: 'Informazioni',
-        aboutFooter: "CodeLight collega il telefono alle sessioni Codex esistenti sul computer con sincronizzazione cifrata end-to-end.",
+        aboutFooter: "CodeLight si connette alle sessioni Codex, Antigravity e Claude Desktop sul Mac. Claude Desktop usa Gateway; le azioni disponibili dipendono dalla sessione.",
         whatsNew: 'Novità',
         whatsNewSubtitle: 'Scopri gli ultimi aggiornamenti e miglioramenti',
         reportIssue: 'Segnala un problema',
@@ -955,14 +972,14 @@ export const it: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
-        headline: "Le tue sessioni Codex,\novunque tu sia",
+        headline: "Le tue sessioni Codex / Antigravity / Claude Desktop,\novunque tu sia",
         propEncrypted: "Cifratura end-to-end",
         propNoPassword: "Senza registrazione o VPN",
         propOpenSource: "Open source, licenza MIT",
         linkTitle: "Connetti il tuo Mac",
         installStep: "Apri CodeLight sul Mac",
-        openStep: "Lascia le sessioni Codex in esecuzione",
-        openBody: "Apri CodeLight sul Mac e lascia Codex in esecuzione. In CodeLight apparirà un codice QR per l’abbinamento.",
+        openStep: "Lascia le sessioni Codex / Antigravity / Claude Desktop in esecuzione",
+        openBody: "Apri CodeLight sul Mac e lascia Codex / Antigravity / Claude Desktop in esecuzione. In CodeLight apparirà un codice QR per l’abbinamento.",
         scanStep: "Scansiona il codice QR",
         scanButton: "Scansiona codice QR",
         pasteLink: "Non riesci a scansionare? Incolla il link",
@@ -985,8 +1002,8 @@ export const it: TranslationStructure = {
 
     welcome: {
         // Main welcome screen for unauthenticated users
-        title: "Codex sul tuo telefono",
-        subtitle: "Connettiti alle sessioni Codex esistenti sul computer con cifratura end-to-end.",
+        title: "Codex / Antigravity / Claude Desktop sul tuo telefono",
+        subtitle: "Connettiti alle sessioni Codex / Antigravity / Claude Desktop esistenti sul computer con cifratura end-to-end.",
         createAccount: 'Crea account',
         linkOrRestoreAccount: 'Collega o ripristina account',
         loginWithMobileApp: 'Accedi con l\'app mobile',
@@ -1203,6 +1220,8 @@ export const it: TranslationStructure = {
     },
 
     imagePreview: {
+        download: "Scarica immagine",
+        downloadFailed: "Impossibile salvare l’immagine. Riprova.",
         open: 'Apri immagine',
         close: 'Chiudi immagine',
         zoomIn: 'Ingrandisci',

@@ -10,6 +10,7 @@ import nacl from 'tweetnacl';
 import WebSocket, { WebSocketServer } from 'ws';
 import { GatewayMetrics } from '../src/happy/gateway-metrics.mjs';
 import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
+import { gatewayProof } from './fixtures/gateway-proof.mjs';
 
 /** @typedef {Record<string,any>} Value */
 class CounterSocket extends EventEmitter {
@@ -132,12 +133,13 @@ test('real owned HTTP and upgraded WebSocket sockets count interface bytes once 
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
   const upstreamAddress = upstream.address(); assert.ok(upstreamAddress && typeof upstreamAddress !== 'string');
   const metrics = new GatewayMetrics(), invitations = new PairingInvitations({ key: nacl.randomBytes(32), credentials: {} });
-  const gateway = createPairingGateway({ upstream: `http://127.0.0.1:${upstreamAddress.port}`, invitations, metrics });
+  const device = gatewayProof(invitations);
+  const gateway = createPairingGateway({ upstream: `http://127.0.0.1:${upstreamAddress.port}`, invitations, metrics, proof: device.proof });
   const owned = /** @type {import('node:net').Socket[]} */ ([]), clients = /** @type {import('node:net').Socket[]} */ ([]);
   gateway.on('connection', socket => owned.push(socket));
   gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
   const local = gateway.address(); assert.ok(local && typeof local !== 'string');
-  const ws = new WebSocket(`ws://127.0.0.1:${local.port}/v1/updates`);
+  const ws = new WebSocket(`ws://127.0.0.1:${local.port}/v1/updates`, { headers: device.headers('/v1/updates') });
   t.after(async () => {
     ws.terminate(); for (const socket of clients) socket.destroy(); gateway.closeAllConnections();
     await new Promise(resolve => gateway.close(resolve)); wss.close(); upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve));
@@ -147,7 +149,7 @@ test('real owned HTTP and upgraded WebSocket sockets count interface bytes once 
   const http = async body => {
     const socket = createConnection({ host: '127.0.0.1', port: local.port }); clients.push(socket); socket.resume();
     await once(socket, 'connect');
-    socket.write(`POST /echo HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+    socket.write(`POST /echo HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\nAuthorization: ${device.headers('/echo', 'POST').Authorization}\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
     await once(socket, 'close');
   };
   await Promise.all([http('PRIVATE_FIXTURE_BODY'.repeat(20)), http('another fixture body'), once(ws, 'open')]);

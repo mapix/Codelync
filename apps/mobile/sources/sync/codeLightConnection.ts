@@ -5,11 +5,12 @@ import { commitPeerServerUrl } from './serverConfig';
 import { peerAuthorization, decodePeerResponse } from './peerNetwork';
 import { abortBudget } from './abortBudget';
 
-export type ConnectionSnapshot = { peerId:string|null; channels:Array<PeerChannel & {state:'connected'|'available'|'probing'|'failed';latencyMs?:number}>; selectedId:string|null;automatic:boolean;connecting:boolean };
+export type ConnectionSnapshot = { peerId:string|null; channels:Array<PeerChannel & {state:'connected'|'available'|'probing'|'failed';latencyMs?:number}>; selectedId:string|null;automatic:boolean;connecting:boolean; failureCode?:'connection-failed'|'access-ended'|null };
 let snapshot: ConnectionSnapshot = { peerId:null, channels:[], selectedId:null, automatic:true, connecting:false };
 let credentials: AuthCredentials | null = null, generation = 0;
 let probing: AbortController | null = null, releaseStatus: (()=>void)|null = null;
 let committing = false;
+let selection: { value:AuthCredentials; id:string; promise:Promise<void> } | null = null;
 const listeners = new Set<()=>void>();
 export function getConnectionSnapshot() { return snapshot; }
 export function subscribeConnection(listener:()=>void) { listeners.add(listener); return ()=>{listeners.delete(listener);}; }
@@ -23,7 +24,7 @@ export function initializeCodeLightConnection(value:AuthCredentials) {
     releaseStatus?.();
     releaseStatus=apiSocket.onStatusChange(status=>{
         if (!credentials?.peer || snapshot.connecting) return;
-        if(status==='connected')publish({...snapshot,channels:snapshot.channels.map(channel=>({...channel,state:channel.id===snapshot.selectedId?'connected':channel.state}))});
+        if(status==='connected')publish({...snapshot,failureCode:null,channels:snapshot.channels.map(channel=>({...channel,state:channel.id===snapshot.selectedId?'connected':channel.state}))});
         else publish({...snapshot,channels:snapshot.channels.map(channel=>channel.id===snapshot.selectedId?{...channel,state:status==='connecting'?'probing':apiSocket.peerCanReconnect()?'failed':'available'}:channel)});
         // 冷启动用过期地址只会 connect_error，不会先 disconnect；恢复也必须覆盖这个入口。
         if((status==='disconnected'||status==='error')&&snapshot.automatic&&apiSocket.peerCanReconnect())void selectConnection('auto').catch(()=>{});
@@ -35,7 +36,7 @@ async function prove(channel:PeerChannel,value:AuthCredentials,signal:AbortSigna
     const deadline=abortBudget(signal,channel.kind==='local'?2500:7000);
     try {
     const response=await fetch(url,{headers:{Authorization:peerAuthorization(value.token,peer,channel.url,'GET',url)},signal:deadline.signal});
-    if(!response.ok)throw Error('The channel could not reach this Mac');
+    if(!response.ok)throw Object.assign(Error('The channel could not reach this Mac'), { connectionFailure: response.status === 401 || response.status === 403 ? 'access-ended' : 'connection-failed' });
     const data=decodePeerResponse(peer,await response.json()) as {channels:unknown};
     const channels=channelList(data.channels);
     if(!channels.some(current=>current.url===channel.url))throw Error('The Mac has disabled this channel');
@@ -43,13 +44,28 @@ async function prove(channel:PeerChannel,value:AuthCredentials,signal:AbortSigna
     } finally { deadline.dispose(); }
 }
 
-export async function selectConnection(id:string) {
+export function selectConnection(id:string):Promise<void> {
+    const value=credentials;
+    if(selection?.value===value&&selection.id===id)return selection.promise;
+    if(!value?.peer)return Promise.reject(Error('Scan your Mac to get connection channels'));
+    const entry={value,id,promise:Promise.resolve()};
+    entry.promise=performSelection(id).finally(()=>{if(selection===entry)selection=null;});
+    selection=entry;return entry.promise;
+}
+
+export function retryCodeLightConnection():Promise<void> {
+    if(!snapshot.peerId)return Promise.reject(Error('The saved Mac connection is unavailable'));
+    const id=snapshot.automatic?'auto':snapshot.selectedId;
+    return id?selectConnection(id):Promise.reject(Error('Choose a saved connection first'));
+}
+
+async function performSelection(id:string) {
     if(committing)throw Error('The connection choice is being saved');
     const value=credentials;if(!value?.peer)throw Error('Scan your Mac to get connection channels');
     const sequence=++generation;probing?.abort();const abort=new AbortController();probing=abort;
     const automatic=id==='auto',candidates=automatic?value.peer.channels:value.peer.channels.filter(channel=>channel.id===id);
     if(!candidates.length)throw Error('This channel is unavailable');
-    publish({...snapshot,connecting:true,channels:snapshot.channels.map(channel=>candidates.some(candidate=>candidate.id===channel.id)?{...channel,state:'probing'}:channel)});
+    publish({...snapshot,connecting:true,failureCode:null,channels:snapshot.channels.map(channel=>candidates.some(candidate=>candidate.id===channel.id)?{...channel,state:'probing'}:channel)});
     try {
         const first=automatic?await Promise.any(candidates.map(channel=>prove(channel,value,abort.signal))):await prove(candidates[0],value,abort.signal);
         // HTTP 能认证 Mac，却不能证明实时链路可用。保留其最新列表，失败后验证重启后的 LAN 等候选。
@@ -63,9 +79,10 @@ export async function selectConnection(id:string) {
                 const peer={...value.peer,channels:result.channels,selectedChannel:result.channel.id,automatic};
                 const updated={...value,serverUrl:result.channel.url,peer};
                 if(!await TokenStorage.setCredentials(updated))throw Error('The connection choice could not be saved');
+                if(sequence!==generation||credentials!==value)throw Error('A newer channel selection replaced this one');
                 commitPeerServerUrl(result.channel.url);
                 await apiSocket.switchPeerChannel(result.channel.url,peer);
-                if(sequence!==generation)throw Error('A newer channel selection replaced this one');
+                if(sequence!==generation||credentials!==value||!apiSocket.peerConnected())throw Error('The live Mac connection is unavailable');
                 credentials=updated;
                 publish({peerId:peer.id,selectedId:result.channel.id,automatic,connecting:false,channels:peer.channels.map(channel=>({...channel,state:channel.id===result.channel.id?'connected':'available',...(channel.id===result.channel.id?{latencyMs:result.latencyMs}:{})}))});
                 return;
@@ -74,11 +91,13 @@ export async function selectConnection(id:string) {
             }
         }
     } catch(error) {
-        if(committing&&credentials===value&&value.serverUrl&&value.peer){
+        if(sequence===generation&&committing&&credentials===value&&value.serverUrl&&value.peer){
             await TokenStorage.setCredentials(value);commitPeerServerUrl(value.serverUrl);
             await apiSocket.switchPeerChannel(value.serverUrl,value.peer).catch(()=>{});
         }
-        if(sequence===generation)publish({...snapshot,connecting:false,channels:snapshot.channels.map(channel=>channel.state==='probing'?{...channel,state:channel.id===snapshot.selectedId&&apiSocket.peerConnected()?'connected':'failed'}:channel)});
+        const failures=error instanceof AggregateError?error.errors:[error];
+        const accessEnded=failures.length>0&&failures.every(failure=>(failure as {connectionFailure?:string})?.connectionFailure==='access-ended');
+        if(sequence===generation&&credentials===value)publish({...snapshot,connecting:false,failureCode:accessEnded?'access-ended':'connection-failed',channels:snapshot.channels.map(channel=>channel.state==='probing'?{...channel,state:channel.id===snapshot.selectedId&&apiSocket.peerConnected()?'connected':'failed'}:channel)});
         throw error;
-    } finally { abort.abort();committing=false;if(probing===abort)probing=null; }
+    } finally { abort.abort();if(sequence===generation)committing=false;if(probing===abort)probing=null; }
 }

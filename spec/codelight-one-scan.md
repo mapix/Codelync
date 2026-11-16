@@ -11,7 +11,7 @@
 
 The user wants to open a local CodeLight Mac App and scan its QR code from the native phone app. The phone must not ask for registration, account creation, server selection, setup checkboxes, VPN installation, or VPN permissions. Camera permission is the operating system's normal first-use permission.
 
-The Mac App contains the local encrypted sync API, CodeLight Connector, and Cloudflare Tunnel client. Only CodeLight HTTP/WebSocket traffic reaches that tunnel. The original Codex desktop continues to own its sessions and turns. The current distribution is Codex-only; other harnesses and window control are deferred, as defined in the [product contract](codelight-product.md).
+The Mac App contains the local encrypted sync API, CodeLight Connector, and Cloudflare Tunnel client. Only CodeLight HTTP/WebSocket traffic reaches that tunnel. The current distribution supports Codex, Antigravity Desktop and Claude Desktop (Gateway), whose original apps continue to own their sessions and turns. Available operations follow each source's confirmed capabilities. Standalone CLI/TUI families and window control remain deferred, as defined in the [product contract](codelight-product.md).
 
 The user explicitly deferred automatic reconnection. This iteration may use an anonymous Cloudflare Quick Tunnel. Its address can change after a Mac App restart; the phone then scans again. A fixed domain/named tunnel is a later option. Connectivity requires an online Mac and a network that can reach the tunnel service.
 

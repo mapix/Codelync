@@ -6,9 +6,12 @@ import { config } from '@/config';
 import { getServerUrl } from './serverConfig';
 import { apiSocket } from './apiSocket';
 import { abortBudget } from './abortBudget';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CodeLightPresenceSequence } from './codeLightPresenceSequence';
+const foregroundSequences = new CodeLightPresenceSequence(AsyncStorage);
 
-async function postDevice(credentials: AuthCredentials, path: string, value: unknown) {
-    const deadline = abortBudget(undefined, 5000);
+async function postDevice(credentials: AuthCredentials, path: string, value: unknown, signal?: AbortSignal) {
+    const deadline = abortBudget(signal, 5000);
     try {
     if (credentials.peer) {
         // 同一 Mac 的入口可改变，前台保活不能继续使用旧地址/Bearer，否则可见会话会被误回收。
@@ -37,15 +40,35 @@ export async function syncCodeLightPushToken(credentials: AuthCredentials, grant
     return result.registered && result.available ? token : null;
 }
 let presenceStop: (() => void) | null = null;
+let presenceSend: (() => void) | null = null;
+/** Session focus/re-entry renews the current viewer without waiting for a timer. */
+export function renewCodeLightPresence() { presenceSend?.(); }
 export function startCodeLightPresence(credentials: AuthCredentials, viewingSession: () => string | null, subscribe: (changed: () => void) => () => void) {
     presenceStop?.();
-    let closed = false, lastSession = viewingSession();
-    const send = () => { if (!closed) void postDevice(credentials, '/codelight/notifications/presence',
-        { active: AppState.currentState === 'active', sessionId: viewingSession() }).catch(() => {}); };
+    const cancellation = new AbortController();
+    let closed = false, running = false, dirty = false, lastSession = viewingSession();
+    const pump = async () => {
+        if (closed || running) return;
+        running = true;
+        try {
+            while (!closed && dirty) {
+                dirty = false;
+                try {
+                    const scope = credentials.peer ? 'peer:' + credentials.peer.id : 'origin:' + (credentials.serverUrl ?? getServerUrl());
+                    const sequence = await foregroundSequences.next(scope);
+                    if (closed) break;
+                    const value = { active: AppState.currentState === 'active', sessionId: viewingSession(), sequence };
+                    await postDevice(credentials, '/codelight/notifications/presence', value, cancellation.signal);
+                } catch { /* A failed scope/sequence cannot send an unordered stale viewer. */ }
+            }
+        } finally { running = false; }
+    };
+    const send = () => { if (!closed) { dirty = true; void pump(); } };
+    presenceSend = send;
     const appState = AppState.addEventListener('change', send);
     const release = subscribe(() => { const next = viewingSession(); if (next !== lastSession) { lastSession = next; send(); } });
     const timer = setInterval(() => { if (AppState.currentState === 'active') send(); }, 15000);
-    presenceStop = () => { closed = true; clearInterval(timer); appState.remove(); release(); };
+    presenceStop = () => { closed = true; dirty = false; cancellation.abort(); clearInterval(timer); appState.remove(); release(); if (presenceSend === send) presenceSend = null; };
     send();
     return presenceStop;
 }

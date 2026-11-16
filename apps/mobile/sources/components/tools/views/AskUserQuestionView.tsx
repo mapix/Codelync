@@ -1,6 +1,9 @@
 import * as React from 'react';
 
 import { sessionAllow } from '@/sync/ops';
+import { storage, useSession, useSocketStatus } from '@/sync/storage';
+import { apiSocket } from '@/sync/apiSocket';
+import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 import { ToolViewProps } from './_all';
 import {
     InlineQuestionForm,
@@ -17,7 +20,9 @@ interface AskUserQuestionInput {
     }>;
 }
 
-export const AskUserQuestionView = React.memo<ToolViewProps>(({ tool, sessionId }) => {
+export const AskUserQuestionView = React.memo<ToolViewProps>(({ tool, sessionId, metadata }) => {
+    const session = useSession(sessionId ?? ''), sourceMetadata = session?.metadata ?? metadata;
+    const writesBlocked = nativeWriteConnectionBlocked(sourceMetadata, useSocketStatus().status === 'connected');
     const input = tool.input as AskUserQuestionInput | undefined;
     const questions = React.useMemo<InlineQuestion[]>(() => (
         (input?.questions ?? []).map((question, index) => ({
@@ -29,6 +34,7 @@ export const AskUserQuestionView = React.memo<ToolViewProps>(({ tool, sessionId 
 
     const handleSubmit = React.useCallback(async (answers: InlineQuestionAnswers) => {
         if (!sessionId || !tool.permission?.id) return;
+        if (nativeWriteConnectionBlocked(storage.getState().sessions[sessionId]?.metadata ?? sourceMetadata, apiSocket.peerConnected())) throw Object.assign(Error('The connection is unavailable'), { effectMayHaveOccurred: false });
 
         const providerAnswers: Record<string, string> = {};
         questions.forEach((question, index) => {
@@ -49,14 +55,14 @@ export const AskUserQuestionView = React.memo<ToolViewProps>(({ tool, sessionId 
             'approved',
             { answers: providerAnswers },
         );
-    }, [input?.questions, questions, sessionId, tool.permission?.id]);
+    }, [input?.questions, questions, sessionId, tool.permission?.id, sourceMetadata]);
 
     if (questions.length === 0) return null;
 
     return (
         <InlineQuestionForm
             questions={questions}
-            canInteract={tool.state === 'running'}
+            canInteract={tool.state === 'running' && !writesBlocked}
             submittedAnswers={tool.state === 'completed' ? {} : undefined}
             onSubmit={handleSubmit}
         />
