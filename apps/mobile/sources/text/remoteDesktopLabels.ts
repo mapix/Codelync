@@ -15,6 +15,7 @@ const en = {
     locked: 'Unlock your Mac to connect.', failed: 'Desktop connection failed. Check the media relay on your Mac.',
     inUse: 'Another desktop connection is active. End it first.', changed: 'The display or connection changed. Connect again.',
     uncertain: 'The action result is unconfirmed. Check the desktop before repeating it.',
+    viewChanged: 'The desktop picture changed. Wait for the latest picture before continuing.',
     inputBusy: 'Too many inputs are waiting. Reconnect to control your Mac.',
 };
 const zh = {
@@ -30,6 +31,7 @@ const zh = {
     permission: '请在 Mac 上允许屏幕录制。', inputPermission: '请在 Mac 上允许辅助功能以进行控制。', locked: '请先解锁 Mac。',
     failed: '桌面连接失败，请检查 Mac 上的媒体 Relay。', inUse: '已有桌面连接，请先断开。', changed: '显示器或连接已变化，请重新连接。',
     uncertain: '操作结果待确认，请查看桌面后再决定是否重复操作。',
+    viewChanged: '桌面画面已变化，请等待最新画面后继续。',
     inputBusy: '输入等待过多，请重新连接。',
 };
 export function remoteDesktopLabels() { return getCurrentLanguage().startsWith('zh') ? zh : en; }
@@ -41,6 +43,7 @@ export function remoteDesktopError(code: string) {
     if (code === 'desktop-locked') return labels.locked;
     if (code === 'desktop-in-use') return labels.inUse;
     if (code === 'desktop-operation-unknown') return labels.uncertain;
+    if (code === 'desktop-view-changed') return labels.viewChanged;
     if (code === 'desktop-input-busy') return labels.inputBusy;
     if (code === 'desktop-space-unconfirmed') return labels.spaceUnconfirmed;
     if (['desktop-space-shortcut-disabled', 'desktop-space-shortcut-unavailable'].includes(code)) return labels.spaceShortcut;

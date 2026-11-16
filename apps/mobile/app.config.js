@@ -61,14 +61,14 @@ export default {
     expo: {
         name: localBridge ? 'CodeLight' : name,
         slug: localBridge ? 'codelight' : 'happy',
-        version: "1.9.1",
+        version: "1.9.2",
         runtimeVersion: localBridge ? 'codelight-22' : '21',
         orientation: "default",
         icon: localBridge ? './sources/assets/images/codelight-icon-v2.png' : './sources/assets/images/icon.png',
         scheme: localBridge ? 'codelight' : 'happy',
         userInterfaceStyle: "automatic",
         ios: {
-            ...(localBridge ? { buildNumber: '2026111701' } : {}),
+            ...(localBridge ? { buildNumber: '2026111702' } : {}),
             supportsTablet: true,
             bundleIdentifier: nativeBundleId,
             config: {

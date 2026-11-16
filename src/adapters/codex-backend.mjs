@@ -183,7 +183,10 @@ export class CodexBackend {
           timer: setTimeout(() => { cleanup(); reject(new BridgeError('codex-snapshot-timeout', 'No fresh owner snapshot arrived.', 504)); }, this.waitTimeoutMs) });
         waiters.add(waiter);
         // 真正发出只读请求后才接收快照；旧缓存和此前的在途帧不能满足显式刷新。
-        this.ipc.refreshSnapshot(id, () => { waiter.armed = true; }).catch(error => waiter.reject(error));
+        this.ipc.refreshSnapshot(id, () => {
+          waiter.owner = this.ipc.generation?.(id) ?? session.ownerGeneration;
+          waiter.armed = true;
+        }).catch(error => waiter.reject(error));
       });
     })().finally(() => { if (this.freshSnapshots.get(id) === operation) this.freshSnapshots.delete(id); this.release(session); });
     this.freshSnapshots.set(id, operation); return operation;

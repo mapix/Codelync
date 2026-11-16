@@ -19,6 +19,29 @@ pass a scan of its final signed bytes before publication.
 The phone interaction/layout contract is defined in
 [Mobile remote desktop experience](codelight-remote-desktop-mobile-experience.md).
 
+### Spaces confirmation and recovery
+
+While a Spaces operation is pending, the phone cannot confirm the old picture
+as ready or reinstall its input queue. A ready acknowledgment belongs to the
+exact starting connection, grant object, track and geometry; a later view change
+invalidates that acknowledgment even if a track identifier is reused. Only the
+current confirmed picture permits subsequent input or another Spaces action.
+An input queue retired by a Spaces, display or quality operation cannot change
+the current connection when one of its old requests later fails. Reserve input
+sequence numbers in order, but tolerate the resulting stale-request rejection
+without disconnecting the new view or replaying that old input.
+
+Spaces failure and unconfirmed-result explanations remain visible in the
+connection details after picture recovery. A successful readiness check does
+not erase them. Display/view changes are distinguished from an unavailable Mac.
+Unknown operations are not replayed to try to force a desktop transition.
+
+The native switch must use the intended display and an available system
+operation, then confirm the actual Spaces transition. Enabled default keyboard
+shortcuts are not assumed to be disabled because their explicit parameters are
+absent from the user's preferences. A posted shortcut alone is not proof that
+the desktop switched.
+
 - Remote desktop is independent of all integrations and defaults to disabled.
   Its media relay defaults to an owned local LiveKit server bundled with the Mac
   app. Users may configure an external LiveKit server with URL and API credentials.

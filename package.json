@@ -1,7 +1,7 @@
 {
   "name": "codelight",
-  "version": "0.7.1",
-  "codelightBuild": "2026111701",
+  "version": "0.7.2",
+  "codelightBuild": "2026111702",
   "private": true,
   "type": "module",
   "description": "CodeLight native mobile access to existing Codex, Antigravity Desktop and Claude Desktop Gateway sessions",

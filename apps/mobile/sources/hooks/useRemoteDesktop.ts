@@ -48,17 +48,18 @@ export function useRemoteDesktop() {
         } catch (failure) { if (live.current === active) { setError(errorCode(failure)); await disconnect(); } }
     }, [adoptView, disconnect]);
     const installInputQueue = React.useCallback((active: ActiveDesktop) => {
-        inputQueue.current = new DesktopInputQueue(async input => {
+        const queue = new DesktopInputQueue(async input => {
             if (live.current !== active) throw new DesktopRequestError('desktop-disconnected');
             const sequence = ++active.sequence;
             const receipt = await desktopRequest('input', { ...desktopBinding(active.grant), sequence, input }, active.peer);
             if (!desktopInputAcknowledged(receipt, sequence)) throw new DesktopRequestError('desktop-operation-unknown');
         }, failure => {
-            if (live.current !== active) return;
+            if (live.current !== active || inputQueue.current !== queue) return;
             if (['desktop-not-ready', 'desktop-view-changed'].includes(errorCode(failure))) {
                 inputQueue.current = null; setReady(false); void recoverView();
             } else { setError(errorCode(failure)); void disconnect(); }
         });
+        inputQueue.current = queue;
     }, [disconnect, recoverView]);
     const refresh = React.useCallback(async () => {
         const current = epoch.current;
@@ -130,9 +131,16 @@ export function useRemoteDesktop() {
     }, [grant, disconnect, adoptView]);
 
     const videoReady = React.useCallback(async (trackSid: string) => {
-        const active = live.current; if (!active || active.grant.trackSid !== trackSid) return false;
-        try { await desktopRequest('ready', { ...desktopBinding(active.grant), trackSid }, active.peer); if (live.current === active && active.grant.trackSid === trackSid) { if (!inputQueue.current) installInputQueue(active); setReady(true); setError(null); return true; } }
-        catch (failure) { if (live.current === active && !(failure instanceof DesktopRequestError && failure.code === 'desktop-not-ready')) setError(errorCode(failure)); }
+        const active = live.current; if (!active || requestPending.current || active.grant.trackSid !== trackSid) return false;
+        const startingGrant = active.grant, geometry = startingGrant.display.geometry;
+        const currentView = () => live.current === active && !requestPending.current && active.grant === startingGrant
+            && active.grant.trackSid === trackSid && active.grant.display.geometry === geometry;
+        try {
+            await desktopRequest('ready', { ...desktopBinding(startingGrant), trackSid }, active.peer);
+            if (currentView()) { if (!inputQueue.current) installInputQueue(active); setReady(true); setError(null); return true; }
+        } catch (failure) {
+            if (currentView() && !(failure instanceof DesktopRequestError && failure.code === 'desktop-not-ready')) setError(errorCode(failure));
+        }
         return false;
     }, [installInputQueue]);
     const input = React.useCallback(async (input: DesktopInput) => {
@@ -174,7 +182,7 @@ export function useRemoteDesktop() {
                 if (kind !== 'overview' && !result.spaceChanged) setNotice('desktop-space-unconfirmed');
             }
         } catch (failure) {
-            if (live.current === active) { setError(errorCode(failure)); await recoverView(); }
+            if (live.current === active) { setNotice(errorCode(failure)); setError(null); await recoverView(); }
         } finally { if (live.current === active) { requestPending.current = false; setBusy(false); } }
     }, [ready, adoptView, recoverView]);
     return { status, displays, grant, room, busy, closing, ready, error, notice, quality, connect, disconnect, refresh, input, changeQuality, switchDisplay, navigateSpace, videoReady };

@@ -1,5 +1,19 @@
 # Codex native desktop IPC adapter
 
+## Fresh read after owner reattachment
+
+A fresh-tail read binds its expected owner at the moment the verified read-only
+follower refresh is dispatched, after any needed connection and owner
+reattachment. An earlier cached owner cannot reject that newly confirmed
+owner's baseline. Cached views and frames received before this dispatch do not
+satisfy the fresh read. A further owner change after dispatch still rejects the
+read as `source-epoch-changed`.
+
+This rule only changes the fresh-read barrier. Older-history cursor ownership,
+native command `expectedGeneration`, unknown receipts and non-replay rules stay
+unchanged. A read refresh never launches a replacement runtime or sends input
+to the original session.
+
 ## Product and ownership rules
 
 The bridge connects to an already running desktop IPC router at

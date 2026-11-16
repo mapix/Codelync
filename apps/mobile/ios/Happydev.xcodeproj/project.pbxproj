@@ -410,7 +410,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Happydev/Happydev.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "$(SRCROOT)/../../../native/codelight-simulator.entitlements";
-				CURRENT_PROJECT_VERSION = 2026111701;
+				CURRENT_PROJECT_VERSION = 2026111702;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -422,7 +422,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.1;
+				MARKETING_VERSION = 1.9.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -447,7 +447,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Happydev/Happydev.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "$(SRCROOT)/../../../native/codelight-simulator.entitlements";
-				CURRENT_PROJECT_VERSION = 2026111701;
+				CURRENT_PROJECT_VERSION = 2026111702;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Happydev/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -455,7 +455,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.9.1;
+				MARKETING_VERSION = 1.9.2;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

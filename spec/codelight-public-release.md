@@ -103,7 +103,7 @@ Use the existing CodeLight brand and layout with compact Chinese and English
 copy. The primary action downloads only the currently verified public Mac
 release; its displayed version, bytes and SHA-256 come from that release's
 accepted, stapled and Gatekeeper-checked metadata. The integrated candidate is
-Mac 0.7.1/build 2026111701, paired with iPhone 1.9.1/build 2026111701. Publish its
+Mac 0.7.2/build 2026111702, paired with iPhone 1.9.2/build 2026111702. Publish its
 Mac download only after the current candidate's Apple Accepted result,
 stapling, Gatekeeper, artifact privacy and recorded phone acceptance gates.
 Until then retain the verified 0.6.1 metadata and download. Keep prior immutable
@@ -173,6 +173,12 @@ license text does not imply that every visitor can clone the repository. A publi
 Mac download does not change source-repository visibility.
 
 ## Mobile experience candidate — 2026-11-17
+
+The 0.7.2/1.9.2 candidate at build 2026111702 repairs Spaces input-queue and
+readiness handoff, retains navigation failure explanations, and binds fresh
+Codex reads after verified owner reattachment. Its own build and physical-phone
+acceptance are required; earlier 1701 acceptance was superseded by reported
+Spaces and current-session reading failures.
 
 The 0.7.1/1.9.1 candidate at build 2026111701 implements the
 [mobile remote desktop experience](codelight-remote-desktop-mobile-experience.md)
