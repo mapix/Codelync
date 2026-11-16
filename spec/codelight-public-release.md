@@ -102,13 +102,18 @@ sequenceDiagram
 Use the existing CodeLight brand and layout with compact Chinese and English
 copy. The primary action downloads only the currently verified public Mac
 release; its displayed version, bytes and SHA-256 come from that release's
-accepted, stapled and Gatekeeper-checked metadata. The integrated candidate is
-Mac 0.7.2/build 2026111702, paired with iPhone 1.9.2/build 2026111702. Publish its
-Mac download only after the current candidate's Apple Accepted result,
-stapling, Gatekeeper, artifact privacy and recorded phone acceptance gates.
-Until then retain the verified 0.6.1 metadata and download. Keep prior immutable
-0.5.8 and 0.6.1 downloads and checksums after the new release is published.
-The iPhone source build remains distinct from the public Mac download.
+accepted, stapled and Gatekeeper-checked metadata. The current preview is
+Mac 0.7.2/build 2026111702, paired with iPhone 1.9.2/build 2026111702. The user
+explicitly authorized source submission, website publication and distribution
+of this existing candidate. Its matching Apple Accepted, stapling, Gatekeeper
+and final archive privacy records are complete; reuse those records without
+rebuilding or repeating notarization when the same frozen archive is published.
+Physical-phone feedback remains pending and must not be described as passed.
+This authorization permits the current preview release without replacing that
+missing feedback with install success, source metadata or a health result.
+Keep all signing, privacy, integrity and source-provenance gates, and retain the
+immutable 0.5.8 and 0.6.1 downloads/checksums. The iPhone source build and private
+device install remain distinct from the public Mac download.
 
 The integrated candidate makes the three Desktop sources individually optional,
 selected by default on first setup, with durable choices on Mac. Disabling a
@@ -172,13 +177,31 @@ accessible source. Source-build instructions state the access requirement; MIT
 license text does not imply that every visitor can clone the repository. A public
 Mac download does not change source-repository visibility.
 
-## Mobile experience candidate — 2026-11-17
+## Preview 0.7.2 publication — 2026-11-17
 
-The 0.7.2/1.9.2 candidate at build 2026111702 repairs Spaces input-queue and
-readiness handoff, retains navigation failure explanations, and binds fresh
-Codex reads after verified owner reattachment. Its own build and physical-phone
-acceptance are required; earlier 1701 acceptance was superseded by reported
-Spaces and current-session reading failures.
+Mac 0.7.2 and iPhone 1.9.2 share build `2026111702`. Spaces transitions retire
+old input queues and prevent late readiness results from reviving a retired
+connection; failure explanations remain available after picture recovery.
+Codex fresh reads bind the verified owner at actual read dispatch following
+reattachment. A subsequent owner change, old history cursor or old native write
+identity remains rejected, and unknown commands are never replayed.
+
+The public Mac archive is `CodeLight-0.7.2-macos-arm64.zip`, 156,993,885 bytes,
+SHA-256 `aa0432d8d69cc8625bd24f84fcb8115eda435a6039c82af4e5b365c724c8fbe9`.
+The user authorized publishing this preview after its current technical release
+gates. The 1702 phone build is installed; its direct user feedback is still
+pending. Earlier 1701 acceptance was superseded by reported Spaces and current
+session-reading failures. The targeted fixes and current packaging evidence do
+not establish that every real-device symptom has disappeared.
+
+A version update makes new immutable archive/checksum bytes available on every
+website replica before pointing `release.json` and the landing page to them.
+Then publish the updated pointer and page with the reviewed public source
+commit. This avoids a rolling update sending a new download link to an older
+replica that lacks its file. Preserve prior downloads and all existing website
+security, ingress, TLS, service and network-policy configuration.
+
+## Prior mobile experience candidate — 2026-11-17
 
 The 0.7.1/1.9.1 candidate at build 2026111701 implements the
 [mobile remote desktop experience](codelight-remote-desktop-mobile-experience.md)

@@ -33,7 +33,33 @@ public checkout and retain its public history. Remove public files absent from
 the new selection, inspect the diff, then run source/privacy/history scans before
 committing. Never merge or push the original private development history.
 
-## Mobile experience 0.7.1 candidate
+## Current preview 0.7.2
+
+Mac 0.7.2 and iPhone 1.9.2 share build `2026111702`. This preview corrects Spaces
+input-queue/readiness handoff and Codex fresh-owner read admission. Old history
+cursors and native write identities retain their guards; unknown commands are
+not replayed. The three Desktop sources remain individually optional, enabled
+by default, and the original applications keep their sessions and runtimes.
+Claude Desktop Gateway's complete formal controls remain unaccepted; CLI/TUI
+families are deferred.
+
+The user explicitly authorized publishing the existing candidate and updating
+source, website and packages. Physical-phone feedback is still being collected;
+it is not marked as passed. Reuse the current archive's verified technical
+records rather than rebuilding or repeating notarization:
+
+- File: `CodeLight-0.7.2-macos-arm64.zip`
+- Bytes: `156993885`
+- SHA-256: `aa0432d8d69cc8625bd24f84fcb8115eda435a6039c82af4e5b365c724c8fbe9`
+- Apple notarization: Accepted; ticket stapled; Gatekeeper accepted; final ZIP
+  privacy review passed for these exact bytes.
+
+Keep the iPhone install private and publish no device-bound IPA or provisioning
+profile. Freeze the selected source, commit/push its reviewed canonical history,
+then bind the public release pointer to that source commit. Existing 0.5.8 and
+0.6.1 downloads/checksums remain available.
+
+## Prior mobile experience 0.7.1 candidate
 
 Mac 0.7.1 and iPhone 1.9.1 share build 2026111701. The remote page uses one
 landscape canvas, translucent expandable controls and a focused native keyboard.
@@ -225,3 +251,18 @@ to the existing deployment image, then apply only that image change. Verify both
 ready replicas, unchanged ingress/TLS/security headers, rendered bilingual copy,
 the same public release metadata and a small Range response from its download.
 Keep the previous revision and image available for a scoped website rollback.
+
+### Updating the preview download
+
+For 0.7.2, inherit the currently verified static image. First add only the new
+immutable Mac ZIP/checksum and roll out both replicas while retaining the old
+page and `release.json`. Once every replica holds the new file, publish the
+updated four landing assets and verified 0.7.2 pointer. Include the final reviewed
+public source commit in that pointer. Neither phase changes nginx security
+configuration, ingress/TLS, services, network policy or other workloads.
+
+Use a small, explicit public context; existing downloads stay in the inherited
+image. Do not upload repository state, phone packages, profiles or private QA.
+Verify the previous download hashes, the new archive's exact recorded bytes,
+release metadata and normal HTTPS browser reload after deployment. A fresh hash
+check alone does not prove that an existing browser executed the new dictionary.
