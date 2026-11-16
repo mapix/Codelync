@@ -505,3 +505,22 @@ owner discovery 为 null。通过系统正常打开 `codex://threads/<真实UUID
 userMessage.clientId 或 steeringUserMessage.clientUserMessageId。它用于 Happy
 通信记录与原 admission 的精确关联，不按相同文字猜测作者或去重；没有原生
 关联字段时不生成命令身份。不扩大正文、工具参数或推理可见性。
+
+## Registered follower recovery — 2026-11-16
+
+An explicit read-only refresh reuses its current subscribed owner when routing
+and owner generation agree. If that registered subscription lost its owner,
+it reconnects and reattaches through existing native owner discovery, then
+requests the existing owner's snapshot. Concurrent attach attempts for the same
+registered source share one flight; no unsubscribed conversation is discovered
+by refresh. An unavailable owner remains unavailable, and original command IDs
+are untouched. This is native follower recovery, never app navigation, runner
+creation/resume, model input or complete-history loading.
+
+Activity-only listeners subscribe with `autoRecover: false`. IPC connection and
+owner events invalidate their proof and notify the activity scheduler; the
+shared status queue owns their reattachment and native-read concurrency. Body
+listeners retain default automatic recovery. A shared body/activity source may
+recover through its body listener; those explicit message reads are outside the
+status-only four-read budget. Unregistered or removed listeners never acquire a
+new owner or replay any command during recovery.

@@ -104,3 +104,55 @@ it('saved routes can still be inspected while a connection probe is running',()=
     act(()=>renderer.root.findAll((n:any)=>n.props.testID==='codelight-channel-open')[0].props.onPress());
     expect(renderer.root.findByType('PickerSheet').props.visible).toBe(true);expect(select).not.toHaveBeenCalled();act(()=>renderer.unmount());
 });
+
+it('header geometry and icon node remain fixed across socket flapping, with details only inside the picker', () => {
+    const select = vi.fn(async () => {}); let renderer!: ReturnType<typeof create>;
+    const state = (kind: 'connected' | 'connecting' | 'failed') => ({ kind, busy: kind === 'connecting', canRetry: true, canInspect: true });
+    act(() => { renderer = create(React.createElement(PeerChannelControlView, { snapshot, onSelect: select, presentation: 'header', connectionState: state('connected') })); });
+    const slot = renderer.root.findByProps({ testID: 'codelight-channel-header-slot' });
+    const trigger = renderer.root.findByProps({ testID: 'codelight-channel-open' });
+    const icon = renderer.root.findByProps({ testID: 'codelight-channel-status-icon' });
+    expect(slot.props.style[0]).toMatchObject({ width: 44, height: 44 }); expect(trigger.props.style).toMatchObject({ width: 44, height: 44 });
+    for (const [kind, name] of [['connecting', 'sync-outline'], ['failed', 'alert-circle-outline'], ['connected', 'wifi-outline']] as const) {
+        act(() => renderer.update(React.createElement(PeerChannelControlView, { snapshot, onSelect: select, presentation: 'header', connectionState: state(kind) })));
+        expect(renderer.root.findByProps({ testID: 'codelight-channel-header-slot' })).toBe(slot);
+        expect(renderer.root.findByProps({ testID: 'codelight-channel-status-icon' })).toBe(icon); expect(icon.props.name).toBe(name);
+        expect(trigger.findAllByType('ActivityIndicator')).toHaveLength(0); expect(trigger.findAllByType('Text')).toHaveLength(0);
+        expect(renderer.root.findAllByProps({ testID: 'codelight-channel-connection-error' })).toHaveLength(0);
+    }
+    act(() => renderer.update(React.createElement(PeerChannelControlView, { snapshot, onSelect: select, presentation: 'header', connectionState: state('failed') })));
+    act(() => trigger.props.onPress()); expect(renderer.root.findByProps({ testID: 'codelight-channel-connection-error' }).props.children).toBe('codeLightChannels.failedHelp');
+    expect(renderer.root.findAllByType('PickerSheet')).toHaveLength(1); expect(select).not.toHaveBeenCalled(); act(() => renderer.unmount());
+});
+it('source read failure keeps its explicit retry during independent socket recovery and coalesces presses', async () => {
+    let finish!: () => void; const retry = vi.fn(() => new Promise<void>(resolve => { finish = resolve; })), select = vi.fn();
+    const props = { snapshot, onSelect: select, presentation: 'header' as const, sourceNotice: { scope: 'session-a', message: 'Read failed fixture', failed: true, retry } };
+    let renderer!: ReturnType<typeof create>; act(() => { renderer = create(React.createElement(PeerChannelControlView, props)); });
+    expect(renderer.root.findAllByProps({ testID: 'codelight-channel-source-notice' })).toHaveLength(0);
+    act(() => renderer.root.findByProps({ testID: 'codelight-channel-open' }).props.onPress());
+    const button = renderer.root.findByProps({ testID: 'codelight-channel-read-retry' });
+    await act(async () => { button.props.onPress(); button.props.onPress(); }); expect(retry).toHaveBeenCalledOnce(); expect(select).not.toHaveBeenCalled();
+    act(() => renderer.update(React.createElement(PeerChannelControlView, { ...props, connectionState: { kind: 'connecting', busy: true, canRetry: true, canInspect: true } })));
+    expect(renderer.root.findByProps({ testID: 'codelight-channel-source-notice' }).props.children).toBe('Read failed fixture');
+    expect(renderer.root.findByProps({ testID: 'codelight-channel-read-retry' }).props.disabled).toBe(true);
+    await act(async () => { finish(); }); expect(renderer.root.findByProps({ testID: 'codelight-channel-read-retry' }).props.disabled).toBe(false); act(() => renderer.unmount());
+});
+it('an old source retry completion cannot reset busy state for the new source', async () => {
+    let oldFinish!: () => void, nextFinish!: () => void;
+    const oldRetry = vi.fn(() => new Promise<void>(resolve => { oldFinish = resolve; })), nextRetry = vi.fn(() => new Promise<void>(resolve => { nextFinish = resolve; }));
+    const props = { snapshot, onSelect: vi.fn(), presentation: 'header' as const, sourceNotice: { scope: 'old', message: 'Fixture read failed', failed: true, retry: oldRetry } };
+    let renderer!: ReturnType<typeof create>; act(() => { renderer = create(React.createElement(PeerChannelControlView, props)); });
+    act(() => renderer.root.findByProps({ testID: 'codelight-channel-open' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ testID: 'codelight-channel-read-retry' }).props.onPress());
+    act(() => renderer.update(React.createElement(PeerChannelControlView, { ...props, sourceNotice: { ...props.sourceNotice, scope: 'new', retry: nextRetry } })));
+    await act(async () => renderer.root.findByProps({ testID: 'codelight-channel-read-retry' }).props.onPress());
+    await act(async () => oldFinish()); expect(renderer.root.findByProps({ testID: 'codelight-channel-read-retry' }).props.disabled).toBe(true);
+    await act(async () => nextFinish()); expect(renderer.root.findByProps({ testID: 'codelight-channel-read-retry' }).props.disabled).toBe(false); act(() => renderer.unmount());
+});
+it('cold unpaired header keeps the same slot and a scan recovery without any selection', () => {
+    const scan = vi.fn(), select = vi.fn(); let renderer!: ReturnType<typeof create>;
+    act(() => { renderer = create(React.createElement(PeerChannelControlView, { snapshot: { ...snapshot, peerId: null, channels: [] }, onSelect: select, presentation: 'header', onScan: scan })); });
+    expect(renderer.root.findByProps({ testID: 'codelight-channel-status-icon' }).props.name).toBe('alert-circle-outline');
+    act(() => renderer.root.findByProps({ testID: 'codelight-channel-open' }).props.onPress());
+    act(() => renderer.root.findByProps({ testID: 'codelight-channel-scan' }).props.onPress()); expect(scan).toHaveBeenCalledOnce(); expect(select).not.toHaveBeenCalled(); act(() => renderer.unmount());
+});

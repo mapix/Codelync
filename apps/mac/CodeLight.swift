@@ -116,6 +116,20 @@ enum ConnectionStatus {
 }
 // END CODELIGHT CONNECTION VALUES
 
+// BEGIN CODELIGHT SOURCE SUBSCRIPTION VALUES
+struct DesktopSourceConfiguration: Decodable, Equatable {
+    let version: Int
+    let enabledApps: [String]
+    let known: Bool
+    let revision: Int
+    static let apps = ["codex", "antigravity", "claude-desktop"]
+    static let unknown = DesktopSourceConfiguration(version: 1, enabledApps: [], known: false, revision: 0)
+    var valid: Bool { version == 1 && revision >= 0 && enabledApps.count <= Self.apps.count && Set(enabledApps).count == enabledApps.count && enabledApps.allSatisfy(Self.apps.contains) && (known || enabledApps.isEmpty) }
+    var enabled: Set<String> { known ? Set(enabledApps) : [] }
+    static func label(_ app: String) -> String { app == "codex" ? "Codex" : app == "antigravity" ? "Antigravity Desktop" : "Claude Desktop (Gateway)" }
+}
+// END CODELIGHT SOURCE SUBSCRIPTION VALUES
+
 // BEGIN CODELIGHT SERVICE VALUES
 enum ServicePhase: String { case starting, running, pausing, paused, failed
     var canStart: Bool { self == .paused || self == .failed }
@@ -135,6 +149,16 @@ final class DashboardMetricsStore: ObservableObject {
     func reset() { value = nil }
 }
 
+struct DesktopConfiguration: Decodable {
+    let enabled: Bool
+    let mode: String
+    let url: String
+    let apiKey: String
+    let hasSecret: Bool
+    let connected: Bool
+    static let disabled = DesktopConfiguration(enabled: false, mode: "local", url: "", apiKey: "", hasSecret: false, connected: false)
+}
+
 @MainActor
 final class ServiceController: ObservableObject {
     struct Device: Identifiable, Codable, Equatable { var id: String; var name: String; var createdAt: Double; var lastSeen: Double; var revoked: Bool; var connected: Bool }
@@ -147,6 +171,13 @@ final class ServiceController: ObservableObject {
     @Published var notificationsAvailable = false
     @Published var copied = false
     @Published var operationError = ""
+    // BEGIN CODELIGHT SOURCE SUBSCRIPTION STATE
+    @Published private(set) var sourceConfiguration = DesktopSourceConfiguration.unknown
+    @Published private(set) var sourcesBusy = false
+    @Published private(set) var sourcesError = ""
+    private var sourcesRequestID = ""
+    private var sourcesDesired: [String]?
+    // END CODELIGHT SOURCE SUBSCRIPTION STATE
     @Published private(set) var connectionConfiguration = ConnectionConfiguration.unknown
     @Published private(set) var connectionChannels: [ConnectionChannel] = []
     @Published private(set) var connectionConfigurationKnown = false
@@ -157,6 +188,15 @@ final class ServiceController: ObservableObject {
     @Published var accessBusy = false
     var accessHasSavedKey: Bool { connectionConfiguration.hasToken }
     @Published var accessError = ""
+    @Published private(set) var desktopConfiguration = DesktopConfiguration.disabled
+    @Published private(set) var desktopKnown = false
+    @Published var desktopMode = "local"
+    @Published var desktopServer = ""
+    @Published var desktopAPIKey = ""
+    @Published var desktopAPISecret = ""
+    @Published var desktopBusy = false
+    @Published var desktopError = ""
+    private var desktopRequestID = ""
     private var accessRequestID = ""
     private var channelsRequestID = ""
     @Published private(set) var selection = DashboardSelection()
@@ -223,6 +263,18 @@ final class ServiceController: ObservableObject {
                 phase = .running
                 pairingURL = value; origin = item["origin"] as? String ?? ""
                 status = devices.contains { !$0.revoked } ? "Connection ready" : "Ready to scan"
+            } else if type == "source-subscriptions", let raw = item["configuration"],
+                      let bytes = try? JSONSerialization.data(withJSONObject: raw),
+                      let configuration = try? JSONDecoder().decode(DesktopSourceConfiguration.self, from: bytes) {
+                if configuration.valid && configuration.revision >= sourceConfiguration.revision {
+                    sourceConfiguration = configuration
+                    if !configuration.known { sourcesError = "Could not load desktop source choices. Try again." }
+                }
+            } else if type == "source-subscriptions-result", let requestID = item["requestId"] as? String, requestID == sourcesRequestID {
+                sourcesBusy = false
+                if item["ok"] as? Bool == true { sourcesError = ""; sourcesDesired = nil }
+                else if !sourceConfiguration.known { sourcesError = "Could not load desktop source choices. Try again." }
+                else { sourcesError = item["code"] as? String == "source-subscriptions-save-failed" ? "Could not save desktop source choices. Try again." : "Source choices are saved. Switching is not complete; retry." }
             } else if type == "access-configuration", let raw = item["configuration"],
                       let bytes = try? JSONSerialization.data(withJSONObject: raw),
                       let configuration = try? JSONDecoder().decode(ConnectionConfiguration.self, from: bytes) {
@@ -245,6 +297,19 @@ final class ServiceController: ObservableObject {
                     if item["ok"] as? Bool == true { relayKey = ""; accessError = ""; relayServer = connectionConfiguration.serverUrl }
                     else { accessError = "Could not validate the Relay connection. Check address, access key and network." }
                 }
+            } else if type == "desktop-status", let raw = item["status"],
+                      let bytes = try? JSONSerialization.data(withJSONObject: raw),
+                      let configuration = try? JSONDecoder().decode(DesktopConfiguration.self, from: bytes) {
+                let first = !desktopKnown
+                desktopConfiguration = configuration; desktopKnown = true
+                if first { desktopMode = configuration.mode; desktopServer = configuration.url; desktopAPIKey = configuration.apiKey }
+                if item["error"] != nil { desktopError = "Could not load remote desktop settings." }
+            } else if type == "desktop-result", item["requestId"] as? String == desktopRequestID {
+                desktopBusy = false
+                if item["ok"] as? Bool == true {
+                    desktopError = ""; desktopAPISecret = ""
+                    desktopMode = desktopConfiguration.mode; desktopServer = desktopConfiguration.url; desktopAPIKey = desktopConfiguration.apiKey
+                } else { desktopError = "Could not update remote desktop. Check permissions and server settings." }
             } else if type == "metrics" {
                 // 每秒小样本只通知指标视图，不能使设备输入框和隐藏二维码重新计算。
                 if let raw = item["metrics"] { metrics.receive(raw) } else { metrics.reset() }
@@ -266,6 +331,8 @@ final class ServiceController: ObservableObject {
     private func resetConnectionObservation() {
         connectionChannels = []; connectionConfigurationKnown = false; channelsBusy = false; accessBusy = false
         channelsRequestID = ""; accessRequestID = ""
+        sourceConfiguration = .unknown; sourcesBusy = false; sourcesError = ""; sourcesRequestID = ""; sourcesDesired = nil
+        desktopKnown = false; desktopBusy = false; desktopRequestID = ""
     }
     func selectPanel(_ panel: DashboardPanel) { selection.select(panel) }
     var publicStatus: String {
@@ -302,6 +369,33 @@ final class ServiceController: ObservableObject {
         do { try input.fileHandleForWriting.write(contentsOf: bytes) }
         catch { channelsBusy = false; channelsError = "Could not update connection channels. Try again." }
     }
+    // BEGIN CODELIGHT SOURCE SUBSCRIPTION COMMANDS
+    func setSource(_ app: String, enabled: Bool) {
+        guard sourceConfiguration.known, DesktopSourceConfiguration.apps.contains(app) else { return }
+        var selected = sourceConfiguration.enabled
+        if enabled { selected.insert(app) } else { selected.remove(app) }
+        setSources(DesktopSourceConfiguration.apps.filter { selected.contains($0) })
+    }
+    func restoreSourceDefaults() { setSources(DesktopSourceConfiguration.apps) }
+    func retrySources() {
+        if let desired = sourcesDesired { setSources(desired) }
+        else { sendSourceCommand("reload-source-subscriptions", apps: nil) }
+    }
+    private func setSources(_ apps: [String]) {
+        guard !sourcesBusy, running, apps.allSatisfy(DesktopSourceConfiguration.apps.contains) else { return }
+        sourcesDesired = apps; sendSourceCommand("set-source-subscriptions", apps: apps)
+    }
+    private func sendSourceCommand(_ type: String, apps: [String]?) {
+        guard !sourcesBusy, running, let input else { return }
+        sourcesRequestID = UUID().uuidString
+        var value: [String: Any] = ["type": type, "requestId": sourcesRequestID]
+        if let apps { value["apps"] = apps }
+        guard var data = try? JSONSerialization.data(withJSONObject: value) else { return }
+        data.append(10); sourcesBusy = true; sourcesError = ""
+        do { try input.fileHandleForWriting.write(contentsOf: data) }
+        catch { sourcesBusy = false; sourcesError = "Could not save desktop source choices. Try again." }
+    }
+    // END CODELIGHT SOURCE SUBSCRIPTION COMMANDS
     func configureRelay() {
         guard !accessBusy, let input else { return }
         accessRequestID = UUID().uuidString
@@ -311,6 +405,28 @@ final class ServiceController: ObservableObject {
         accessBusy = true; accessError = ""
         do { try input.fileHandleForWriting.write(contentsOf: bytes) }
         catch { accessBusy = false; accessError = "Could not validate the Relay connection. Check address, access key and network." }
+    }
+    func configureDesktop(enabled: Bool? = nil) {
+        var configuration: [String: Any]
+        if let enabled { configuration = ["enabled": enabled] }
+        else {
+            configuration = ["enabled": desktopConfiguration.enabled, "mode": desktopMode,
+                "url": desktopServer, "apiKey": desktopAPIKey]
+            if !desktopAPISecret.isEmpty { configuration["apiSecret"] = desktopAPISecret }
+        }
+        desktopCommand(["type": "configure-desktop", "configuration": configuration])
+    }
+    func requestDesktopPermission(_ permission: String) {
+        desktopCommand(["type": "desktop-permission", "permission": permission])
+    }
+    private func desktopCommand(_ command: [String: Any]) {
+        guard !desktopBusy, desktopKnown, running, let input else { return }
+        desktopRequestID = UUID().uuidString
+        var value = command; value["requestId"] = desktopRequestID
+        guard var bytes = try? JSONSerialization.data(withJSONObject: value) else { return }; bytes.append(10)
+        desktopBusy = true; desktopError = ""
+        do { try input.fileHandleForWriting.write(contentsOf: bytes) }
+        catch { desktopBusy = false; desktopError = "Could not update remote desktop. Check permissions and server settings." }
     }
     func copyLink() {
         NSPasteboard.general.clearContents(); copied = NSPasteboard.general.setString(pairingURL, forType: .string)
@@ -386,12 +502,42 @@ struct ContentView: View {
                 PairingView(service: service)
             }
             Divider()
+            DesktopSourcesView(service: service)
+            Divider()
             PublicAccessView(service: service)
+            Divider()
+            RemoteDesktopSettingsView(service: service)
             Divider()
             DevicesView(service: service)
         }.padding(28).frame(maxWidth: 700) }.frame(minWidth: 560, minHeight: 700)
     }
 }
+
+// BEGIN CODELIGHT SOURCE SUBSCRIPTION VIEW
+struct DesktopSourcesView: View {
+    @ObservedObject var service: ServiceController
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Sources").font(.headline)
+            ForEach(DesktopSourceConfiguration.apps, id: \.self) { app in
+                Toggle(isOn: Binding(get: { service.sourceConfiguration.enabled.contains(app) }, set: { service.setSource(app, enabled: $0) })) {
+                    Text(LocalizedStringKey(DesktopSourceConfiguration.label(app)))
+                }.toggleStyle(.checkbox).accessibilityIdentifier("codelight-source-\(app)")
+                    .disabled(service.sourcesBusy || !service.running || !service.sourceConfiguration.known)
+            }
+            if !service.sourcesError.isEmpty {
+                Text(LocalizedStringKey(service.sourcesError)).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 12) {
+                    Button("Retry") { service.retrySources() }.accessibilityIdentifier("codelight-source-retry")
+                    if !service.sourceConfiguration.known {
+                        Button("Restore defaults") { service.restoreSourceDefaults() }.accessibilityIdentifier("codelight-source-restore-defaults")
+                    }
+                }.disabled(service.sourcesBusy || !service.running)
+            }
+        }
+    }
+}
+// END CODELIGHT SOURCE SUBSCRIPTION VIEW
 
 struct PublicAccessView: View {
     @ObservedObject var service: ServiceController
@@ -431,6 +577,43 @@ struct PublicAccessView: View {
                     if !service.accessError.isEmpty { Text(LocalizedStringKey(service.accessError)).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
                 }.padding(.top, 12)
             }
+        }
+    }
+}
+
+struct RemoteDesktopSettingsView: View {
+    @ObservedObject var service: ServiceController
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Remote desktop", isOn: Binding(get: { service.desktopConfiguration.enabled }, set: { service.configureDesktop(enabled: $0) }))
+                .toggleStyle(.checkbox).accessibilityIdentifier("codelight-desktop-enabled")
+                .disabled(!service.desktopKnown || !service.running || service.desktopBusy)
+            Picker("Media relay", selection: $service.desktopMode) {
+                Text("This Mac").tag("local")
+                Text("Custom server").tag("external")
+            }.pickerStyle(.segmented).disabled(!service.desktopKnown || service.desktopBusy)
+                .accessibilityIdentifier("codelight-desktop-relay-mode")
+            if service.desktopMode == "external" {
+                TextField("LiveKit server URL", text: $service.desktopServer, prompt: Text("wss://media.example.com"))
+                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("codelight-desktop-server")
+                TextField("API key", text: $service.desktopAPIKey).textFieldStyle(.roundedBorder)
+                SecureField("API secret", text: $service.desktopAPISecret).textFieldStyle(.roundedBorder)
+            }
+            HStack {
+                Button("Save media relay") { service.configureDesktop() }
+                    .disabled(service.desktopBusy || !service.desktopKnown || !service.running)
+                    .accessibilityIdentifier("codelight-desktop-relay-save")
+                if service.desktopBusy { ProgressView().controlSize(.small) }
+            }
+            if service.desktopConfiguration.enabled {
+                HStack {
+                    Button("Allow Screen Recording") { service.requestDesktopPermission("screenRecording") }
+                        .accessibilityIdentifier("codelight-desktop-screen-permission")
+                    Button("Allow Accessibility") { service.requestDesktopPermission("accessibility") }
+                        .accessibilityIdentifier("codelight-desktop-input-permission")
+                }.disabled(service.desktopBusy || !service.running)
+            }
+            if !service.desktopError.isEmpty { Text(LocalizedStringKey(service.desktopError)).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
         }
     }
 }

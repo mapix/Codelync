@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nativeRecentMessages, peerDescriptorSession, isCurrentNativeRecent, type PeerRecentWindow } from './codeLightRecent';
+import { nativeRecentMessages, peerDescriptorSession, peerRecentIsCached, isCurrentNativeRecent, type PeerRecentWindow } from './codeLightRecent';
 import { createReducer, reducer } from './reducer/reducer';
 import { messageSortKey } from './typesMessage';
 import type { NormalizedMessage } from './typesRaw';
@@ -16,6 +16,13 @@ function window(): PeerRecentWindow {
 }
 
 describe('self-contained native recent windows', () => {
+    it('fresh control authority cannot mix a different descriptor owner with retained row ownership',()=>{
+        const data=window();
+        data.session.metadata={...data.session.metadata!,client:{id:'noninvasive-bridge'},bridge:{controlMode:'session',sourceStatus:'connected',source:{app:'codex',kind:'session',id:'native',hostId:'local',runtimeGeneration:'different-owner'}}}as any;
+        data.freshness={version:1,mode:'fresh',capturedAt:1000,ownerGeneration:'owner',currentControlAuthority:true,revalidationPending:false};
+        expect(()=>peerRecentIsCached(data)).toThrow('control owner');
+        data.session.metadata!.bridge!.source.runtimeGeneration='owner';expect(peerRecentIsCached(data)).toBe(false);
+    });
     it('seeds assistant-envelope tools independently without allowing a tool-only UUID to claim a consumed text alias', () => {
         const state = createReducer(), source = window();
         source.rows = [{ ...source.rows[0], id: 'native-full-text', text: 'Confirmed original body', replaceIds: ['api-wire'], replaceSourceRowIds: ['claude-api:shared'] }];

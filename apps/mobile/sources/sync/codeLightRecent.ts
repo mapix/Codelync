@@ -34,6 +34,8 @@ export interface NativeRecentRow {
     tools?: { id: string; name: string; output: string; status: string; arguments?: NativeFileArguments | Record<string, unknown>; input?: NativeToolInput; inputUnavailable?: boolean }[];
 }
 export interface PeerRecentWindow {
+    freshness?: { version: 1; mode: 'cached' | 'fresh'; capturedAt: number; ownerGeneration: string | null;
+        currentControlAuthority: boolean; revalidationPending: boolean };
     historicalRead?: NativeSavedHistory;
     version: 1;
     session: PeerSessionDescriptor;
@@ -46,6 +48,52 @@ export interface PeerRecentWindow {
     currentTurnId: string | null;
     seq: number;
     observedAt: number;
+}
+
+/** Cache provenance is data scope, never original-owner control authority. */
+export function peerRecentIsCached(window: PeerRecentWindow): boolean {
+    const value = window.freshness;
+    if (value === undefined) return false;
+    if (!value || value.version !== 1 || !['cached', 'fresh'].includes(value.mode) || !Number.isFinite(value.capturedAt) || value.capturedAt < 0
+        || typeof value.currentControlAuthority !== 'boolean' || typeof value.revalidationPending !== 'boolean'
+        || value.ownerGeneration !== window.ownerGeneration || value.ownerGeneration !== null && (typeof value.ownerGeneration !== 'string' || !value.ownerGeneration.trim())) throw Error('Invalid native recent freshness');
+    if (value.mode === 'fresh') {
+        if (value.revalidationPending) throw Error('Fresh native data cannot remain cache pending');
+        if (value.currentControlAuthority && (window.historicalRead || !value.ownerGeneration
+            || window.session.metadata?.bridge?.source.runtimeGeneration !== value.ownerGeneration)) throw Error('Fresh native control owner does not match its descriptor');
+        return false;
+    }
+    if (value.currentControlAuthority || !value.revalidationPending || !value.ownerGeneration || window.historicalRead
+        || window.session.metadata?.bridge?.source.runtimeGeneration !== value.ownerGeneration) throw Error('Cached native data has no current control authority');
+    return true;
+}
+
+/** Even a newer retained metadata field cannot lend controls to a cached body. */
+export function cachedPeerDescriptorSession(value: PeerSessionDescriptor, previous?: Session, previousIsLive = false): Session {
+    if (previousIsLive && previous && previous.metadataVersion >= value.metadataVersion) {
+        return { ...peerDescriptorSession(value, previous), metadata: previous.metadata, metadataVersion: previous.metadataVersion,
+            agentState: previous.agentState, agentStateVersion: previous.agentStateVersion, active: previous.active, activeAt: previous.activeAt,
+            presence: previous.presence, thinking: previous.thinking, updatedAt: Math.max(value.nativeUpdatedAt, previous.updatedAt) };
+    }
+    // A persisted or already-derived header cannot lend its higher version to
+    // response-only readonly controls and then suppress the real fresh header.
+    const retained = previous ? { ...previous, metadataVersion: Math.min(previous.metadataVersion, value.metadataVersion),
+        agentStateVersion: Math.min(previous.agentStateVersion, value.agentStateVersion) } : undefined;
+    const session = peerDescriptorSession(value, retained), metadata = session.metadata;
+    if (!metadata?.bridge) throw Error('Cached native source identity is unavailable');
+    const retainedRows = session.agentState?.subagents ?? (previous?.metadata?.bridge?.source.runtimeGeneration === metadata.bridge.source.runtimeGeneration ? previous?.agentState?.subagents : undefined);
+    return { ...session, active: false, thinking: false, presence: session.activeAt,
+        metadata: { ...metadata, bridge: { ...metadata.bridge, sourceStatus: 'owner-unavailable', currentTurnId: null },
+            nativeControls: undefined, nativeObservedModel: undefined,
+            capabilities: { readOnly: true, steering: false, send: false, abort: false, rpcMethods: ['bridge-receipt'],
+                attachments: { enabled: false, maxBytes: 0, mediaTypes: [] }, files: { browse: false, read: false, search: false, write: false },
+                modelSelection: false, reasoningSelection: false, permissionModeSelection: false, resume: false, shell: false,
+                messageReceipts: metadata.capabilities?.messageReceipts },
+            nativeReadFreshness: { version: 1, mode: 'cached', currentControlAuthority: false, ownerGeneration: metadata.bridge.source.runtimeGeneration } },
+        agentState: session.agentState ? { ...session.agentState, nativeQuery: undefined, nativeTasks: undefined, nativeTaskSignal: undefined,
+            subagentsAvailable: false, subagentsComplete: false,
+            subagents: retainedRows?.map(row => ({ ...row, status: 'unknown' })),
+            aggregateActivity: session.agentState.aggregateActivity ? { ...session.agentState.aggregateActivity, known: false, active: false, waiting: false, status: 'unknown' } : undefined } : null };
 }
 
 /** Peer-sealed catalog fields stay light; runtime activity never comes from recency. */
@@ -83,6 +131,9 @@ export function isCurrentNativeRecent(window: PeerRecentWindow, session: Session
         return window.session.metadataVersion > session.metadataVersion;
     }
     const currentOwner = session.metadata?.bridge?.source.runtimeGeneration;
+    const currentMain = session.metadata?.nativeDesktopRuntimeGeneration ?? session.agentState?.nativeDesktopRuntimeGeneration;
+    const incomingMain = window.session.metadata?.nativeDesktopRuntimeGeneration ?? window.session.agentState?.nativeDesktopRuntimeGeneration;
+    if (session.metadataVersion > window.session.metadataVersion && currentMain && incomingMain && currentMain !== incomingMain) return false;
     return !(session.metadataVersion > window.session.metadataVersion && currentOwner && window.ownerGeneration && currentOwner !== window.ownerGeneration);
 }
 

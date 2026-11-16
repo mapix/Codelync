@@ -138,6 +138,9 @@ export class SourceRegistry {
         parentId: source.parentId ?? null, agentName: source.agentName ?? '', preview: source.preview ?? '', isPinned: source.isPinned ?? false,
         isSubagent: source.isSubagent === true,
         archived: sourceArchived(source, source.metadata), catalogueAvailable: !sourceArchived(source, source.metadata), ...projectMetadata(source) };
+      if (nativeSession.sourceDisabled === true || Object.hasOwn(nativeSession, 'sourceDisabledCatalogueAvailable')) {
+        delete nativeSession.sourceDisabledCatalogueAvailable; nativeSession.sourceDisabled = false;
+      }
       if (!source.project) for (const field of ['projectKey', 'projectPath', 'projectLabel']) delete nativeSession[field];
       const nativeSource = { ...metadata.bridge.source, ...(source.kind ? { kind: source.kind } : {}), ...(source.protocol ? { protocol: source.protocol } : {}),
         ...(source.app === 'claude-desktop' ? { appMode: source.appMode, nativeCollection: source.nativeCollection,
@@ -150,6 +153,33 @@ export class SourceRegistry {
    * @param {Value} binding @param {import('socket.io-client').Socket} socket @returns {Promise<void>} */
   markUnavailable(binding, socket) {
     return this.queueMetadata(binding, socket, metadata => ({ ...metadata, nativeSession: { ...metadata.nativeSession, catalogueAvailable: false } }));
+  }
+  /** A local source choice is not archive or native index-absence evidence.
+   * @param {Value} binding @param {import('socket.io-client').Socket} socket @returns {Promise<void>} */
+  markDisabled(binding, socket) {
+    return this.queueMetadata(binding, socket, metadata => {
+      const native = metadata.nativeSession ?? {};
+      const previous = native.sourceDisabled === true ? native.sourceDisabledCatalogueAvailable : native.catalogueAvailable;
+      const capabilities = { ...metadata.capabilities, readOnly: true, abort: false, send: false, steering: false, modelSelection: false,
+        reasoningSelection: false, permissionModeSelection: false, resume: false, shell: false, windowControl: false, rpcMethods: [] };
+      delete capabilities.nativeTaskControls;
+      if (capabilities.files) capabilities.files = { ...capabilities.files, write: false };
+      return { ...metadata, nativeSession: { ...native, sourceDisabled: true, sourceDisabledCatalogueAvailable: typeof previous === 'boolean' ? previous : null, catalogueAvailable: false },
+        bridge: { ...metadata.bridge, sourceStatus: 'disconnected' }, capabilities,
+        ...(metadata.nativeControls ? { nativeControls: { ...metadata.nativeControls, model: { ...metadata.nativeControls.model, available: false } } } : {}) };
+    });
+  }
+  /** Restore cached descriptor visibility only; controls remain unconfirmed.
+   * @param {Value} binding @param {import('socket.io-client').Socket} socket @returns {Promise<void>} */
+  markEnabled(binding, socket) {
+    return this.queueMetadata(binding, socket, metadata => {
+      if (metadata.nativeSession?.sourceDisabled !== true) return metadata;
+      const nativeSession = { ...metadata.nativeSession, sourceDisabled: false };
+      if (typeof nativeSession.sourceDisabledCatalogueAvailable === 'boolean') nativeSession.catalogueAvailable = nativeSession.sourceDisabledCatalogueAvailable;
+      else delete nativeSession.catalogueAvailable;
+      delete nativeSession.sourceDisabledCatalogueAvailable;
+      return { ...metadata, nativeSession };
+    });
   }
   /** Explicit archive evidence hides an existing mirror without deleting its
    * keys/history or journal. @param {Value} binding @param {import('socket.io-client').Socket} socket @param {Value} [source] */

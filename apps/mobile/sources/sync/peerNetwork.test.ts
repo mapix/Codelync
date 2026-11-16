@@ -4,10 +4,35 @@ vi.mock('expo-crypto', () => {
  let nonce = 0;
  return { getRandomBytes: vi.fn((count: number) => new Uint8Array(count).fill(++nonce)) };
 });
-import{peerAuthorization,decodePeerResponse}from'./peerNetwork';
+import{peerAuthorization,decodePeerResponse,sealPeerRequest,PEER_ACTIVITY_REQUEST_MAX_BYTES}from'./peerNetwork';
 import{decodeBase64,encodeBase64}from'@/encryption/base64';
 import { gzipSync } from 'node:zlib';
 import { encodeCompactPeerPlaintext, PEER_RESPONSE_MAX_BYTES } from '@slopus/happy-wire/peer-codec';
+function requestPeer(){
+ const mac=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(3)),phone=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(4));
+ const peer={id:'ab'.repeat(32),key:encodeBase64(mac.publicKey,'base64url'),channels:[{id:'local',kind:'local' as const,url:'http://192.168.1.2:8800'}],device:{publicKey:encodeBase64(phone.publicKey,'base64url'),secretKey:encodeBase64(phone.secretKey,'base64url')}};
+ return{mac,phone,peer};
+}
+it('seals activity descriptors and binds compact peer/method/path scope with a fresh native nonce',()=>{
+ const{mac,phone,peer}=requestPeer(),body={activityProtocol:2,clientId:'client',requestSeq:1,groups:[{id:'private-ui-group',projectKey:'/private/project/用户',hostId:'local',sessions:[{id:'relay-id',nativeId:'native-private-id'}]}]};
+ const packet=sealPeerRequest(peer,body,'/api/peer/activity','POST'),again=sealPeerRequest(peer,body,'/api/peer/activity','POST');
+ const wire=JSON.stringify(packet);expect(packet[0]).toBe(2);expect(decodeBase64(packet[1],'base64url')).toHaveLength(24);expect(again[1]).not.toBe(packet[1]);
+ for(const value of ['/private/project','private-ui-group','native-private-id',peer.device.secretKey])expect(wire).not.toContain(value);
+ const opened=nacl.box.open(decodeBase64(packet[2],'base64url'),decodeBase64(packet[1],'base64url'),phone.publicKey,mac.secretKey)!;
+ expect(JSON.parse(new TextDecoder().decode(opened))).toEqual([peer.id,'POST','/api/peer/activity',body]);
+ const otherMac=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(8));expect(nacl.box.open(decodeBase64(packet[2],'base64url'),decodeBase64(packet[1],'base64url'),phone.publicKey,otherMac.secretKey)).toBeNull();
+ expect(()=>sealPeerRequest(peer,body,'/api/peer/history','POST')).toThrow('Unsupported');expect(()=>sealPeerRequest(peer,body,'/api/peer/activity','GET')).toThrow('Unsupported');
+});
+it('bounds UTF8 sealed request plaintext before it becomes a LAN carrier',()=>{
+ const{peer}=requestPeer();expect(()=>sealPeerRequest(peer,{data:'🌍'.repeat(PEER_ACTIVITY_REQUEST_MAX_BYTES/2)},'/api/peer/activity','POST')).toThrow('too large');
+});
+it('sealed token renewals remain smaller than full interests without leaking their descriptors',()=>{
+ const{peer}=requestPeer(),first={activityProtocol:2,clientId:'client',requestSeq:1,groups:[{id:'project',projectKey:'/fixture',app:'codex',hostId:'local',sessions:[{id:'row',nativeId:'native'}]}]},steady={activityProtocol:2,clientId:'client',requestSeq:2,interestToken:'token',since:'watermark-1'};
+ const initial=sealPeerRequest(peer,first,'/api/peer/activity','POST'),next=sealPeerRequest(peer,steady,'/api/peer/activity','POST');
+ const size=(x:unknown)=>new TextEncoder().encode(JSON.stringify(x)).length;
+ expect(size(next)).toBeLessThan(size(initial));expect(JSON.stringify(initial)).not.toContain('/fixture');
+ console.info('synthetic sealed activity HTTP body bytes (excluding authorization, HTTP and TLS)',JSON.stringify({initialCarrierBytes:size(initial),steadyCarrierBytes:size(next)}));
+});
 it('cold peer authentication does not depend on a pairing provider installing TweetNaCl PRNG', () => {
  const mac=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(3)),phone=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(4));
  const peer={id:'cold-peer',key:encodeBase64(mac.publicKey,'base64url'),channels:[{id:'local',kind:'local' as const,url:'http://192.168.1.2:8800'}],device:{publicKey:encodeBase64(phone.publicKey,'base64url'),secretKey:encodeBase64(phone.secretKey,'base64url')}};

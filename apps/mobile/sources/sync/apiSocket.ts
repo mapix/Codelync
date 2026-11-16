@@ -106,11 +106,18 @@ class ApiSocket {
     peerConnectionError() { return this.lastPeerConnectionError; }
     peerCanReconnect() { return !this.intentionalDisconnect; }
     peerIdentity() { return this.config?.peer?.id ? 'peer:' + this.config.peer.id : null; }
-    async switchPeerChannel(endpoint: string, peer: PeerCredentials): Promise<void> {
+    peerEndpoint() { return this.config?.peer ? this.config.endpoint : null; }
+    private lastPeerHttpProof: { peerId: string; endpoint: string; observedAt: number } | null = null;
+    peerHttpProof() { return this.lastPeerHttpProof; }
+    private peerChannelRevision = 0;
+    peerReadChannelRevision() { return this.peerChannelRevision; }
+    async switchPeerChannel(endpoint: string, peer: PeerCredentials, options: { waitForSocket?: boolean } = {}): Promise<void> {
         if (!this.config?.peer || this.config.peer.id !== peer.id || !peer.channels.some(channel => channel.url === endpoint)) throw Error('Invalid peer channel switch');
         const encryption = this.encryption, previous = this.config;
         if (!encryption) throw Error('Peer encryption is unavailable');
+        this.peerChannelRevision++;
         this.disconnect(); this.initialize({ ...previous, endpoint, peer }, encryption);
+        if (options.waitForSocket === false) return;
         const connection = this.config;
         await new Promise<void>((resolve, reject) => {
             let release: (() => void) | undefined;
@@ -385,6 +392,7 @@ class ApiSocket {
         if (!response.ok) return response;
         const payload = await decodePeerResponseAsync(peer, await response.json(), { signal: deadline.signal, isCurrent: () => this.config === connection });
         if (this.config !== connection) throw Error('The peer connection changed during this read');
+        this.lastPeerHttpProof = { peerId: peer.id, endpoint: connection!.endpoint, observedAt: Date.now() };
         return new Response(JSON.stringify(payload), { status: response.status, headers: { 'Content-Type': 'application/json' } });
         } finally { deadline.dispose(); this.peerReads.delete(deadline.abort); }
     }

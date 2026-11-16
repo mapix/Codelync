@@ -81,3 +81,52 @@ test('late header flight cannot cross a runtime change even when host and sessio
     assert.equal(observer.status().known, false);
   } finally { observer.close(); }
 });
+
+test('Claude header capture one second after intrinsic timer start refreshes at capture plus three seconds before TTL', async () => {
+  const hostId = 'local:claude-desktop:' + 'a'.repeat(64);
+  const source = { app: 'claude-desktop', kind: 'session', id: 'native', hostId, relayId: 'phone',
+    protocol: 'claude-desktop-native', runtimeGeneration: 'session-owner', appMode: 'chat', nativeCollection: 'local-agent-mode-sessions', workspace: '/project' };
+  let now = 0, reads = 0, fail = false;
+  const backend = { hostId: () => hostId, generation: (/** @type {string|undefined} */ id) => id ? 'session-owner' : 'main-owner',
+    list: async () => { reads++; if (fail) throw Error('Header read failed'); return [{ ...source, nativeStatus: 'running', nativeActivityObservedAt: now }]; },
+    snapshot: () => { throw Error('Header freshness must not load messages'); } };
+  const service = new NativeProjectActivityService({ sources: () => [source], inventoryAvailable: () => true, nativeAdapter: () => backend,
+    now: () => now, backgroundSources: 1, intrinsicRefreshMs: 5000 });
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  try {
+    service.intrinsicRefresh(); now = 1000; await settle();
+    const observer = service.entries.values().next().value?.observer; assert.ok(observer);
+    assert.equal(reads, 1); assert.equal(observer.status().observedAt, 1000); assert.equal(observer.refreshDueAt(), 4000);
+    now = 3999; service.pump(); await settle(); assert.equal(reads, 1);
+    now = 4000; service.pump(); await settle(); assert.equal(reads, 2);
+    assert.equal(observer.status().known, true); assert.equal(observer.status().observedAt, 4000); assert.equal(observer.refreshDueAt(), 7000);
+    now = 6000; assert.equal(observer.status().known, true); assert.equal(observer.status().observedAt, 4000);
+    assert.equal(service.cachedSourceStatus(source)?.known, true);
+    fail = true; now = 7000; service.pump(); await settle();
+    assert.equal(reads, 3); assert.equal(observer.status().known, false); assert.equal(observer.status().observedAt, 4000);
+    assert.equal(observer.refreshDueAt(), null); service.pump(); await settle(); assert.equal(reads, 3);
+  } finally { service.close(); }
+});
+
+test('Claude header deadlines do not renew capture age or borrow scope during an inflight read, owner change or close', async () => {
+  const hostId = 'local:claude-desktop:' + 'b'.repeat(64);
+  let now = 1000, host = hostId, main = 'main-one', owner = 'session-one', reads = 0, held = false;
+  let finish = /** @type {(rows:Value[])=>void} */ (() => {});
+  const rows = () => [{ id: 'native', hostId, runtimeGeneration: owner, nativeStatus: 'running' }];
+  const backend = { hostId: () => host, generation: (/** @type {string|undefined} */ id) => id ? owner : main,
+    list: async () => { reads++; return held ? new Promise(resolve => { finish = resolve; }) : rows(); } };
+  const observer = new ClaudeActivityObserver({ id: 'native', backend, expectedHostId: hostId, now: () => now });
+  try {
+    assert.equal(observer.refreshDueAt(), null); await observer.refresh();
+    assert.equal(observer.refreshDueAt(), 4000); now = 3500;
+    assert.equal(observer.refreshDueAt(), 4000); assert.equal(observer.status().observedAt, 1000);
+    now = 4000; held = true; const reading = observer.refresh(); await Promise.resolve();
+    assert.equal(observer.status().known, true); assert.equal(observer.refreshDueAt(), null); assert.equal(observer.status().observedAt, 1000);
+    finish(rows()); await reading; assert.equal(observer.status().observedAt, 4000); assert.equal(observer.refreshDueAt(), 7000);
+    main = 'main-two'; assert.equal(observer.status().known, false); assert.equal(observer.refreshDueAt(), null);
+    main = 'main-one'; owner = 'session-two'; assert.equal(observer.status().known, false); assert.equal(observer.refreshDueAt(), null);
+    owner = 'session-one'; host = 'foreign-host'; assert.equal(observer.status().known, false); assert.equal(observer.refreshDueAt(), null);
+    host = hostId; now = 9000; assert.equal(observer.status().known, false); assert.equal(observer.refreshDueAt(), null);
+    observer.close(); assert.equal(observer.refreshDueAt(), null); assert.equal(reads, 2);
+  } finally { observer.close(); }
+});

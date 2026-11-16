@@ -33,7 +33,28 @@ public checkout and retain its public history. Remove public files absent from
 the new selection, inspect the diff, then run source/privacy/history scans before
 committing. Never merge or push the original private development history.
 
-## Version 0.5 behavior
+## Mobile experience 0.7.1 candidate
+
+Mac 0.7.1 and iPhone 1.9.1 share build 2026111701. The remote page uses one
+landscape canvas, translucent expandable controls and a focused native keyboard.
+Confirmed input acknowledgments protect local editing; unknown results retain
+the draft. Use this candidate's own build and phone acceptance record.
+
+## Prior integrated 0.7 candidate
+
+Mac 0.7.0 and iPhone 1.9.0 share build 2026111608. The device package is a full
+native Release build. The three Desktop subscriptions default to selected and
+persist independently; remote desktop is separate and defaults to disabled.
+Available session operations still depend on each original owner's confirmed
+capabilities. Claude Desktop Gateway's complete controls remain unaccepted.
+
+The installed trial preserves existing pairing and data. Record the user's
+phone acceptance separately from signing, install success and pairing bootstrap.
+Prepare a public Mac artifact with portable native compiler paths, a fresh
+privacy review and Apple notarization; leave the installed trial intact. Keep
+the verified public download until all current-candidate publication gates pass.
+
+## Historical version 0.5 behavior
 
 Mac Local network, Cloudflare and configured Relay are independent checkbox
 entries, enabled by default on first migration. One pinned-key QR conveys all

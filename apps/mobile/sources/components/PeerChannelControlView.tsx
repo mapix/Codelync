@@ -7,6 +7,7 @@ import { Text } from './StyledText';
 import { Typography } from '@/constants/Typography';
 import { PickerSheet, PickerSheetOption } from './PickerSheet';
 import { t } from '@/text';
+import type { CodeLightConnectionState } from '@/utils/codeLightConnectionState';
 
 export interface PeerChannelSnapshot {
     peerId: string | null;
@@ -23,12 +24,15 @@ function channelHost(channel: PeerChannel) {
 }
 
 /** The connection service owns selection and probes; the view owns only its open sheet. */
-export function PeerChannelControlView({ snapshot, onSelect, style, presentation = 'compact', showDivider = false }: {
+export function PeerChannelControlView({ snapshot, onSelect, style, presentation = 'compact', showDivider = false, connectionState, sourceNotice, onScan }: {
     snapshot: PeerChannelSnapshot;
     onSelect: (id: string | 'auto') => Promise<void>;
     style?: StyleProp<ViewStyle>;
     presentation?: 'compact' | 'settings' | 'header';
     showDivider?: boolean;
+    connectionState?: CodeLightConnectionState;
+    sourceNotice?: { scope?: string; message: string; failed: boolean; retry?: () => Promise<void> };
+    onScan?: () => void;
 }) {
     const { theme } = useUnistyles();
     const styles = stylesheet;
@@ -37,10 +41,13 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
     const [error, setError] = React.useState(false);
     const generation = React.useRef(0), busy = React.useRef(false);
     const selected = snapshot.channels.find(channel => channel.id === snapshot.selectedId);
-    const scope = JSON.stringify([snapshot.peerId, snapshot.selectedId, snapshot.automatic, selected?.url ?? null]);
+    const scope = JSON.stringify([snapshot.peerId, snapshot.selectedId, snapshot.automatic, selected?.url ?? null, sourceNotice?.scope ?? null]);
     const currentScope = React.useRef(scope); currentScope.current = scope;
     const healthy = !snapshot.connecting && selected?.state === 'connected';
     React.useEffect(() => { setError(false); }, [scope]);
+    React.useEffect(() => {
+        generation.current++; busy.current = false; setSubmitting(false);
+    }, [sourceNotice?.scope]);
     React.useEffect(() => {
         if (healthy && !snapshot.failureCode) setError(false);
     }, [healthy, snapshot]);
@@ -65,18 +72,34 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
             if (generation.current === current) { busy.current = false; setSubmitting(false); }
         }
     }, [onSelect]);
+    const retryRead = () => {
+        if (busy.current || !sourceNotice?.retry) return;
+        const current = generation.current, owner = currentScope.current;
+        busy.current = true; setSubmitting(true);
+        const read = sourceNotice.retry;
+        void Promise.resolve().then(() => {
+            if (generation.current === current && currentScope.current === owner) return read();
+        }).catch(() => {}).finally(() => {
+            if (generation.current === current && currentScope.current === owner) { busy.current = false; setSubmitting(false); }
+        });
+    };
 
-    if (!snapshot.peerId || snapshot.channels.length === 0) return null;
+    const hasRoutes = !!snapshot.peerId && snapshot.channels.length > 0;
+    if (!hasRoutes && presentation !== 'header') return null;
+    const failed = error || !!snapshot.failureCode || connectionState?.kind === 'failed' || connectionState?.kind === 'access-ended' || sourceNotice?.failed;
+    const recovering = !failed && (snapshot.connecting || submitting || connectionState?.kind === 'connecting' || !!sourceNotice && !sourceNotice.failed);
+    const routeIcon = selected?.kind === 'local' ? 'wifi-outline' : selected?.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline';
+    const headerIcon = failed || !hasRoutes ? 'alert-circle-outline' : recovering ? 'sync-outline' : routeIcon;
     const label = selected ? [snapshot.connecting ? t('codeLightChannels.switching') : selected.state !== 'connected' ? t(`codeLightChannels.${selected.state}`) : '', snapshot.automatic ? t('codeLightChannels.automatic') : '', channelName(selected.kind)].filter(Boolean).join(' · ')
         : t(snapshot.connecting ? 'codeLightChannels.switching' : 'codeLightChannels.notConnected');
     return (
-        <View style={[presentation === 'header' ? styles.headerContainer : presentation === 'settings' ? styles.settingsContainer : styles.container, style]}>
-            <Pressable testID="codelight-channel-open" accessibilityRole="button" accessibilityLabel={`${t('codeLightChannels.title')}: ${label}`}
+        <View testID={presentation === 'header' ? 'codelight-channel-header-slot' : undefined} style={[presentation === 'header' ? styles.headerContainer : presentation === 'settings' ? styles.settingsContainer : styles.container, style]}>
+            <Pressable testID="codelight-channel-open" accessibilityRole="button" accessibilityLabel={`${t('codeLightChannels.title')}: ${presentation === 'header' && failed ? t('codeLightChannels.failedTitle') : presentation === 'header' && recovering ? t('codeLightChannels.connectingTitle') : label}`}
                 accessibilityState={{ expanded: open, busy: submitting }}
                 onPress={() => { setError(false); setOpen(true); }} style={presentation === 'header' ? styles.headerTrigger : presentation === 'settings' ? styles.settingsTrigger : styles.trigger}>
-                {snapshot.connecting || submitting ? <ActivityIndicator size="small" color={theme.colors.textSecondary} />
-                    : <Ionicons name={selected?.kind === 'local' ? 'wifi-outline' : selected?.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline'} size={presentation === 'settings' ? 25 : presentation === 'header' ? 21 : 16} color={theme.colors.textSecondary} />}
-                {presentation === 'header' ? <View style={[styles.headerStatus, { backgroundColor: healthy ? theme.colors.success : theme.colors.textSecondary }]} /> : presentation === 'settings' ? <View style={styles.settingsCopy}>
+                {presentation === 'header' ? <Ionicons testID="codelight-channel-status-icon" name={headerIcon} size={21} color={failed ? theme.colors.textDestructive : theme.colors.textSecondary} /> : snapshot.connecting || submitting ? <ActivityIndicator size="small" color={theme.colors.textSecondary} />
+                    : <Ionicons name={selected?.kind === 'local' ? 'wifi-outline' : selected?.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline'} size={presentation === 'settings' ? 25 : 16} color={theme.colors.textSecondary} />}
+                {presentation === 'header' ? null : presentation === 'settings' ? <View style={styles.settingsCopy}>
                     <Text style={styles.settingsTitle}>{t('codeLightChannels.title')}</Text>
                     <Text style={styles.settingsDescription} numberOfLines={2}>{label}</Text>
                 </View> : <Text style={styles.triggerText} numberOfLines={1}>{label}</Text>}
@@ -84,8 +107,14 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
             </Pressable>
             {presentation === 'settings' && showDivider ? <View style={styles.settingsDivider} /> : null}
             <PickerSheet visible={open} title={t('codeLightChannels.title')} onClose={() => setOpen(false)}>
-                <PickerSheetOption testID="codelight-channel-auto" label={t('codeLightChannels.automatic')} description={t('codeLightChannels.automaticDetail')}
+                {open && (connectionState?.kind === 'failed' || connectionState?.kind === 'access-ended') ? <Text testID="codelight-channel-connection-error" accessibilityLiveRegion="polite" style={styles.error}>{t(connectionState.kind === 'access-ended' ? 'codeLightChannels.accessEndedHelp' : 'codeLightChannels.failedHelp')}</Text> : null}
+                {open && sourceNotice ? <View style={styles.readNotice}><Text testID="codelight-channel-source-notice" accessibilityLiveRegion="polite" style={styles.error}>{sourceNotice.message}</Text>
+                    {sourceNotice.retry ? <PickerSheetOption testID="codelight-channel-read-retry" label={t('common.retry')} selected={false} action disabled={submitting}
+                        onPress={retryRead} /> : null}
+                </View> : null}
+                {hasRoutes ? <PickerSheetOption testID="codelight-channel-auto" label={t('codeLightChannels.automatic')} description={t('codeLightChannels.automaticDetail')}
                     selected={snapshot.automatic} disabled={submitting} onPress={() => void choose('auto')} />
+                    : onScan ? <PickerSheetOption testID="codelight-channel-scan" label={t('codeLightChannels.scanMac')} selected={false} action onPress={onScan} /> : null}
                 {snapshot.channels.map(channel => {
                     const latency = typeof channel.latencyMs === 'number' && Number.isFinite(channel.latencyMs) && channel.latencyMs >= 0
                         ? t('codeLightChannels.latency', { ms: Math.round(channel.latencyMs) }) : t('codeLightChannels.latencyUnknown');
@@ -97,7 +126,8 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
                         labelIcon={<Ionicons name={channel.kind === 'local' ? 'wifi-outline' : channel.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline'} size={16} color={theme.colors.textSecondary} />}
                         onPress={() => void choose(channel.id)} />;
                 })}
-                {error ? <Text testID="codelight-channel-error" accessibilityLiveRegion="polite" style={styles.error}>{t('codeLightChannels.switchFailed')}</Text> : null}
+                {open && error ? <Text testID="codelight-channel-error" accessibilityLiveRegion="polite" style={styles.error}>{t('codeLightChannels.switchFailed')}</Text> : null}
+                {open && connectionState?.kind === 'access-ended' && onScan ? <PickerSheetOption testID="codelight-channel-scan" label={t('codeLightChannels.scanMac')} selected={false} action onPress={onScan} /> : null}
             </PickerSheet>
         </View>
     );
@@ -105,9 +135,9 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
 
 const stylesheet = StyleSheet.create(theme => ({
     container: { alignSelf: 'flex-start', maxWidth: '100%' },
-    headerContainer: { alignSelf: 'center' },
-    headerTrigger: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-    headerStatus: { position: 'absolute', right: 5, bottom: 7, width: 5, height: 5, borderRadius: 3 },
+    headerContainer: { alignSelf: 'center', width: 44, height: 44 },
+    headerTrigger: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+    readNotice: { paddingTop: 4 },
     settingsContainer: { alignSelf: 'stretch' },
     settingsTrigger: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 16, paddingVertical: 12 },
     settingsCopy: { flex: 1, minWidth: 0, gap: 3 },

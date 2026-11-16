@@ -213,3 +213,58 @@ preload/focus races, recent patch/tool dependencies, old cursor only on scroll,
 superseded selections and route changes retaining identity. Measure request
 counts/RTTs, bytes and time to first recent display; don't substitute fixture
 timing for physical-phone acceptance.
+
+## Opt-in warm recent cache — 2026-11-16
+
+### Mac-maintained directory projection
+
+The production Mac service materializes directory descriptors and semantic
+signatures every five seconds, independently of phone connections. HTTP catalog
+reads only page or compare this immutable in-memory projection; they do not
+construct every descriptor, read observer checkpoints or hash all metadata.
+Native index scanning remains separate. The first capture is prepared before
+network gateways accept catalog reads. A failed capture reports unavailable and
+does not renew a successful capture time or replace retained phone data.
+Shutdown releases the timer and prepared directory. The projection is scoped to
+its emitting machine and bounded to 10,000 headers; existing cursor and delta
+snapshot bounds remain in force. An earlier page continuation retains its
+original capture even when a later background capture changes the directory.
+
+A recent request may use `readPolicy: 'cache-first'`. The omitted/default policy
+remains fresh. This policy is accepted only on the recent route, never on an
+older-history cursor. A warm, already-started connector can return its bounded
+last validated native message window before awaiting another native snapshot.
+The source binding, namespace, current cached owner generation and host lease
+must still agree. Cold, missing, oversized, closed or foreign-owner caches fall
+back to the existing fresh-read path. Cache construction uses at most 100 public
+whole rows and a 1 MiB in-memory payload budget; it does not read private history,
+turn on a model runner, restart a Desktop or select a Desktop window.
+
+Every such recent result includes `freshness` version 1, `mode` (`cached` or
+`fresh`), `capturedAt`, `ownerGeneration`, `currentControlAuthority` and
+`revalidationPending`. The cached capture time is retained, not renewed by a
+phone read. Cached mode has `currentControlAuthority: false` and
+`revalidationPending: true`. It supplies message data with an unknown root
+runtime status and no current turn. Its derived descriptor is readonly, with no
+model catalogue/current setting or current Query/task proof, disabled write
+capabilities, and only receipt queries. Retained request/receipt identities are
+preserved without granting action authority. Cached subagent activity is
+unknown, never current running/idle. The cached response omits the full stale
+subagent roster and task control catalogue; status synchronization is independent of
+this message cache. The derived response never modifies persistent source
+metadata or the original owner's state.
+
+A cached result starts one background fresh revalidation under the existing
+source-interest pin. Concurrent background and explicit fresh readers share the
+same service read and connector native-refresh flight, including different row
+limits at the connector. Revalidation publishes through the existing native
+metadata/message projection. A phone renders cached text immediately and makes
+one nonblocking fresh read to receive the confirmation, without replaying any
+operation. A failed revalidation retains cached text and reports unconfirmed
+freshness. Freshness mode never overrides native readonly/capability/owner gates.
+
+The cached response has no usable older-history cursor. A client preserves an
+existing confirmed cursor while showing cached text, and installs a new cursor
+only from the fresh response. Derived readonly descriptors preserve original
+metadata/agent-state versions; a same-version fresh response must still restore
+its confirmed descriptor, rather than retaining the cache-only readonly copy.

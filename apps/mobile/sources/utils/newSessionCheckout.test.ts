@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 // Reached through sessionUtils' path formatter, and it drags React Native in
 // with it. Nothing here reads a translation.
 vi.mock('@/text', () => ({ t: (key: string) => key }));
+vi.mock('@/sync/apiSocket',()=>({apiSocket:{peerIdentity:()=>null,onStatusChange:()=>()=>{}}}));
 
 import { newSessionLikeSession } from './newSessionCheckout';
 import type { Session } from '@/sync/storageTypes';

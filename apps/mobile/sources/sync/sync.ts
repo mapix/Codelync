@@ -57,7 +57,7 @@ import { registerCodeLightBackgroundTask } from './codeLightBackgroundTask';
 import { startCodeLightPresence, renewCodeLightPresence } from './codeLightNotifications';
 import { selectCodeLightSession } from './codeLightSessionSelection';
 import { codeLightLoadingProgress } from './codeLightLoadingProgress';
-import { nativeRecentMessages, peerDescriptorSession, isCurrentNativeRecent, type PeerRecentWindow, type PeerSessionDescriptor } from './codeLightRecent';
+import { nativeRecentMessages, peerDescriptorSession, cachedPeerDescriptorSession, peerRecentIsCached, isCurrentNativeRecent, type PeerRecentWindow, type PeerSessionDescriptor } from './codeLightRecent';
 import { captureNativeDispatchContext, matchesNativeDispatchContext } from '@/utils/nativeDispatchContext';
 import { loadCodeLightPeerCatalog, loadCodeLightPeerCatalogState, saveCodeLightPeerCatalog } from './codeLightPeerCatalogCache';
 import { CodeLightPeerCatalogDelta, reconcileCodeLightCatalogSessions } from './codeLightPeerCatalogDelta';
@@ -169,6 +169,11 @@ class Sync {
     private codeLightDiscoveryAbort: AbortController | null = null;
     private codeLightCachedMessages = new Set<string>();
     private codeLightEntryFlights = new Map<string, { credentials: AuthCredentials; selected: boolean; promise: Promise<void> }>();
+    private codeLightPeerReadFlights = new Map<string, { credentials: AuthCredentials; promise: Promise<void> }>();
+    private codeLightPeerRevalidations = new Map<string, { credentials: AuthCredentials; promise: Promise<void> }>();
+    private releaseReconnectSubscription: (() => void) | null = null;
+    private releasePeerLiveSubscription: (() => void) | null = null;
+    private codeLightPeerLiveMetadata = new Map<string, { credentials: AuthCredentials; signature: string; version: number }>();
     private codeLightHistoryCursors = new Map<string, string | null>();
     private codeLightHistoryOwners = new Map<string, string | null>();
     private olderMessagesPrefetching = new Set<string>();
@@ -349,6 +354,7 @@ class Sync {
     }
 
     async #init() {
+        this.codeLightPeerLiveMetadata.clear();
         if (this.codeLightActivityTimer) clearTimeout(this.codeLightActivityTimer);
         this.codeLightActivityTimer = null; this.codeLightActivity.clear();
 
@@ -476,7 +482,8 @@ class Sync {
         if (this.hasCodeLightPeer() && navigation) void navigation.catch(() => {});
         const entry = { credentials, selected, promise: Promise.resolve() as Promise<void> };
         // 新入口先拥有同步状态，不能在异步 fetch 开始前显示上次缓存的断连错误。
-        const queuedProgress = codeLightLoadingProgress.queueSession(sessionId);
+        const revalidation = this.codeLightPeerRevalidations.get(sessionId);
+        const queuedProgress = revalidation?.credentials === credentials ? codeLightLoadingProgress.getSession(sessionId).generation : codeLightLoadingProgress.queueSession(sessionId);
         entry.promise = ready.then(async () => {
             if (this.credentials !== credentials) return;
             // Foreground peer reads have one bounded attempt. InvalidateSync's
@@ -2498,12 +2505,9 @@ class Sync {
     }
 
     private fetchMessages = async (sessionId: string) => {
+        if (this.hasCodeLightPeer()) return this.fetchPeerMessages(sessionId);
         const progress = codeLightLoadingProgress.beginSession(sessionId);
         try {
-        if (this.hasCodeLightPeer()) {
-            await this.getSessionMessageLock(sessionId).inLock(() => this.fetchPeerRecentWindow(sessionId));
-            codeLightLoadingProgress.endSession(sessionId, progress); return;
-        }
         // Take ownership before waiting. A touch on a different row must not
         // abort the first page once ordinary sync needs it. No duplicate GET
         // or second decryption when touch-up overlaps the speculative request.
@@ -2564,14 +2568,48 @@ class Sync {
         }
     }
 
-    private fetchPeerRecentWindow = async (sessionId: string) => {
+    private fetchPeerMessages = (sessionId: string): Promise<void> => {
         const credentials = this.credentials;
-        const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1 }) });
+        const pending = this.codeLightPeerReadFlights.get(sessionId);
+        if (pending?.credentials === credentials) return pending.promise;
+        if (this.codeLightPeerRevalidations.get(sessionId)?.credentials === credentials) return Promise.resolve();
+        const progress = codeLightLoadingProgress.beginSession(sessionId);
+        let cached = false;
+        const entry = { credentials, promise: Promise.resolve() as Promise<void> };
+        entry.promise = this.getSessionMessageLock(sessionId).inLock(() => this.fetchPeerRecentWindow(sessionId, true)).then(value => {
+            cached = value; codeLightLoadingProgress.endSession(sessionId, progress);
+        }).catch(error => { codeLightLoadingProgress.endSession(sessionId, progress, true); throw error; }).finally(() => {
+            if (this.codeLightPeerReadFlights.get(sessionId) === entry) this.codeLightPeerReadFlights.delete(sessionId);
+            if (cached && this.credentials === credentials) this.revalidatePeerMessages(sessionId, credentials, progress);
+        });
+        this.codeLightPeerReadFlights.set(sessionId, entry); return entry.promise;
+    }
+
+    private revalidatePeerMessages = (sessionId: string, credentials: AuthCredentials, progress: number) => {
+        if (this.codeLightPeerRevalidations.get(sessionId)?.credentials === credentials) return;
+        codeLightLoadingProgress.revalidateSession(sessionId, progress, true);
+        const entry = { credentials, promise: Promise.resolve() as Promise<void> };
+        entry.promise = Promise.resolve().then(async () => {
+            if (this.credentials !== credentials) return;
+            if (storage.getState().currentViewingSessionId !== sessionId) { codeLightLoadingProgress.revalidateSession(sessionId, progress, false); return; }
+            await this.getSessionMessageLock(sessionId).inLock(() => this.fetchPeerRecentWindow(sessionId));
+            if (this.credentials === credentials) codeLightLoadingProgress.revalidateSession(sessionId, progress, false);
+        }).catch(() => {
+            if (this.credentials === credentials) codeLightLoadingProgress.revalidateSession(sessionId, progress, false, true);
+        }).finally(() => { if (this.codeLightPeerRevalidations.get(sessionId) === entry) this.codeLightPeerRevalidations.delete(sessionId); });
+        this.codeLightPeerRevalidations.set(sessionId, entry);
+    }
+
+    private fetchPeerRecentWindow = async (sessionId: string, cacheFirst = false): Promise<boolean> => {
+        const credentials = this.credentials;
+        const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1, ...(cacheFirst ? { readPolicy: 'cache-first' } : {}) }) });
         if (!response.ok) throw Error(`Fresh native messages unavailable: ${response.status}`);
         const data = await response.json() as PeerRecentWindow;
         const current = storage.getState();
-        if (this.credentials !== credentials || current.currentViewingSessionId && current.currentViewingSessionId !== sessionId) return;
+        if (this.credentials !== credentials || current.currentViewingSessionId && current.currentViewingSessionId !== sessionId) return false;
         if (data.session?.id !== sessionId || typeof data.session.sessionKey !== 'string') throw Error('Invalid selected native session');
+        const cached = peerRecentIsCached(data);
+        if (cached && !cacheFirst || !Number.isSafeInteger(data.seq) || data.seq < 0) throw Error('Invalid native recent read policy');
         const previous = current.sessions[sessionId];
         const incoming = peerDescriptorSession(data.session, previous);
         // The paired peer can prepare this exact uncached child, but only for
@@ -2584,25 +2622,49 @@ class Sync {
             throw Error('Uncached native source could not be confirmed');
         }
         const messages = nativeRecentMessages(data);
-        if (!isCurrentNativeRecent(data, previous ?? incoming)) return;
+        if (!isCurrentNativeRecent(data, previous ?? incoming)) return false;
         const key = decodeBase64(data.session.sessionKey, 'base64'); if (key.length !== 32) throw Error('Invalid native session key');
         await this.encryption.initializeSessions(new Map([[sessionId, key]]));
         const afterKey = storage.getState();
         if (this.credentials !== credentials || afterKey.currentViewingSessionId && afterKey.currentViewingSessionId !== sessionId
             || !afterKey.sessions[sessionId] && afterKey.currentViewingSessionId !== sessionId
-            || !isCurrentNativeRecent(data, afterKey.sessions[sessionId] ?? incoming)) return;
-        this.applySessions([peerDescriptorSession(data.session, afterKey.sessions[sessionId])]);
+            || !isCurrentNativeRecent(data, afterKey.sessions[sessionId] ?? incoming)) return false;
+        const live = afterKey.sessions[sessionId], provenance = this.codeLightPeerLiveMetadata.get(sessionId);
+        const previousIsLive = !!live && provenance?.credentials === credentials && provenance.version === live.metadataVersion
+            && provenance.signature === this.peerLiveMetadataSignature(live) && live.metadata?.bridge?.sourceStatus === 'connected';
+        this.applySessions([cached ? cachedPeerDescriptorSession(data.session, live, previousIsLive) : peerDescriptorSession(data.session, live)]);
+        if (!cached) this.rememberPeerLiveMetadata(sessionId, data.session.metadataVersion);
         this.applyMessages(sessionId, messages);
-        this.sessionLastSeq.set(sessionId, data.seq);
-        this.codeLightHistoryCursors.set(sessionId, data.nextCursor);
-        this.codeLightHistoryOwners.set(sessionId, data.ownerGeneration);
+        this.sessionLastSeq.set(sessionId, Math.max(data.seq, this.sessionLastSeq.get(sessionId) ?? 0));
+        if (!cached) {
+            this.codeLightHistoryCursors.set(sessionId, data.nextCursor);
+            this.codeLightHistoryOwners.set(sessionId, data.ownerGeneration);
+        }
         storage.getState().applyMessagesLoaded(sessionId);
-        storage.getState().applyOlderMessagesPagination(sessionId, { hasMore: data.hasMore && !!data.nextCursor });
+        if (!cached) storage.getState().applyOlderMessagesPagination(sessionId, { hasMore: data.hasMore && !!data.nextCursor });
         // 选中会话的 key 已就绪后只读恢复原回执；不阻塞最新消息显示，也不重放旧提交。
-        void import('./noninvasiveRpc').then(module => module.recoverNoninvasiveRpc(sessionId, 'communication')).catch(() => {});
+        if (!cached) void import('./noninvasiveRpc').then(module => module.recoverNoninvasiveRpc(sessionId, 'communication')).catch(() => {});
+        return cached;
+    }
+
+    private peerLiveMetadataSignature = (session: Session): string | null => {
+        const metadata = session.metadata, source = metadata?.bridge?.source;
+        return source && typeof source.runtimeGeneration === 'string' && !!source.runtimeGeneration.trim()
+            && isNoninvasiveBridge(metadata) && isCodeLightSessionIdentity(source, metadata?.bridge?.controlMode)
+            ? JSON.stringify([session.id, metadata?.machineId, source.app, source.id, source.hostId, source.kind, source.protocol,
+                source.appMode, source.nativeCollection, source.runtimeGeneration, metadata?.nativeDesktopRuntimeGeneration ?? session.agentState?.nativeDesktopRuntimeGeneration ?? null]) : null;
+    }
+
+    private rememberPeerLiveMetadata = (sessionId: string, receivedVersion: number) => {
+        const session = storage.getState().sessions[sessionId];
+        if (!this.hasCodeLightPeer() || !session || session.metadata?.bridge?.sourceStatus !== 'connected') { this.codeLightPeerLiveMetadata.delete(sessionId); return; }
+        const signature = this.peerLiveMetadataSignature(session);
+        if (signature && receivedVersion >= session.metadataVersion) this.codeLightPeerLiveMetadata.set(sessionId, { credentials: this.credentials, signature, version: session.metadataVersion });
     }
 
     private fetchPeerOlderWindow = async (sessionId: string, count = 8): Promise<boolean> => {
+        const progress = codeLightLoadingProgress.getSession(sessionId);
+        if (progress.revalidating || progress.revalidationFailed) return false;
         const state = storage.getState().sessionMessages[sessionId], cursor = this.codeLightHistoryCursors.get(sessionId), owner = this.codeLightHistoryOwners.get(sessionId);
         if (!cursor || !state?.hasMoreOlder || state.isLoadingOlder) return false;
         if (!Number.isSafeInteger(count) || count < 1 || count > 8) throw Error('A bounded native viewport history batch is required');
@@ -2883,7 +2945,15 @@ class Sync {
         apiSocket.onMessage('ephemeral', this.handleEphemeralUpdate.bind(this));
 
         // Subscribe to connection state changes
-        apiSocket.onReconnected(() => {
+        this.releaseReconnectSubscription?.();
+        this.releasePeerLiveSubscription?.();
+        let channelRevision = apiSocket.peerReadChannelRevision();
+        this.releasePeerLiveSubscription = apiSocket.onStatusChange(status => {
+            const next = apiSocket.peerReadChannelRevision();
+            if (next !== channelRevision) { channelRevision = next; return; }
+            if (status === 'disconnected' || status === 'error') this.codeLightPeerLiveMetadata.clear();
+        });
+        this.releaseReconnectSubscription = apiSocket.onReconnected(() => {
             log.log('🔌 Socket reconnected');
 
             // Send current focus state on reconnect so the server's
@@ -3049,6 +3119,7 @@ class Sync {
 
             log.log(`🗑️ Session ${sessionId} deleted from local storage`);
         } else if (updateData.body.t === 'update-session') {
+            const updateCredentials = this.credentials;
             // Session + encryption may not be initialized yet if sessions are
             // still syncing on startup. Mirror the new-message path: await the
             // sessions sync queue and re-check before giving up — dropping here
@@ -3075,6 +3146,7 @@ class Sync {
                 const metadata = updateData.body.metadata && sessionEncryption
                     ? await sessionEncryption.decryptMetadata(updateData.body.metadata.version, updateData.body.metadata.value)
                     : session.metadata;
+                if (this.hasCodeLightPeer() && this.credentials !== updateCredentials) return;
 
                 const nextProjectId = updateData.body.projectId !== undefined
                     ? updateData.body.projectId
@@ -3104,6 +3176,7 @@ class Sync {
                     updatedAt: updateData.createdAt,
                     seq: updateData.seq
                 }]);
+                if (updateData.body.metadata) this.rememberPeerLiveMetadata(session.id, updateData.body.metadata.version);
                 if (nextProjectId !== session.projectId) this.projectsSync.invalidate();
 
                 // Invalidate git status when agent state changes (files may have been modified)
@@ -3656,11 +3729,21 @@ async function syncInit(credentials: AuthCredentials, restore: boolean, serverUr
     // Initialize socket connection
     if (serverUrl !== getServerUrl()) throw Error('The selected server changed during account initialization.');
     const API_ENDPOINT = serverUrl;
-    apiSocket.initialize({ endpoint: API_ENDPOINT, token: credentials.token, peer: credentials.peer }, encryption);
     if (config.noninvasiveLocal) {
-        const { initializeCodeLightConnection } = await import('./codeLightConnection');
-        initializeCodeLightConnection(credentials);
-    }
+        const { initializeCodeLightConnection, suspendCodeLightAutomaticRecovery } = await import('./codeLightConnection');
+        const resumeAutomatic = suspendCodeLightAutomaticRecovery(credentials);
+        try {
+            initializeCodeLightConnection(credentials);
+            apiSocket.initialize({ endpoint: API_ENDPOINT, token: credentials.token, peer: credentials.peer }, encryption);
+            const { consumeNativeStartupMacLocator } = await import('./startupMacLocator.native');
+            if (await consumeNativeStartupMacLocator()) {
+                const { TokenStorage } = await import('@/auth/tokenStorage');
+                const { sameLocatorOwner } = await import('./startupMacLocatorCore');
+                const updated = await TokenStorage.getCredentials();
+                if (updated && sameLocatorOwner(credentials, updated)) credentials = updated;
+            }
+        } finally { resumeAutomatic(); }
+    } else apiSocket.initialize({ endpoint: API_ENDPOINT, token: credentials.token, peer: credentials.peer }, encryption);
 
     // Wire socket status to storage
     releaseInitializationStatus = apiSocket.onStatusChange((status) => {

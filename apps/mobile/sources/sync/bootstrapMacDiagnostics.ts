@@ -3,12 +3,14 @@ import { TokenStorage } from '@/auth/tokenStorage';
 import { peerAuthorization, decodePeerResponse } from './peerNetwork';
 import { initializeCodeLightConnection, selectConnection } from './codeLightConnection';
 import { abortBudget } from './abortBudget';
+import { sameLocatorOwner } from './startupMacLocatorCore';
 
 /** Private USB diagnosis supplies locators only. The existing pinned Mac key remains the authority. */
-export async function bootstrapMacDiagnostics(urls: unknown): Promise<void> {
+export async function bootstrapMacDiagnostics(urls: unknown, options: { expectedPeerId?: string } = {}): Promise<void> {
     if (!Array.isArray(urls) || !urls.length || urls.length > 8 || !urls.every(url => typeof url === 'string' && url.length < 512)) throw Error('Invalid diagnostic locators');
     const credentials = await TokenStorage.getCredentials();
     if (!credentials?.peer) throw Error('An existing Mac pairing is required');
+    if (options.expectedPeerId && credentials.peer.id !== options.expectedPeerId) throw Error('The saved Mac changed');
     const peer = credentials.peer;
     const candidates = channelList(urls.map((url, index) => ({ id: `usb-locator-${index}`, kind: url.startsWith('http:') ? 'local' : 'cloudflare', url, label: 'Mac diagnostic locator' })));
     const temporary = { ...peer, channels: candidates };
@@ -23,8 +25,9 @@ export async function bootstrapMacDiagnostics(urls: unknown): Promise<void> {
             return channels;
         } finally { deadline.dispose(); }
     }));
+    if (!sameLocatorOwner(credentials, await TokenStorage.getCredentials())) throw Error('The saved Mac changed');
     // 先认证原 peer，再复用唯一选路 owner；失败不改写原凭据或未知操作。
     initializeCodeLightConnection({ ...credentials, peer: { ...peer, channels: verified } });
     try { await selectConnection('auto'); }
-    catch (error) { initializeCodeLightConnection(credentials); throw error; }
+    catch (error) { const current = await TokenStorage.getCredentials(); if (sameLocatorOwner(credentials, current)) initializeCodeLightConnection(current!); throw error; }
 }

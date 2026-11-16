@@ -34,6 +34,7 @@ export default function RootLayout() {
         <Stack
             initialRouteName='index'
             screenOptions={{
+                orientation: config.noninvasiveLocal && Platform.OS === 'ios' && !Platform.isPad ? 'portrait' : 'default',
                 header: shouldUseCustomHeader ? createHeader : undefined,
                 headerBackTitle: t('common.back'),
                 headerBackButtonDisplayMode: Platform.OS === 'ios' ? 'minimal' : undefined,

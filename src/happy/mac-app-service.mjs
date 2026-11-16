@@ -19,7 +19,10 @@ import { loadAPNsSender } from './apns-sender.mjs';
 import { NotificationDispatcher } from './notification-dispatcher.mjs';
 import { GatewayMetrics } from './gateway-metrics.mjs';
 import { MacConnectionService } from './mac-connection-service.mjs';
+import { RemoteDesktop } from './remote-desktop.mjs';
 import { closeOwnedResources, stopOwnedChildren } from './owned-shutdown.mjs';
+import { DesktopSourceSubscriptions } from './source-subscriptions.mjs';
+import { SourceSubscriptionCommands } from './source-subscription-commands.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const runtime = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -35,6 +38,7 @@ const lockfile = createRequire(import.meta.url)('proper-lockfile');
 /** @type {Set<import('node:child_process').ChildProcess>} */ const children = new Set();
 /** @type {CodeLightMacDaemon|null} */ let daemon = null;
 /** @type {MacConnectionService|null} */ let connections = null;
+/** @type {RemoteDesktop|null} */ let desktop = null;
 /** @type {NotificationDispatcher|null} */ let notifications = null;
 /** @type {PairingInvitations|null} */ let invitations = null;
 /** @type {(()=>Promise<void>)|null} */ let releaseLease = null;
@@ -43,6 +47,7 @@ let qaPairingWrite = Promise.resolve();
 let publicOrigin = '', closing = false;
 /** @type {GatewayMetrics|null} */ let metrics = null;
 /** @type {ReturnType<typeof setInterval>|null} */ let metricsTimer = null;
+/** @type {SourceSubscriptionCommands|null} */ let sourceCommands = null;
 /** Local UI pipe only; invitations/tokens never enter a public status API or ordinary logs. @param {Value} value */
 function notify(value) { if (!closing && !process.stdout.destroyed) process.stdout.write(JSON.stringify(value) + '\n'); }
 
@@ -51,7 +56,7 @@ async function close() {
   if (renewal) clearInterval(renewal);
   if (metricsTimer) clearInterval(metricsTimer);
   // 任一资源清理失败仍要关闭本地数据库进程；不能留下孤儿 writer 后先释放服务 lease。
-  await closeOwnedResources([() => notifications?.close(), () => connections?.close(), () => daemon?.close(),
+  await closeOwnedResources([() => sourceCommands?.idle(), () => desktop?.close(), () => notifications?.close(), () => connections?.close(), () => daemon?.close(),
     () => invitations?.close(), () => metrics?.close()], async () => {
     await stopOwnedChildren([...children]);
   }, async () => { await releaseLease?.(); });
@@ -166,15 +171,27 @@ async function main() {
       configuredClaudeRuntime = configured.claudeRuntimePath;
     }
   } catch { notify({ type: 'diagnostic', code: 'native-desktop-configuration-unavailable' }); }
+  // BEGIN DESKTOP SOURCE SUBSCRIPTIONS
+  const sourceSubscriptions = new DesktopSourceSubscriptions({ path: join(state, 'source-subscriptions.json') });
+  await sourceSubscriptions.reload();
+  sourceCommands = new SourceSubscriptionCommands({ settings: sourceSubscriptions, daemon: () => daemon, notify,
+    changed: () => connections?.recent.refreshCatalog(), isClosing: () => closing });
+  sourceCommands.publish();
+  // END DESKTOP SOURCE SUBSCRIPTIONS
   daemon = new CodeLightMacDaemon({ directory: join(state, 'connector'), leaseDirectory: process.env.CODELIGHT_LEASE_DIR ?? join(homedir(), '.codelight/leases'), account,
-    observeBackground: !!sender,
-    onRpc: () => metrics?.rpc(), viewedSessions: () => devices.viewedSessions(), discovery: new LocalSourceDiscovery({ storage: new BundledCodexStorage(), claudeRuntimePath: configuredClaudeRuntime }) });
+    observeBackground: !!sender, sourceSubscriptions,
+    onRpc: () => metrics?.rpc(), viewedSessions: () => devices.viewedSessions(), discovery: new LocalSourceDiscovery({ storage: new BundledCodexStorage(), claudeRuntimePath: configuredClaudeRuntime, sourceSubscriptions }) });
   daemon.on('diagnostic', value => notify({ type: 'diagnostic', code: value.code }));
   daemon.on('notification-observation', value => notifications?.observe(value.sourceKey, value.sessionId, value.summary).catch(() => notify({ type: 'diagnostic', code: 'notification-observation-pending' })));
   await daemon.start();
+  desktop = new RemoteDesktop({ state: join(state, 'desktop'), devices, macSecretKey: invitations.pair.secretKey,
+    hostBinary: join(runtime, 'native/bin/CodeLightDesktopHost'), relayBinary: join(runtime, 'native/bin/livekit-server') });
+  desktop.on('status', value => notify({ type: 'desktop-status', status: value }));
+  try { notify({ type: 'desktop-status', status: await desktop.load() }); }
+  catch { notify({ type: 'desktop-status', status: desktop.status(), error: 'desktop-settings-unavailable' }); }
   notify({ type: 'starting', phase: 'connection-channels' });
   connections = new MacConnectionService({ state, cloudflared, upstream: backendOrigin, account, devices, invitations, daemon,
-    metrics, notificationsAvailable: !!sender });
+    metrics, notificationsAvailable: !!sender, remoteDesktop: desktop });
   connections.on('configuration', (/** @type {Value} */ value) => notify({ type: 'access-configuration', configuration: value }));
   connections.on('channels', (/** @type {Value} */ value) => { notify({ type: 'access-channels', ...value }); issue(); });
   connections.on('diagnostic', (/** @type {Value} */ value) => notify({ type: 'diagnostic', ...value }));
@@ -182,7 +199,16 @@ async function main() {
   createInterface({ input: process.stdin }).on('line', value => {
     try {
       const command = JSON.parse(value);
+      if (sourceCommands?.handle(command)) return;
       if (command.type === 'refresh-invite') issue(true);
+      else if (['configure-desktop', 'desktop-permission'].includes(command.type) && typeof command.requestId === 'string' && command.requestId.length <= 128) {
+        const requestId = command.requestId;
+        Promise.resolve().then(() => {
+          if (!desktop) throw Error('desktop-service-unavailable');
+          return command.type === 'configure-desktop' ? desktop.configure(command.configuration) : desktop.requestPermission(command.permission);
+        }).then(() => notify({ type: 'desktop-result', requestId, ok: true }))
+          .catch(() => notify({ type: 'desktop-result', requestId, ok: false, code: 'desktop-configuration-failed' }));
+      }
       else if (command.type === 'rename-device' && typeof command.id === 'string' && typeof command.name === 'string') devices.rename(command.id, command.name).catch(() => notify({ type: 'diagnostic', code: 'device-operation-failed' }));
       else if (command.type === 'revoke-device' && typeof command.id === 'string') devices.revoke(command.id).then(() => issue(true)).catch(() => notify({ type: 'diagnostic', code: 'device-operation-failed' }));
       else if (command.type === 'set-enabled-channels' && typeof command.requestId === 'string' && command.requestId.length <= 128) {

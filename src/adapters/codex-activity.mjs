@@ -269,7 +269,7 @@ export class CodexActivityObserver {
       if (this.closed || this.lifecycle !== lifecycle) return null;
       return this.ipc.subscribe(this.id, (/** @type {Value} */ frame) => {
         if (!this.closed && this.lifecycle === lifecycle) this.receive(frame);
-      });
+      }, { autoRecover: false });
     }).then((release) => { if (!release) return; if (this.closed || this.lifecycle !== lifecycle) release(); else this.release = release; })
       .catch(() => { if (!this.closed && this.lifecycle === lifecycle) this.invalidate('unavailable'); })
       .finally(() => { if (this.starting === operation) this.starting = null; });
@@ -283,7 +283,7 @@ export class CodexActivityObserver {
     const operation = Promise.resolve().then(async () => {
       if (this.closed || this.lifecycle !== lifecycle) return;
       await this.ipc.connect?.();
-      if (!this.closed && this.lifecycle === lifecycle) return this.ipc.refreshSnapshot(this.id);
+      if (!this.closed && this.lifecycle === lifecycle) return this.ipc.refreshSnapshot(this.id, undefined, { recoverOwner: !this.observationReady() });
     }).catch(() => {
       if (!this.closed && this.lifecycle === lifecycle) this.invalidate('unavailable');
     }).finally(() => { if (this.refreshing === operation) this.refreshing = null; });
@@ -292,7 +292,10 @@ export class CodexActivityObserver {
   /** @param {Value} frame */
   receive(frame) {
     if (frame.type === 'bridge/status') {
-      if (['disconnected', 'owner-disconnected', 'owner-unavailable', 'subscription-error'].includes(frame.status)) this.invalidate('unavailable');
+      if (['disconnected', 'owner-disconnected', 'owner-unavailable', 'subscription-error'].includes(frame.status)) {
+        this.invalidate('unavailable');
+        if (this.release && !this.starting && !this.refreshing) this.requestRefresh();
+      }
       return;
     }
     if (frame.type !== 'broadcast' || frame.method !== 'thread-stream-state-changed') return;
@@ -333,6 +336,16 @@ export class CodexActivityObserver {
   }
   /** @param {Activity} value */
   publish(value) { this.value = value; try { this.onChange({ ...value }); } catch { /* 已关闭消费者不影响其他只读观察者。 */ } }
+  /** Scope-valid baseline health is independent of aggregate roster coverage. */
+  observationReady() {
+    const value = this.status();
+    return !this.closed && !!this.replica && typeof value.generation === 'string' && !!value.generation
+      && Number.isSafeInteger(value.revision) && this.liveConnection()
+      && this.connection === this.ipc.socket && this.followerClientId === this.ipc.clientId
+      && this.ipc.generation(this.id) === value.generation;
+  }
+  /** No periodic reread can make a partial loaded history complete. */
+  needsRefresh() { return !this.closed && !this.observationReady(); }
   liveConnection() { return this.ipc.socket?.destroyed === false && typeof this.ipc.clientId === 'string' && !!this.ipc.clientId && this.ipc.clientId !== 'initializing-client'; }
   status() {
     if (this.value.generation !== null && this.ipc.generation(this.id) !== this.value.generation) {

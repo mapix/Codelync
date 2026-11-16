@@ -7,6 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+/** @typedef {Record<string,any>} Value */
 const NOW = 80 * 60 * 60 * 1000;
 /** @param {string} id @param {number} updatedAt */
 function entry(id, updatedAt) { return { source: { app: 'codex', id: `native-${id}`, title: id, updatedAt, createdAt: 1, workspace: '/fixture', preview: 'heavy preview', project: { key: 'project', path: '/fixture', label: 'Fixture' } },
@@ -88,4 +89,61 @@ test('the real read-only index worker orders native millisecond recency and omit
   assert.deepEqual(/** @type {any[]} */ (rows).map(row => row.id), ['recent', 'old']);
   assert.equal(/** @type {any[]} */ (rows)[0].preview, 'recent preview');
   assert.equal(/** @type {any[]} */ (rows)[1].preview, '');
+});
+
+test('cache-first returns readonly data before activation and shares its pinned revalidation with a fresh reader', async () => {
+  const selected = /** @type {{source:Value,binding:Value}} */ (entry('cached', NOW)), source = /** @type {Value} */ ({ ...selected.source, hostId: 'local', runtimeGeneration: 'owner', kind: 'session' });
+  selected.source = source;
+  selected.binding.metadata.bridge.source = source;
+  selected.binding.metadata.capabilities = { readOnly: false, send: true, abort: true, modelSelection: true, rpcMethods: ['abort', 'codex-controls-update'] };
+  const state = { requests: [{ requestId: 'original-request' }], nativeInput: { available: true, ownerGeneration: 'owner' },
+    nativeQuery: { ownerGeneration: 'owner', queryToken: 'original-query', status: 'running', canSend: true, canCancel: true },
+    aggregateActivity: { version: 1, app: 'codex', parentConversationId: source.id, hostId: 'local', ownerGeneration: 'owner', ownStatus: 'running', ownKnown: true,
+      known: true, active: true, waiting: false, status: 'running', rosterAvailable: true, rosterComplete: true, childCount: 1, unknownChildren: 0, digest: 'original' },
+    subagents: [{ nativeConversationId: 'native-child', status: 'running' }], subagentsAvailable: true, subagentsComplete: true };
+  const original = JSON.stringify(selected.binding.metadata), originalState = JSON.stringify(state);
+  let resolveCalls = 0, nativeReads = 0, pins = 0, release = () => {};
+  const gate = new Promise(resolve => { release = () => resolve(undefined); });
+  const cached = { rows: [{ id: 'cached-row', turnId: 'original-turn', text: 'cached complete body', ownerGeneration: 'owner' }], ownerGeneration: 'owner', status: 'unknown', currentTurnId: null,
+    hasMore: true, nextCursor: null, freshness: { version: 1, mode: 'cached', capturedAt: NOW - 100, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true } };
+  const actor = { transport: { peerSnapshot: () => ({ metadata: selected.binding.metadata, agentState: state }) }, status: () => ({ sourceStatus: 'connected' }),
+    connector: { readCachedRecent: async () => structuredClone(cached), readRecent: async (/** @type {Value} */ options) => { nativeReads++; assert.equal(options.fresh, true); return { rows: [{ id: 'fresh-row', text: 'revalidated body' }], ownerGeneration: 'owner', status: 'idle', freshness: { mode: 'fresh' } }; } } };
+  const service = new CodeLightRecentService({ sources: () => [{ ...selected, actor }], now: () => NOW,
+    retainSource: async (_id, execute) => { pins++; try { return await execute(); } finally { pins--; } },
+    resolveSource: async () => { resolveCalls++; await gate; return { ...selected, actor }; } });
+  const warm = await service.recent('cached', { limit: 1, readPolicy: 'cache-first' });
+  assert.equal(warm.rows[0].text, 'cached complete body'); assert.equal(warm.freshness.mode, 'cached');
+  assert.equal(warm.session.metadata.capabilities.readOnly, true); assert.equal(warm.session.metadata.capabilities.abort, false);
+  assert.deepEqual(warm.session.metadata.capabilities.rpcMethods, ['bridge-receipt']); assert.equal(warm.session.metadata.nativeControls, undefined);
+  assert.equal(warm.session.agentState.nativeQuery, undefined); assert.equal(warm.session.agentState.nativeInput.available, false);
+  assert.equal(warm.session.agentState.aggregateActivity.known, false); assert.equal(warm.session.agentState.aggregateActivity.status, 'unknown');
+  assert.equal(warm.session.agentState.subagents, undefined); assert.equal(warm.session.agentState.requests[0].requestId, 'original-request');
+  assert.equal(JSON.stringify(selected.binding.metadata), original); assert.equal(JSON.stringify(state), originalState);
+  await Promise.resolve(); assert.equal(pins, 1); assert.equal(resolveCalls, 1); assert.equal(nativeReads, 0);
+  const fresh = service.recent('cached', { limit: 1 }); assert.equal(resolveCalls, 1);
+  release(); const confirmed = await fresh; assert.equal(confirmed.rows[0].text, 'revalidated body'); assert.equal(nativeReads, 1);
+  await Promise.all(service.revalidations.values()); assert.equal(pins, 0); assert.equal(service.revalidations.size, 0);
+});
+
+test('cache-first falls back to fresh for cold/missing/foreign-owner caches and rejects history policies', async () => {
+  for (const cache of [null, { rows: [{ ownerGeneration: 'foreign' }], ownerGeneration: 'owner', freshness: { mode: 'cached', ownerGeneration: 'owner', currentControlAuthority: false } }]) {
+    const selected = entry('cold', NOW); let reads = 0;
+    const actor = { connector: { readCachedRecent: async () => cache, readRecent: async (/** @type {Value} */ options) => { reads++; assert.equal(options.fresh, true); return { rows: [{ id: 'current', text: 'fresh' }] }; } } };
+    const service = new CodeLightRecentService({ sources: () => [{ ...selected, actor }], resolveSource: async () => ({ ...selected, actor }), now: () => NOW });
+    const value = await service.recent('cold', { readPolicy: 'cache-first', limit: 1 }); assert.equal(value.rows[0].text, 'fresh'); assert.equal(reads, 1);
+    assert.throws(() => service.recent('cold', { readPolicy: 'foreign' }), { code: 'invalid-recent-policy' });
+    assert.throws(() => service.recent('cold', { readPolicy: 'cache-first', cursor: 'history' }), { code: 'invalid-recent-policy' });
+  }
+});
+
+test('failed background revalidation preserves readonly cached text without turning failure into fresh success', async () => {
+  const selected = /** @type {{source:Value,binding:Value}} */ (entry('unconfirmed-cache', NOW)); selected.source.hostId = 'local';
+  selected.binding.metadata.bridge.source = { ...selected.source, runtimeGeneration: 'owner' };
+  const actor = { transport: { peerSnapshot: () => ({ metadata: selected.binding.metadata }) },
+    connector: { readCachedRecent: async () => ({ rows: [{ id: 'retained', text: 'retained text', ownerGeneration: 'owner' }], ownerGeneration: 'owner', status: 'unknown',
+      freshness: { version: 1, mode: 'cached', capturedAt: NOW - 100, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true } }), readRecent: async () => { throw Error('Original native read failed'); } } };
+  const service = new CodeLightRecentService({ sources: () => [{ ...selected, actor }], resolveSource: async () => ({ ...selected, actor }), now: () => NOW });
+  const cached = await service.recent('unconfirmed-cache', { readPolicy: 'cache-first' }); assert.equal(cached.rows[0].text, 'retained text'); assert.equal(cached.freshness.mode, 'cached');
+  await Promise.all(service.revalidations.values()); assert.equal(service.revalidations.size, 0); assert.equal(cached.session.metadata.capabilities.readOnly, true);
+  await assert.rejects(service.recent('unconfirmed-cache'), /Original native read failed/);
 });

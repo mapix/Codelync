@@ -7,21 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		C0DEC0DEC0DEC0DE00000003 /* CodeLightCodec.mm in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */; };
-		C0DEC0DEC0DEC0DE00000005 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C0DEC0DEC0DEC0DE00000004 /* libz.tbd */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		3DB9E63F75713EE5033852FB /* libPods-Happydev.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B358BC14738A7F8D5FDD1878 /* libPods-Happydev.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		49578C38E53FA41FC0C645F0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 54CE53AFC2484C7079441841 /* PrivacyInfo.xcprivacy */; };
 		7DBBEC3AE25EC05A87759230 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72856F54AE7DFC069F06F351 /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		C0DEC0DEC0DEC0DE00000003 /* CodeLightCodec.mm in Sources */ = {isa = PBXBuildFile; fileRef = C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */; };
+		C0DEC0DEC0DEC0DE00000005 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C0DEC0DEC0DEC0DE00000004 /* libz.tbd */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CodeLightCodec.mm; sourceTree = "<group>"; };
-		C0DEC0DEC0DEC0DE00000002 /* CodeLightCodec.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CodeLightCodec.h; sourceTree = "<group>"; };
-		C0DEC0DEC0DEC0DE00000004 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.text-based-dylib-definition; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		0864D7EB14893F1638932DD0 /* Pods-Happydev.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Happydev.release.xcconfig"; path = "Target Support Files/Pods-Happydev/Pods-Happydev.release.xcconfig"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Happydev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Happydev.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Happydev/Images.xcassets; sourceTree = "<group>"; };
@@ -32,6 +29,9 @@
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Happydev/SplashScreen.storyboard; sourceTree = "<group>"; };
 		B358BC14738A7F8D5FDD1878 /* libPods-Happydev.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Happydev.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C0DEC0DEC0DEC0DE00000001 /* CodeLightCodec.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = CodeLightCodec.mm; sourceTree = "<group>"; };
+		C0DEC0DEC0DEC0DE00000002 /* CodeLightCodec.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CodeLightCodec.h; sourceTree = "<group>"; };
+		C0DEC0DEC0DEC0DE00000004 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Happydev/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Happydev-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Happydev-Bridging-Header.h"; path = "Happydev/Happydev-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -410,7 +410,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Happydev/Happydev.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "$(SRCROOT)/../../../native/codelight-simulator.entitlements";
-				CURRENT_PROJECT_VERSION = 2026111605;
+				CURRENT_PROJECT_VERSION = 2026111701;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -422,7 +422,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8.1;
+				MARKETING_VERSION = 1.9.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -447,7 +447,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Happydev/Happydev.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "$(SRCROOT)/../../../native/codelight-simulator.entitlements";
-				CURRENT_PROJECT_VERSION = 2026111605;
+				CURRENT_PROJECT_VERSION = 2026111701;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Happydev/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -455,7 +455,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8.1;
+				MARKETING_VERSION = 1.9.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",

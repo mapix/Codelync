@@ -13,7 +13,7 @@ test('ordinary project activity excludes explicit children from counts and obser
   const sources = [source(0), source(1, { parentId: 'thread-0' }),
     ...Array.from({ length: 99 }, (_, index) => source(index + 2, { isSubagent: true, parentId: 'thread-0' })),
     source(200, { metadata: { nativeSession: { isSubagent: true } } })];
-  const service = new NativeProjectActivityService({ sources: () => sources, inventoryAvailable: () => true,
+  const service = new NativeProjectActivityService({ backgroundSources: 0, sources: () => sources, inventoryAvailable: () => true,
     observerFactory: options => { calls.push(options.id); return { status: () => ({ known: true, active: false, waiting: false, status: 'ready' }), refresh: async () => {}, close: () => {} }; },
     ipcFactory: () => ({ dispose: () => {} }) });
   try {
@@ -30,7 +30,7 @@ test('foreground header refresh stays fresh between ten-second phone polls witho
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let now = 1000, reads = 0, at = 0, closed = false;
   const native = { ...source(1), app: 'antigravity', protocol: 'antigravity-connect', hostId: 'local:antigravity:' + 'a'.repeat(64), runtimeGeneration: 'owner' };
-  const service = new NativeProjectActivityService({ sources: () => [native], inventoryAvailable: () => true, now: () => now,
+  const service = new NativeProjectActivityService({ backgroundSources: 0, sources: () => [native], inventoryAvailable: () => true, now: () => now,
     observerFactory: () => ({ status: () => ({ known: at > 0 && now - at <= 5000, active: true, waiting: false, observedAt: at, status: 'ready' }),
       refreshDueAt: () => at > 0 ? at + 3000 : null, refresh: async () => { reads++; at = now; }, close: () => { closed = true; } }),
     ipcFactory: () => ({}) });
@@ -103,7 +103,7 @@ class WireActivityIpc {
 /** @param {import('node:test').TestContext} t @param {WireActivityIpc} ipc @param {number} [count] */
 function wireFixture(t, ipc, count = 1) {
   let now = 100;
-  const service = new NativeProjectActivityService({ sources: () => Array.from({ length: count }, (_, i) => source(i)), inventoryAvailable: () => true, now: () => now,
+  const service = new NativeProjectActivityService({ backgroundSources: 0, sources: () => Array.from({ length: count }, (_, i) => source(i)), inventoryAvailable: () => true, now: () => now,
     ipcFactory: () => ipc, observerFactory: options => new CodexActivityObserver(/** @type {any} */ (options)) });
   t.after(() => service.close());
   return { service, advance: () => { now += 10000; } };
@@ -114,7 +114,7 @@ function fixture(t, options = {}) {
   let sources = options.sources ?? [source(1)];
   const observers = /** @type {Map<string,Observer>} */ (new Map());
   const created = /** @type {Observer[]} */ ([]), disposals = /** @type {string[]} */ ([]);
-  const service = new NativeProjectActivityService({ sources: () => sources, inventoryAvailable: () => available, now: () => now, epoch: 'fixture-epoch', maxSources: options.maxSources,
+  const service = new NativeProjectActivityService({ backgroundSources: 0, sources: () => sources, inventoryAvailable: () => available, now: () => now, epoch: 'fixture-epoch', maxSources: options.maxSources,
     ipcFactory: host => ({ dispose() { disposals.push(host); } }), observerFactory: config => {
       const observer = new Observer(options.deferred === true, () => { active++; peak = Math.max(peak, active); }, () => { active--; });
       // The service only receives reduced status; fixture completion is controlled externally.
@@ -274,6 +274,8 @@ test('cold failure retries only on a later poll and owner change needs a new nat
   assert.equal(ipc.subscriptions, 1); assert.equal(ipc.refreshes, 0);
   assert.equal(f.service.entries.values().next().value?.observer.status().known, false);
   ipc.failStart = false; poll(f.service, 'phone', 2); await flush();
+  assert.equal(ipc.subscriptions, 1, 'An immediate poll cannot bypass the failed-baseline cooldown');
+  f.advance(); poll(f.service, 'phone', 3); await flush();
   assert.equal(ipc.subscriptions, 2); assert.equal(ipc.refreshes, 0);
   ipc.owner = 'local:replacement';
   const before = poll(f.service, 'phone', 3).groups[0]; assert.equal(before.unknown, 1);
@@ -343,7 +345,7 @@ test('equal native IDs and project paths stay isolated by application and instan
   const common = { id: 'same-native-id', hostId, kind: 'session', available: true, workspace: '/same-project' };
   const sources = [{ ...common, app: 'codex', relayId: 'codex-phone-id' }, { ...common, app: 'antigravity', relayId: 'agy-phone-id', protocol: 'antigravity-connect', runtimeGeneration: 'agy-owner' }];
   let ipcReads = 0;
-  const service = new NativeProjectActivityService({ sources: () => sources, inventoryAvailable: () => true,
+  const service = new NativeProjectActivityService({ backgroundSources: 0, sources: () => sources, inventoryAvailable: () => true,
     ipcFactory: () => { ipcReads++; return { dispose() {} }; }, nativeAdapter: () => ({}),
     observerFactory: options => { let known = false; return { status: () => ({ known, active: known && options.app === 'antigravity', waiting: known && options.app === 'antigravity', status: known ? 'ready' : 'refreshing' }), refresh: async () => { known = true; }, close() {} }; } });
   const groups = [{ id: 'codex-card', projectKey: '/same-project', hostId, sessions: [{ id: 'codex-phone-id', nativeId: common.id }] },

@@ -1,5 +1,5 @@
 import React, { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +11,6 @@ import { formatSessionListTimestamp } from '@/utils/sessionListTimestamp';
 import { t } from '@/text';
 import { navigateToSession } from '@/hooks/useNavigateToSession';
 import { useCodeLightDiscoveryProgress } from '@/sync/codeLightLoadingProgress';
-import { sync } from '@/sync/sync';
 import { useCodeLightProjectActivities } from '@/hooks/useCodeLightProjectActivity';
 import { codeLightProjectActivityStore, type CodeLightProjectDescriptor } from '@/sync/codeLightProjectActivity';
 import { CodeLightProjectStatus } from './CodeLightProjectStatus';
@@ -21,8 +20,6 @@ import { Typography } from '@/constants/Typography';
 import { codeLightSourceLabel } from '@/utils/codeLightSourceScope';
 import { getCurrentLanguage } from '@/text';
 import { codeLightSubagentKindLabels } from '@/text/codeLightSubagentLabels';
-import { useCodeLightConnectionState } from '@/hooks/useCodeLightConnectionState';
-import { CodeLightConnectionNotice } from './CodeLightConnectionNotice';
 import { PeerChannelControl } from './PeerChannelControl';
 
 export const CodeLightSessions = React.memo(function CodeLightSessions() {
@@ -32,18 +29,6 @@ export const CodeLightSessions = React.memo(function CodeLightSessions() {
     const { theme } = useUnistyles();
     const progress = useCodeLightDiscoveryProgress();
     const socketStatus = useSocketStatus().status;
-    const connection = useCodeLightConnectionState().state;
-    // 旧请求错误在连接恢复期间已经过期，目录缓存始终可点；只显示当前连接上的读取失败。
-    const failed = progress.phase === 'error' && socketStatus === 'connected';
-    const loading = !failed && connection.kind === 'connected' && (progress.phase === 'loading' || progress.phase === 'idle');
-    const [refreshing, setRefreshing] = useState(false);
-    const refreshBusy = useRef(false);
-    const refresh = async () => {
-        if (refreshBusy.current) return;
-        refreshBusy.current = true; setRefreshing(true);
-        try { await sync.refreshSessions(); } catch { /* The current directory progress retains its error. */ }
-        finally { refreshBusy.current = false; setRefreshing(false); }
-    };
     const [query, setQuery] = useState(''), [projects, setProjects] = useState(new Set<string>()), [parents, setParents] = useState(new Set<string>());
     const deferredQuery = useDeferredValue(query);
     const searching = deferredQuery.trim().length > 0;
@@ -99,25 +84,17 @@ export const CodeLightSessions = React.memo(function CodeLightSessions() {
     </View>;
     return <View style={[styles.root, { paddingTop: insets.top }]}>
         <View style={styles.header}><Text style={styles.heading}>{t('tabs.sessions')}</Text>{conversationCount > 0 || progress.phase === 'complete' && socketStatus === 'connected' ? <Text style={styles.count}>{conversationCount}</Text> : null}
-            <View style={{ flex: 1 }} />{connection.kind === 'connected' ? <PeerChannelControl presentation="header" /> : null}
+            <View style={{ flex: 1 }} /><PeerChannelControl presentation="header" directory />
         </View>
-        <CodeLightConnectionNotice />
         <View style={styles.search}><Ionicons name="search-outline" size={19} color={theme.colors.textSecondary} /><TextInput testID="codelight-session-search" style={styles.input} value={query} onChangeText={setQuery} placeholder={t('tools.names.search')} placeholderTextColor={theme.colors.textSecondary} autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" /></View>
-        {loading || failed ? <View testID="codelight-discovery-progress" accessibilityLiveRegion="polite" style={styles.progress}>
-            {loading ? <ActivityIndicator size="small" color={theme.colors.textSecondary} /> : null}
-            <Text style={[styles.count, { flex: 1 }]}>{failed ? t('codeLightLoading.failed') : progress.found > 0 ? t('codeLightLoading.discovered', { count: progress.found }) : t('codeLightLoading.titles')}</Text>
-            {failed ? <Pressable testID="codelight-retry-session-list" accessibilityRole="button" accessibilityState={{ disabled: refreshing, busy: refreshing }}
-                disabled={refreshing} style={{ minWidth: 44, minHeight: 44, justifyContent: 'center' }} onPress={() => void refresh()}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable> : null}
-        </View> : null}
         <FlatList data={rows} keyExtractor={row => row.key} renderItem={render} viewabilityConfig={viewability} onViewableItemsChanged={viewableChanged} keyboardShouldPersistTaps="handled" initialNumToRender={18} maxToRenderPerBatch={20} windowSize={7} contentContainerStyle={{ paddingBottom: 16 }}
-            ListEmptyComponent={connection.kind === 'connected' && !loading && progress.phase === 'complete' ? <Text style={[styles.count, { padding: 20 }]}>{t('codeLightLoading.empty')}</Text> : null} />
+            ListEmptyComponent={progress.phase === 'complete' ? <Text style={[styles.count, { padding: 20 }]}>{t('codeLightLoading.empty')}</Text> : null} />
         <CodeLightBottomNavigation active="sessions" />
     </View>;
 });
 const styles = StyleSheet.create(theme => ({
     root: { flex: 1, backgroundColor: theme.colors.groupped.background }, header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, gap: 12 },
     heading: { fontSize: 28, color: theme.colors.text, ...Typography.default('semiBold') }, count: { fontSize: 13, color: theme.colors.textSecondary },
-    progress: { paddingHorizontal: 20, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
     search: { marginHorizontal: 20, marginBottom: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, backgroundColor: theme.colors.surface }, input: { flex: 1, height: 42, color: theme.colors.text },
     project: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider }, projectTitle: { fontSize: 17, fontWeight: '600', color: theme.colors.text }, path: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 4 },
     row: { padding: 18, marginHorizontal: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider, flexDirection: 'row', gap: 14 }, child: { marginLeft: 36 }, title: { fontSize: 16, fontWeight: '500', color: theme.colors.text }, detail: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 5 }, time: { fontSize: 11, color: theme.colors.textSecondary, marginTop: 6 }, branch: { alignItems: 'center', justifyContent: 'center', gap: 4, padding: 8 },

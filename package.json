@@ -1,7 +1,7 @@
 {
   "name": "codelight",
-  "version": "0.6.1",
-  "codelightBuild": "2026111605",
+  "version": "0.7.1",
+  "codelightBuild": "2026111701",
   "private": true,
   "type": "module",
   "description": "CodeLight native mobile access to existing Codex, Antigravity Desktop and Claude Desktop Gateway sessions",
@@ -26,7 +26,8 @@
     "dev:mobile": "pnpm --filter @codelight/mobile start",
     "build:mac": "node scripts/build-mac-app.mjs",
     "build:mobile": "node scripts/build-mobile.mjs",
-    "build:native": "sh native/build.sh"
+    "build:native": "sh native/build.sh && node scripts/build-desktop-runtime.mjs",
+    "build:desktop": "node scripts/build-desktop-runtime.mjs"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
@@ -40,6 +41,7 @@
     "@slopus/happy-wire": "workspace:*",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
+    "livekit-server-sdk": "2.20.0",
     "proper-lockfile": "4.1.2",
     "qrcode-terminal": "0.12.0",
     "sharp": "0.35.5",

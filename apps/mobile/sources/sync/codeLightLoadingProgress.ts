@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
-export type LoadingProgress = { generation: number; phase: 'idle' | 'loading' | 'complete' | 'error'; found: number; pages: number; queued?: boolean };
+export type LoadingProgress = { generation: number; phase: 'idle' | 'loading' | 'complete' | 'error'; found: number; pages: number; queued?: boolean;
+    revalidating?: boolean; revalidationFailed?: boolean };
 const initial: LoadingProgress = { generation: 0, phase: 'idle', found: 0, pages: 0 };
 /** The sync runtime owns progress; obsolete fetches cannot finish a newer load. */
 export class CodeLightLoadingProgress {
@@ -22,6 +23,10 @@ export class CodeLightLoadingProgress {
     endSession(id: string, generation: number, failed = false) {
         const state = this.getSession(id); if (state.generation !== generation) return;
         this.sessions.set(id, { ...state, phase: failed ? 'error' : 'complete' }); this.changed();
+    }
+    revalidateSession(id: string, generation: number, pending: boolean, failed = false) {
+        const state = this.getSession(id); if (state.generation !== generation || state.phase !== 'complete') return;
+        this.sessions.set(id, { ...state, revalidating: pending, revalidationFailed: failed }); this.changed();
     }
 }
 export const codeLightLoadingProgress = new CodeLightLoadingProgress();

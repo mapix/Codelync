@@ -14,7 +14,7 @@ import { nativeSessionAvailabilityLabels } from '@/text/nativeSessionAvailabilit
 
 const state = { connected: true, draft: 'Retained draft', send: vi.fn(), abort: vi.fn(), modes: vi.fn(), goal: vi.fn(),
     clear: vi.fn(), nativeCommand: vi.fn(), visible: vi.fn(), refresh: vi.fn(async () => {}), retryRead: vi.fn(async () => {}), replace: vi.fn(),
-    landscape: false, tablet: false, phase: 'complete', readPhase: 'complete', sessions: {} as Record<string, any> };
+    landscape: false, tablet: false, loaded: true, older: false, phase: 'complete', readPhase: 'complete', selectedActivity:vi.fn(), sessions: {} as Record<string, any> };
 const host = (name: string) => (props: any) => React.createElement(name, props, props.children);
 const noop = () => {};
 const models = { native: true, enabled: true, models: [{ key: 'a', name: 'A' }], currentModel: { key: 'a', name: 'A' },
@@ -36,7 +36,7 @@ const modules: Record<string, any> = {
     '@/config': { config: { noninvasiveLocal: true } },
     '@/sync/apiSocket': { apiSocket: { peerConnected: () => state.connected } },
     '@/sync/storage': { storage: { getState: () => ({ sessions: state.sessions }) }, useSocketStatus: () => ({ status: state.connected ? 'connected' : 'error' }),
-        useSession: (id: string) => state.sessions[id] ?? null, useRealtimeStatus: () => 'disconnected', useSessionMessages: () => ({ messages: [{ id: 'kept', kind: 'agent-text', text: 'Retained body' }], isLoaded: true, isLoadingOlder: false }),
+        useSession: (id: string) => state.sessions[id] ?? null, useRealtimeStatus: () => 'disconnected', useSessionMessages: () => ({ messages: [{ id: 'kept', kind: 'agent-text', text: 'Retained body' }], isLoaded: state.loaded, isLoadingOlder: state.older }),
         useSessionPendingCommunications: () => [], useLocalSetting: (key: string) => key === 'acknowledgedCliVersions' ? {} : key === 'sidebarPanelsOpen' ? [] : false,
         useIsDataReady: () => true, useSessionAvatar: () => null, useSessionGitStatus: () => null, useSideChatSessions: () => [], useSetting: () => false, useSessionUsage: () => null },
     '@/sync/sync': { sync: { sendMessage: state.send, refreshSessions: state.refresh, retryCodeLightSession: state.retryRead, onSessionVisible: state.visible } },
@@ -44,6 +44,7 @@ const modules: Record<string, any> = {
     '@/hooks/useHappyAction': { useHappyAction: () => [false, noop] },
     '@/hooks/useProjectWorktree': { useProjectWorktreeSummary: () => null },
     '@/hooks/useCodeLightSubagents': { useCodeLightSubagents: () => ({ present: false }) },
+    '@/hooks/useCodeLightProjectActivity': { useCodeLightSelectedSessionActivity: state.selectedActivity },
     '@/utils/sessionGitPresentation': { resolveSessionGitPresentation: () => ({ subtitle: null, changes: null }) },
     '@/utils/nativeSessionAvailability': { nativeSessionAvailability },
     '@/text/nativeSessionAvailabilityLabels': { nativeSessionAvailabilityLabels },
@@ -62,7 +63,7 @@ const modules: Record<string, any> = {
     '@/utils/responsive': { useIsLandscape: () => state.landscape, useIsTablet: () => state.tablet, useHeaderHeight: () => 44, useLayoutDimensions: () => ({ width: 402 }) },
     '@/utils/platform': { isRunningOnMac: () => false },
     '@/utils/sessionUtils': { useSessionStatus: () => ({ isConnected: true, state: 'thinking' }), getResumeCommandBlock: () => null,
-        getSessionName: (session: any) => session.metadata?.nativeSession?.title || session.id },
+        getSessionName: (session: any) => session.metadata?.nativeSession?.title || session.id, getSessionAvatarId: (session: any) => session.id },
     '@/hooks/useSessionQuickActions': { MISSING_SESSION: {}, useSessionQuickActions: () => ({ canResume: false }) },
     '@/hooks/useCodeLightModelControls': { useCodeLightModelControls: () => models },
     '@/hooks/useCodeLightConnectionState': { useCodeLightConnectionState: () => ({ state: { kind: state.connected ? 'connected' : 'failed' } }) },
@@ -72,13 +73,14 @@ const modules: Record<string, any> = {
     '@/hooks/useSessionVisibility': { useSessionVisibility: state.visible },
     '@/sync/codeLightLoadingProgress': { useCodeLightMessageProgress: () => ({ phase: state.readPhase }), useCodeLightDiscoveryProgress: () => ({ phase: state.phase }) },
     '@/components/MobileGlass': { MobileGlassBackdrop: host('Glass') },
-    '@/components/ChatHeaderView': { ChatHeaderView: host('Header') },
+    '@/components/ChatHeaderView': { ChatHeaderView: (props: any) => React.createElement('Header', props, props.rightSlot) },
     '@/components/NativeSessionUnavailable': { NativeSessionUnavailable: host('Unavailable') },
     '@/components/AgentInput': { AgentInput },
     '@/components/SessionContentView': { SessionContentView: (p: any) => React.createElement('Content', p, p.content, p.input, p.placeholder) },
     '@/components/Deferred': { Deferred: (p: any) => p.children },
     '@/components/AnimatedOverlay': { AnimatedFade: (p: any) => p.children },
     '@/components/ChatList': { ChatList: host('ChatList') },
+    '@/components/PeerChannelControl': { PeerChannelControl: host('PeerControl') },
     '@/components/CodeLightConnectionNotice': { CodeLightConnectionNotice: host('Notice') },
     '@/components/NativeSourceBanner': { NativeSourceBanner: host('SourceBanner') },
     '@/components/CodeLightSessionLoading': { CodeLightSessionLoading: host('MessageLoading') },
@@ -98,7 +100,7 @@ new Function('require', 'exports', code)((name: string) => modules[name] ?? new 
 const SessionViewLoaded = exports.SessionViewLoaded;
 const fixture = () => ({ id: 'native', draft: 'Retained draft', metadata: { client: { id: 'noninvasive-bridge' }, capabilities: { readOnly: false, steering: true },
     bridge: { controlMode: 'session', sourceStatus: 'connected', currentTurnId: 'turn', source: { app: 'codex', id: 'native-id', hostId: 'local', kind: 'session', runtimeGeneration: 'owner' } } }, agentState: {} });
-beforeEach(() => { vi.clearAllMocks(); state.connected = true; state.landscape = false; state.tablet = false; state.phase = 'complete'; state.readPhase = 'complete'; state.draft = 'Retained draft'; state.send.mockResolvedValue(false); });
+beforeEach(() => { vi.clearAllMocks(); state.connected = true; state.landscape = false; state.tablet = false; state.loaded = true; state.older = false; state.phase = 'complete'; state.readPhase = 'complete'; state.draft = 'Retained draft'; state.send.mockResolvedValue(false); });
 it('HTTP-good cached content survives WS failure while real native composer bindings disable writes and stale callbacks dispatch nothing', async () => {
     const session = fixture(); state.sessions = { native: session }; let screen!: ReturnType<typeof create>;
     act(() => { screen = create(React.createElement(SessionViewLoaded, { sessionId: 'native', session })); });
@@ -110,19 +112,30 @@ it('HTTP-good cached content survives WS failure while real native composer bind
     expect(offline.blockSend).toBe(true); expect(offline.editable).toBe(true);
     for (const key of ['onAbort', 'onPermissionModeChange', 'onModelModeChange', 'onEffortLevelChange']) expect(offline[key]).toBeUndefined();
     expect(screen.root.findByType('ChatList')).toBe(body); expect(state.draft).toBe('Retained draft'); expect(state.clear).not.toHaveBeenCalled();
-    expect(screen.root.findByType('Notice').props.showPicker).toBe(false); expect(screen.root.findAllByType('MessageLoading')).toHaveLength(0);
+    expect(screen.root.findAllByType('Notice')).toHaveLength(0); expect(screen.root.findAllByType('MessageLoading')).toHaveLength(0);
     await act(async () => { online.onSend(); online.onAbort(); online.onPermissionModeChange({ key: 'other' }); });
     expect(state.send).not.toHaveBeenCalled(); expect(state.abort).not.toHaveBeenCalled(); expect(state.modes).not.toHaveBeenCalled();
     state.connected = true; act(() => screen.update(React.createElement(SessionViewLoaded, { sessionId: 'native', session })));
     expect(screen.root.findByType('AgentInput').props.blockSend).toBe(false); expect(state.send).not.toHaveBeenCalled(); expect(state.draft).toBe('Retained draft'); act(() => screen.unmount());
 });
-it('the connection notice owns the header inset once and a following source banner does not duplicate it', () => {
-    const session = fixture(); session.metadata.bridge.sourceStatus = 'owner-unavailable'; state.sessions = { native: session }; state.connected = false;
-    let screen!: ReturnType<typeof create>; act(() => { screen = create(React.createElement(SessionViewLoaded, { sessionId: 'native', session })); });
-    const headerInset = screen.root.findByType('Notice').props.topInset;
-    expect(headerInset).toBeGreaterThan(0); expect(screen.root.findByType('SourceBanner').props.topInset).toBe(0);
-    state.connected = true; act(() => screen.update(React.createElement(SessionViewLoaded, { sessionId: 'native', session })));
-    expect(screen.root.findByType('SourceBanner').props.topInset).toBe(headerInset); act(() => screen.unmount());
+it('retained messages keep the same body and header inset through deterministic socket flapping', () => {
+    const session = fixture(); session.metadata.bridge.sourceStatus = 'owner-unavailable'; state.sessions = { native: session };
+    const Component = exports.SessionView.type;
+    let screen!: ReturnType<typeof create>; act(() => { screen = create(React.createElement(Component, { id: 'native' })); });
+    const body = screen.root.findByType('ChatList'), initialProps = body.props;
+    expect(initialProps.topContentInset).toBe(123);
+    const peer = screen.root.findByType('PeerControl');
+    for (const connected of [false, true, false, true]) {
+        state.connected = connected; act(() => screen.update(React.createElement(Component, { id: 'native' })));
+        expect(screen.root.findByType('ChatList')).toBe(body);
+        expect(screen.root.findByType('ChatList').props.topContentInset).toEqual(initialProps.topContentInset);
+        expect(screen.root.findByType('PeerControl')).toBe(peer);
+        expect(screen.root.findAllByType('Notice')).toHaveLength(0);
+        expect(screen.root.findAllByType('SourceBanner')).toHaveLength(0);
+        expect(screen.root.findAllByType('MessageLoading')).toHaveLength(0);
+        expect(state.draft).toBe('Retained draft');
+    }
+    act(() => screen.unmount());
 });
 
 it('actual SessionView gives an unavailable foreground route its header inset and a read-only Retry', async () => {

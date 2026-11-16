@@ -10,6 +10,12 @@ exchange/reload, stored v2 cold launch, and a distinct nonce on reconnect.
 
 ## Same-peer channel transitions
 
+Read-only activity delivery can use the paired sealed HTTP endpoint without a
+live WebSocket. The WebSocket remains the existing event/control transport;
+HTTP success does not confirm that a native mutation was delivered. Activity
+interest tokens and semantic group watermarks reduce repeated public-network
+payloads without changing peer authentication or native owner checks.
+
 Channel probes use the native AbortController instance API; DOM-only static
 AbortSignal.any/timeout methods are not assumed. A verified same-peer transition
 updates both the persisted and active runtime endpoint, while changing account

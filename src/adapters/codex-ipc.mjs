@@ -8,7 +8,7 @@ import { validateNativeResponse } from './codex-response-schema.mjs';
 /** @typedef {Record<string, any>} Frame */
 /** @typedef {{sessionId:string,hostId:string,ownerClientId:string,supportsUntrustedAppInput:boolean}} Owner */
 /** @typedef {{resolve:(value:Frame)=>void,reject:(error:Error)=>void,timer:ReturnType<typeof setTimeout>,method:string,targetClientId?:string}} Pending */
-/** @typedef {{callbacks:Set<(frame:Frame)=>void>,owner:Owner|null}} Subscription */
+/** @typedef {{callbacks:Set<(frame:Frame)=>void>,automaticCallbacks?:Set<(frame:Frame)=>void>,owner:Owner|null}} Subscription */
 
 const VERSIONS = Object.freeze({
   initialize: 0,
@@ -80,6 +80,7 @@ export class CodexIpcAdapter {
     /** @type {Map<string,Pending>} */ this.pending = new Map();
     /** @type {Map<string,Owner>} */ this.owners = new Map();
     /** @type {Map<string,Subscription>} */ this.subscriptions = new Map();
+    /** @type {Map<string,Promise<void>>} */ this.attaching = new Map();
     /** @type {Map<string,{fingerprint:string,promise:Promise<Frame>}>} */ this.commands = new Map();
     this.disposed = false;
   }
@@ -119,7 +120,7 @@ export class CodexIpcAdapter {
     this.emitStatus('connected');
     // 重连只恢复只读订阅；未知结果的写请求绝不能自动重放。
     for (const sessionId of this.subscriptions.keys()) {
-      queueMicrotask(() => { this.attach(sessionId).catch((error) => this.emitStatus('subscription-error', sessionId, asError(error).message)); });
+      queueMicrotask(() => this.recoverSubscription(sessionId));
     }
   }
 
@@ -202,7 +203,7 @@ export class CodexIpcAdapter {
       if (frame.version !== 0) return;
       if (frame.params?.status === 'connected') {
         for (const [sessionId, subscription] of this.subscriptions) if (!subscription.owner) {
-          this.attach(sessionId).catch((error) => this.emitStatus('owner-unavailable', sessionId, asError(error).message));
+          this.recoverSubscription(sessionId);
         }
         return;
       }
@@ -213,7 +214,7 @@ export class CodexIpcAdapter {
         if (subscription) {
           subscription.owner = null;
           this.emitStatus('owner-disconnected', sessionId);
-          this.attach(sessionId).catch((error) => this.emitStatus('owner-unavailable', sessionId, asError(error).message));
+          this.recoverSubscription(sessionId);
         }
       }
       return;
@@ -280,14 +281,16 @@ export class CodexIpcAdapter {
     return owner;
   }
 
-  /** @param {string} sessionId @param {(frame:Frame)=>void} onFrame */
-  async subscribe(sessionId, onFrame) {
+  /** @param {string} sessionId @param {(frame:Frame)=>void} onFrame @param {{autoRecover?:boolean}} [options] */
+  async subscribe(sessionId, onFrame, options = {}) {
     requireId(sessionId, 'sessionId');
     let subscription = this.subscriptions.get(sessionId);
-    if (!subscription) { subscription = { callbacks: new Set(), owner: null }; this.subscriptions.set(sessionId, subscription); }
+    if (!subscription) { subscription = { callbacks: new Set(), automaticCallbacks: new Set(), owner: null }; this.subscriptions.set(sessionId, subscription); }
     subscription.callbacks.add(onFrame);
+    subscription.automaticCallbacks ??= new Set();
+    if (options.autoRecover !== false) subscription.automaticCallbacks.add(onFrame);
     try { await this.attach(sessionId); } catch (error) {
-      subscription.callbacks.delete(onFrame);
+      subscription.callbacks.delete(onFrame); subscription.automaticCallbacks?.delete(onFrame);
       if (!subscription.callbacks.size) this.subscriptions.delete(sessionId);
       throw error;
     }
@@ -295,30 +298,52 @@ export class CodexIpcAdapter {
     return () => {
       if (!active) return;
       active = false;
-      subscription.callbacks.delete(onFrame);
+      subscription.callbacks.delete(onFrame); subscription.automaticCallbacks?.delete(onFrame);
       if (subscription.callbacks.size) return;
       this.subscriptions.delete(sessionId);
       if (subscription.owner && this.socket && !this.socket.destroyed) this.follow(subscription.owner, false);
     };
   }
 
-  /** @param {string} sessionId */
-  async attach(sessionId) {
-    const owner = await this.discover(sessionId);
+  /** Body recovery stays automatic; activity-only listeners use their shared queue.
+   * @param {string} sessionId */
+  recoverSubscription(sessionId) {
     const subscription = this.subscriptions.get(sessionId);
     if (!subscription) return;
-    if (!owner) throw new BridgeError('codex-owner-unavailable', 'An existing desktop owner could not be confirmed for this session.', 409);
-    subscription.owner = owner;
-    this.follow(owner, true);
+    if (subscription.automaticCallbacks === undefined || subscription.automaticCallbacks.size > 0) {
+      this.attach(sessionId).catch(error => this.emitStatus('owner-unavailable', sessionId, asError(error).message));
+    } else this.emitStatus('owner-unavailable', sessionId);
+  }
+  /** @param {string} sessionId */
+  attach(sessionId) {
+    const pending = this.attaching.get(sessionId); if (pending) return pending;
+    const operation = Promise.resolve().then(async () => {
+      const subscription = this.subscriptions.get(sessionId);
+      if (!subscription) return;
+      const owner = await this.discover(sessionId);
+      if (this.subscriptions.get(sessionId) !== subscription) return;
+      if (!owner) throw new BridgeError('codex-owner-unavailable', 'An existing desktop owner could not be confirmed for this session.', 409);
+      subscription.owner = owner;
+      this.follow(owner, true);
+    }).finally(() => { if (this.attaching.get(sessionId) === operation) this.attaching.delete(sessionId); });
+    this.attaching.set(sessionId, operation); return operation;
   }
 
-  /** Request a current read snapshot from the already attached owner. No owner discovery or runtime admission.
-   * @param {string} sessionId @param {()=>void} [onRequested] */
-  async refreshSnapshot(sessionId, onRequested) {
+  /** Current subscribed-owner read; missing baseline recovery only rediscovers this registered source.
+   * @param {string} sessionId @param {()=>void} [onRequested] @param {{recoverOwner?:boolean}} [options] */
+  async refreshSnapshot(sessionId, onRequested, options = {}) {
     requireId(sessionId, 'sessionId');
     const subscription = this.subscriptions.get(sessionId);
-    if (!subscription?.owner || !this.socket || this.socket.destroyed) throw new BridgeError('codex-owner-unavailable', 'There is no existing subscribed owner to refresh.', 409);
-    this.follow(subscription.owner, true);
+    if (!subscription) throw new BridgeError('codex-owner-unavailable', 'There is no existing subscribed owner to refresh.', 409);
+    await this.connect();
+    const owner = subscription.owner, known = this.owners.get(sessionId);
+    if (options.recoverOwner === true || !owner || !known || owner.ownerClientId !== known.ownerClientId || owner.hostId !== this.hostId) {
+      await this.attach(sessionId);
+      if (this.subscriptions.get(sessionId) !== subscription || !subscription.owner || !this.socket || this.socket.destroyed) throw new BridgeError('codex-owner-unavailable', 'The registered snapshot owner remains unavailable.', 409);
+      onRequested?.(); return;
+    }
+    if (this.subscriptions.get(sessionId) !== subscription || !this.socket || this.socket.destroyed) throw new BridgeError('codex-owner-unavailable', 'The registered snapshot owner remains unavailable.', 409);
+    this.follow(owner, true);
     onRequested?.();
   }
   /** Explicit history scroll may load original saved turns, never a new runtime.

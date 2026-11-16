@@ -6,7 +6,8 @@ The user authorized public source at `https://github.com/mapix/CodeLight.git`
 and a landing page with a notarized Mac download on the existing novarocks
 Kubernetes cluster. The website is a static distribution surface: it must not
 host pairing, session relays, account keys, private conversations or phone
-development provisioning artifacts. Existing Codex owners remain untouched.
+development provisioning artifacts. Existing Codex, Antigravity and Claude
+Desktop owners remain untouched.
 
 Publish a reviewed initial source snapshot without private development history.
 Preserve the original local history. Include an MIT license, accurate upstream
@@ -101,11 +102,22 @@ sequenceDiagram
 Use the existing CodeLight brand and layout with compact Chinese and English
 copy. The primary action downloads only the currently verified public Mac
 release; its displayed version, bytes and SHA-256 come from that release's
-accepted, stapled and Gatekeeper-checked metadata. The 2026-11-16 release update
-publishes Mac 0.6.1/build 2026111605 only after its actual Apple Accepted result,
-stapling, Gatekeeper and artifact privacy gates. Retain the immutable 0.5.8
-download and checksum while the landing page points to the verified 0.6.1 file.
+accepted, stapled and Gatekeeper-checked metadata. The integrated candidate is
+Mac 0.7.1/build 2026111701, paired with iPhone 1.9.1/build 2026111701. Publish its
+Mac download only after the current candidate's Apple Accepted result,
+stapling, Gatekeeper, artifact privacy and recorded phone acceptance gates.
+Until then retain the verified 0.6.1 metadata and download. Keep prior immutable
+0.5.8 and 0.6.1 downloads and checksums after the new release is published.
 The iPhone source build remains distinct from the public Mac download.
+
+The integrated candidate makes the three Desktop sources individually optional,
+selected by default on first setup, with durable choices on Mac. Disabling a
+source releases CodeLight's own observation; it does not close the original app.
+Remote desktop is a separate optional page and defaults to disabled. Describe
+its confirmed display selection, quality/frame rate, landscape, fullscreen and
+Spaces controls without claiming physical multi-display or arbitrary public
+NAT/TURN acceptance. A website introducing unreleased candidate features must
+identify the required candidate version while retaining the verified download.
 
 The current product supports Codex, Antigravity Desktop and Claude Desktop
 (Gateway). State this three-Desktop scope consistently in the website, README
@@ -160,7 +172,34 @@ accessible source. Source-build instructions state the access requirement; MIT
 license text does not imply that every visitor can clone the repository. A public
 Mac download does not change source-repository visibility.
 
-## Release preparation — 2026-11-16
+## Mobile experience candidate — 2026-11-17
+
+The 0.7.1/1.9.1 candidate at build 2026111701 implements the
+[mobile remote desktop experience](codelight-remote-desktop-mobile-experience.md)
+contract. It removes the remote page's bottom navigation, preserves a single
+video canvas under translucent controls, and provides an accessible focused
+keyboard with explicit input acknowledgment and draft preservation. Prepare,
+sign, install and record acceptance for this candidate separately from the
+prior 1608 trial and its notarized private archive.
+
+## Prior integrated candidate — 2026-11-17
+
+The 0.7.0/1.9.0 candidate at build 2026111608 uses a complete native iOS Release
+build with the pinned desktop media SDKs and helpers. It does not reuse an older
+native phone base with only a replacement JavaScript bundle. Source review,
+Mac build/signing, device installation and native interaction acceptance remain
+separate evidence. The user performs this candidate's physical-phone acceptance;
+do not replace that record with a health endpoint or pairing bootstrap result.
+
+Native helper builds must use portable source/debug path provenance. Remove
+publisher-specific compiler paths through supported compiler prefix mapping or
+debug stripping before signing; do not patch arbitrary binary strings. Preserve
+SDK resource lookup, licenses, pinned dependencies and executable behavior. The
+public Mac artifact requires a fresh hash-bound privacy review after these
+packaging changes, without replacing the installed trial app or restarting any
+original Desktop owner.
+
+## Historical release preparation — 2026-11-16
 
 The next candidate uses Mac 0.6.1, iPhone 1.8.1 and the shared build
 `2026111603`. Build 1601 remains a prior private phone install; build 1602

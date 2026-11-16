@@ -7,6 +7,13 @@ import { ScopedNoninvasiveRpc } from './scopedNoninvasiveRpc';
 import { storage } from './storage';
 import { codeLightOperationSource, type CodeLightOperationTrace } from '@/utils/codeLightOperationLog';
 import { confirmedNativeModelRpcReceipt } from '@/utils/nativeModelControls';
+import { nativeCachedReadControlsUnavailable } from '@/utils/nativeCachedRead';
+
+function assertCurrentReadAdmission(sessionId: string, method: string) {
+    if (method !== 'bridge-receipt' && nativeCachedReadControlsUnavailable(storage.getState().sessions[sessionId])) {
+        throw Object.assign(Error('Current native state is still being confirmed'), { effectMayHaveOccurred: false });
+    }
+}
 
 const sourceContext = (id: string) => codeLightOperationSource(storage.getState().sessions[id]);
 const logListeners = new Map<string, Set<() => void>>();
@@ -27,7 +34,8 @@ const journal = new ScopedNoninvasiveRpc({
     onDiagnostics,
 });
 
-export function runNoninvasiveRpc(sessionId: string, method: string, params: Record<string, unknown>): Promise<unknown> {
+export async function runNoninvasiveRpc(sessionId: string, method: string, params: Record<string, unknown>): Promise<unknown> {
+    assertCurrentReadAdmission(sessionId, method);
     return journal.execute(sessionId, method, params);
 }
 export function recoverNoninvasiveRpc(sessionId: string, method: string): Promise<boolean> {
@@ -48,6 +56,7 @@ const modelJournal = new ScopedNoninvasiveRpc({
     validateComplete: (pending, result) => pending.method === 'codex-controls-update' && confirmedNativeModelRpcReceipt(pending.target, result),
 });
 export async function runCodeLightModelRpc(sessionId: string, params: Record<string, unknown>) {
+    assertCurrentReadAdmission(sessionId, 'codex-controls-update');
     return modelJournal.execute(sessionId, 'codex-controls-update', params);
 }
 export async function recoverCodeLightModelRpc(sessionId: string, params: Record<string, unknown> = {}) {

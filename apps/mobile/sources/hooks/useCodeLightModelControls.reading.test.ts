@@ -3,11 +3,11 @@ import * as React from 'react';
 import { act, create } from 'react-test-renderer';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Session } from '@/sync/storageTypes';
-const rpc = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), recover: vi.fn(), nativeRecover: vi.fn() }));
+const rpc = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), recover: vi.fn(), nativeRecover: vi.fn(), sessions:{} as Record<string,Session> }));
 vi.hoisted(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true));
 vi.mock('@/sync/noninvasiveRpc', () => ({ runNoninvasiveRpc: rpc.read, runCodeLightModelRpc: rpc.write, recoverCodeLightModelRpc: rpc.recover, recoverCodeLightNativeModelRpc: rpc.nativeRecover }));
 vi.mock('@/text', () => ({ t: (key: string) => key }));
-vi.mock('@/sync/storage', () => ({ useSocketStatus: () => ({ status: 'connected' }), storage: { getState: () => ({ sessions: {} }) } }));
+vi.mock('@/sync/storage', () => ({ useSocketStatus: () => ({ status: 'connected' }), storage: { getState: () => ({ sessions: rpc.sessions }) } }));
 vi.mock('@/sync/apiSocket', () => ({ apiSocket: { peerConnected: () => true } }));
 import { useCodeLightModelControls } from './useCodeLightModelControls';
 function fixture(app = 'antigravity', child = true): Session {
@@ -23,9 +23,9 @@ function models(session: Session) {
     return session;
 }
 let controls!: ReturnType<typeof useCodeLightModelControls>;
-function Probe({ session }: { session: Session }) { controls = useCodeLightModelControls(session); return null; }
+function Probe({ session }: { session: Session }) { rpc.sessions[session.id]=session; controls = useCodeLightModelControls(session); return null; }
 function mount(session: Session) { let root!: ReturnType<typeof create>; act(() => { root = create(React.createElement(Probe, { session })); }); return root; }
-beforeEach(() => { vi.clearAllMocks(); rpc.read.mockResolvedValue(undefined); rpc.write.mockResolvedValue(undefined); rpc.recover.mockResolvedValue(false); rpc.nativeRecover.mockResolvedValue({ confirmed: false }); });
+beforeEach(() => { vi.clearAllMocks();rpc.sessions={}; rpc.read.mockResolvedValue(undefined); rpc.write.mockResolvedValue(undefined); rpc.recover.mockResolvedValue(false); rpc.nativeRecover.mockResolvedValue({ confirmed: false }); });
 
 it.each(['antigravity', 'codex', 'claude-desktop'])('does not read or update settings for an explicit readonly %s child', async app => {
     const session = fixture(app); rpc.read.mockRejectedValue(Error('Unsupported child settings read')); const root = mount(session);

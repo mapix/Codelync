@@ -20,7 +20,7 @@ test('real self-host machine RPC: discovery metadata, once, unknown restart and 
   const directory = await mkdtemp(join(tmpdir(), 'codelight-discovery-live-'));
   const source = { app: 'codex', hostId: 'local', id: 'fixture-only-not-a-real-native-session', kind: 'session', title: 'TEST ONLY — discovery has no real native adapter' }, key = sourceKey(source);
   let opened = 0, started = 0, fail = false;
-  const options = { directory, account, discovery: { discover: async () => ({ sources: [source] }), adapter: () => ({}) }, sourceFactory: async () => ({ openDesktop: async () => { opened++; if (fail) throw new BridgeError('delivery-unknown', 'Fixture lost original-open ACK; no real app exists.'); }, start: async () => { started++; }, status: () => ({ sourceStatus: 'connected' }), close: async () => {} }) };
+  const options = { directory, activityBackgroundSources: 0, activityFactory: () => ({ intrinsicRefresh() {}, close() {} }), account, discovery: { discover: async () => ({ sources: [source] }), adapter: () => ({}) }, sourceFactory: async () => ({ openDesktop: async () => { opened++; if (fail) throw new BridgeError('delivery-unknown', 'Fixture lost original-open ACK; no real app exists.'); }, start: async () => { started++; }, status: () => ({ sourceStatus: 'connected' }), close: async () => {} }) };
   let daemon = new CodeLightMacDaemon(options);
   const peer = io(serverUrl, { path: '/v1/updates', auth: { token: account.token, clientType: 'user-scoped' }, transports: ['websocket'], autoConnect: false });
   /** @param {string} method @param {Value} params */

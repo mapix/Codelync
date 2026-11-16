@@ -9,6 +9,7 @@ import { DeviceProofVerifier } from '../network/device-proof.mjs';
 import { EntryProbes } from '../network/public-access.mjs';
 import { createPairingGateway } from './pairing-gateway.mjs';
 import { CodeLightRecentService } from './recent-data.mjs';
+import { NativeActivityTransport } from './activity-transport.mjs';
 import { isCodeLightNativeSource } from './source-scope.mjs';
 import { readLanListenerPorts, writeLanListenerPorts } from './lan-listener-ports.mjs';
 
@@ -32,7 +33,7 @@ export function privateLANAddresses(interfaces = networkInterfaces()) {
 
 /** Composes network-only entries around one existing Mac account, daemon and proof owner. */
 export class MacConnectionService extends EventEmitter {
-  /** @param {Options} options */
+  /** @param {Options & {remoteDesktop?:import('./remote-desktop.mjs').RemoteDesktop}} options */
   constructor(options) {
     super(); this.options = options; this.closed = false; this.cancel = new AbortController();
     this.gateways = /** @type {Set<ReturnType<typeof createPairingGateway>>} */ (new Set());
@@ -56,7 +57,15 @@ export class MacConnectionService extends EventEmitter {
     const publicKey = Buffer.from(options.invitations.pair.publicKey).toString('base64url');
     this.peerIdentity = createHash('sha256').update(peerMaterial(publicKey, options.account.secret)).digest('hex');
     this.recent = new CodeLightRecentService({ sources: () => this.sources(), resolveSource: id => this.resolveSource(id),
-      available: () => this.catalogueAvailable(), readAvailable: () => this.readAvailable(), machineId: () => this.options.daemon.machine?.id ?? null });
+      available: () => this.catalogueAvailable(), readAvailable: () => this.readAvailable(), machineId: () => this.options.daemon.machine?.id ?? null,
+      catalogRefreshMs: 5000,
+      retainSource: (id, execute) => this.options.daemon.useSource(this.source(id).key, execute) });
+    this.sourceSubscriptionsChanged = () => { if (!this.closed) this.recent.refreshCatalog(); };
+    this.options.daemon.on?.('source-subscriptions', this.sourceSubscriptionsChanged);
+    this.activityTransport = new NativeActivityTransport({ poll: request => {
+      if (!this.readAvailable() || !this.options.daemon.activity) throw new BridgeError('source-unavailable', 'Native activity is unavailable.', 503);
+      return this.options.daemon.activity.poll(request);
+    }, machineId: () => this.options.daemon.machine?.id ?? null });
     this.manager.on('configuration', value => { if (!this.closed) this.emit('configuration', value); });
     this.manager.on('channels', value => { if (!this.closed) this.emit('channels', value); });
   }
@@ -64,6 +73,7 @@ export class MacConnectionService extends EventEmitter {
   start() { if (!this.started) this.started = this.initialize(); return this.started; }
 
   async initialize() {
+    this.recent.startCatalogMaintenance();
     await Promise.allSettled(/** @type {Kind[]} */ (['cloudflare', 'relay']).map(async kind => {
       try {
         const gateway = await this.gateway(kind, '127.0.0.1', () => this.kindOrigin(kind), this.cancel.signal);
@@ -120,14 +130,14 @@ export class MacConnectionService extends EventEmitter {
 
   available() { const daemon = this.options.daemon; return !this.closed && !daemon.closed && daemon.ownsLease && daemon.inventoryAvailable; }
   catalogueAvailable() { const daemon = this.options.daemon; return !this.closed && !daemon.closed && daemon.ownsLease
-    && daemon.registrationAvailable === true && typeof daemon.machine?.id === 'string' && !!daemon.machine.id; }
+    && daemon.sourceConfigurationKnown?.() !== false && daemon.registrationAvailable === true && typeof daemon.machine?.id === 'string' && !!daemon.machine.id; }
   readAvailable() { const daemon = this.options.daemon; return !this.closed && !daemon.closed && daemon.ownsLease; }
-  sources() { return [...this.options.daemon.sources].map(([key, entry]) => ({ ...entry, actor: this.options.daemon.actors.get(key) })); }
+  sources() { return [...this.options.daemon.sources].filter(([, entry]) => this.options.daemon.sourceEnabled?.(entry.source) !== false).map(([key, entry]) => ({ ...entry, actor: this.options.daemon.actors.get(key) })); }
 
   /** @param {string} id */
   source(id) {
     const match = [...this.options.daemon.sources].find(([, entry]) => entry.binding.happySessionId === id);
-    if (!match || !isCodeLightNativeSource(match[1].source, match[1].binding.metadata) || match[1].binding.metadata?.nativeSession?.catalogueAvailable === false) throw new BridgeError('source-unavailable', 'The selected native source is unavailable.', 503);
+    if (!match || this.options.daemon.sourceEnabled?.(match[1].source) === false || !isCodeLightNativeSource(match[1].source, match[1].binding.metadata) || match[1].binding.metadata?.nativeSession?.catalogueAvailable === false) throw new BridgeError('source-unavailable', 'The selected native source is unavailable.', 503);
     return { key: match[0], entry: match[1] };
   }
 
@@ -143,12 +153,18 @@ export class MacConnectionService extends EventEmitter {
 
   /** Peer routes contain read-only selection/history data, not a second command admission path.
    * @param {string} path @param {string} method @param {Value} body @param {string} device @returns {Promise<Value>} */
-  async peerApi(path, method, body, device) {
+  async peerApi(path, method, body, device, origin = this.primaryOrigin()) {
     if (this.closed || !this.options.devices.publicKey(device)) throw new BridgeError('unknown-device', 'The approved device is unavailable.', 401);
     const url = new URL(path, 'http://127.0.0.1');
     if (!path.startsWith('/api/peer/') || url.origin !== 'http://127.0.0.1') throw new BridgeError('invalid-peer-route', 'The peer route is invalid.', 400);
     if (url.pathname === '/api/peer/channels' && method === 'GET') return { version: 2, channels: this.candidates() };
+    const desktopAction = url.pathname.match(/^\/api\/peer\/desktop\/(status|displays|join|ready|heartbeat|quality|display|space|input|leave)$/u);
+    if (desktopAction && !url.search && this.options.remoteDesktop) return this.options.remoteDesktop.api(desktopAction[1], method, body, device, origin);
     const params = Object.fromEntries(url.searchParams);
+    if (url.pathname === '/api/peer/activity' && method === 'POST') {
+      if (Object.keys(params).length) throw new BridgeError('invalid-peer-request', 'Activity uses a bounded request body.');
+      return this.activityTransport.request(device, body);
+    }
     const catalog = url.pathname === '/api/peer/catalog' && method === 'GET';
     if (Object.keys(params).some(key => !(catalog ? ['limit', 'cursor', 'catalogVersion', 'since'] : ['limit', 'cursor']).includes(key))) throw new BridgeError('invalid-peer-request', 'The peer query is invalid.', 400);
     if (catalog) return this.recent.catalog(params);
@@ -156,7 +172,8 @@ export class MacConnectionService extends EventEmitter {
     if (!selected || selected[2] === 'recent' && method !== 'POST' || selected[2] === 'history' && method !== 'GET') throw new BridgeError('unsupported-peer-route', 'The peer route is unavailable.', 404);
     const id = decodeURIComponent(selected[1]);
     if (!id || id.length > 200 || id.includes('/')) throw new BridgeError('invalid-session', 'A selected native session is required.');
-    if (selected[2] === 'recent' && (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => key !== 'limit'))) throw new BridgeError('invalid-peer-request', 'The recent request is invalid.');
+    if (selected[2] === 'recent' && (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => !['limit', 'readPolicy'].includes(key))
+      || body.readPolicy !== undefined && !['fresh', 'cache-first'].includes(body.readPolicy))) throw new BridgeError('invalid-peer-request', 'The recent request is invalid.');
     if (selected[2] === 'history' && body != null && (Array.isArray(body) || typeof body !== 'object' || Object.keys(body).length > 0)) throw new BridgeError('invalid-peer-request', 'History reads use query parameters only.');
     const { key } = this.source(id);
     // resolveSource 的准备阶段结束后仍需保留 pin；否则另一手机的容量回收会在实际 readRecent 前关闭 observer。
@@ -166,12 +183,14 @@ export class MacConnectionService extends EventEmitter {
   /** @param {Kind} kind @param {string} host @param {()=>string|null} origin @param {AbortSignal} signal @param {number} [port] */
   async gateway(kind, host, origin, signal, port = 0) {
     if (this.closed || signal.aborted) throw Error('connection-service-cancelled');
+    const remoteDesktop = this.options.remoteDesktop;
     const options = { upstream: this.options.upstream, invitations: this.options.invitations, devices: this.options.devices,
       metrics: this.options.metrics, notificationsAvailable: this.options.notificationsAvailable,
       entryProbe: (/** @type {unknown} */ challenge) => this.probes.get(kind)?.response(challenge) ?? null,
       proof: this.proof, expectedOrigin: () => origin() ?? 'https://unavailable.invalid',
       onVerified: () => { const value = origin(); if (value) this.manager.confirm(kind, value); },
-      peerApi: (/** @type {string} */ path, /** @type {string} */ method, /** @type {Value} */ body, /** @type {string} */ device) => this.peerApi(path, method, body, device),
+      peerApi: (/** @type {string} */ path, /** @type {string} */ method, /** @type {Value} */ body, /** @type {string} */ device) => this.peerApi(path, method, body, device, origin() ?? ''),
+      desktopMedia: remoteDesktop ? (/** @type {string} */ path) => remoteDesktop.mediaUpstream(path) : undefined,
       peerId: () => this.peerId() };
     const gateway = (this.options.gatewayFactory ?? createPairingGateway)(options); this.gateways.add(gateway);
     gateway.on('error', error => {
@@ -275,6 +294,7 @@ export class MacConnectionService extends EventEmitter {
 
   close() {
     if (this.closing) return this.closing; this.closed = true; this.cancel.abort();
+    this.activityTransport.close(); this.recent.close(); this.options.daemon.removeListener?.('source-subscriptions', this.sourceSubscriptionsChanged);
     if (this.networkTimer) clearInterval(this.networkTimer); this.networkTimer = null;
     this.closing = (async () => {
       await this.manager.close(); await Promise.allSettled([...this.gateways].map(gateway => this.closeGateway(gateway)));

@@ -10,12 +10,12 @@ vi.mock('@/sync/codeLightLoadingProgress', () => ({ useCodeLightMessageProgress:
 vi.mock('@/sync/sync', () => ({ sync: { onSessionVisible: state.visible } }));
 vi.mock('@/text', () => ({ t: (key: string) => key }));
 import { CodeLightSessionLoading } from './CodeLightSessionLoading';
-it('the body overlay retains syncing instead of an obsolete error during route recovery', () => {
+it('a cached body has no loading overlay during socket recovery', () => {
     state.connected = false; state.phase = 'error';
     let view!: ReturnType<typeof create>;
     act(() => { view = create(React.createElement(CodeLightSessionLoading, { sessionId: 'fixture', initial: false, older: false })); });
     expect(view.root.findAllByType('Button')).toHaveLength(0);
-    expect(view.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.messages');
+    expect(view.toJSON()).toBeNull();
     act(() => view.unmount());
 });
 it('a current read failure on a connected route still offers Retry', () => {

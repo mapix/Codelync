@@ -1,5 +1,14 @@
 # CodeLight 产品与验收合同
 
+## 独立远程桌面 — 2026-11-16
+
+用户授权新增独立于所有原生会话的远程桌面功能。Mac 默认关闭，媒体 Relay
+默认由本机拥有，可配置外部 LiveKit 服务；手机以独立顶层页面连接已配对的
+Mac，支持分别调整清晰度与流畅度。远控使用原生屏幕采集和系统输入，不创建
+Agent 会话，不把屏幕或点击当作原生会话身份或业务 admission。既有窗口来源
+适配器及其他 harness 继续延期。实现与验收以
+[远程桌面合同](codelight-remote-desktop.md) 为准。
+
 ## 当前支持范围 — 2026-11-16
 
 当前产品支持 Codex、Antigravity Desktop 和 Claude Desktop（Gateway）的原生
@@ -11,6 +20,11 @@ Claude Desktop 的完整正式控制仍需通过其验收门槛。所有独立 C
 Mac 的加密 machine metadata 也声明这三种 `sourceApps`；该支持范围标记不
 代替原应用的实时目录、当前可用性或具体控制能力。独立 runner availability
 继续为 false，不能因 Desktop 支持而启用相应 CLI。
+
+Mac 可独立选择接入 Codex、Antigravity Desktop 和 Claude Desktop（Gateway），
+默认三项全选，选择会保存。关闭来源只停止 CodeLight 对该来源的发现、观察与控制，
+原桌面应用和会话继续由原 owner 执行。空选择、失败恢复及旧操作保留边界见
+[来源接入选择](codelight-source-subscriptions.md)。
 
 ## Claude Desktop Gateway — 商业打磨范围，2026-11-14
 

@@ -12,6 +12,7 @@ import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 import { nativeComposerInputReadOnly } from '@/utils/nativeComposerInputReadOnly';
 import { nativeSubagentInputReadOnly } from '@/utils/nativeParentControl';
 import { codeLightSavedHistory } from '@/utils/nativeSavedHistory';
+import { nativeReadingIdentity } from '@/utils/nativeReadingWindow';
 import { canWriteNativeModelControls, clampNativeModelEffort, confirmedNativeModelSettings, modelAllowsUnsetEffort, nativeModelControlScopesEqual, readNativeModelControlScope } from '@/utils/nativeModelControls';
 
 export function useCodeLightModelControls(session: Session | null) {
@@ -77,10 +78,14 @@ export function useCodeLightModelControls(session: Session | null) {
         && (claude ? canWriteNativeModelControls(session) : controls?.available === true && session?.metadata?.capabilities?.rpcMethods?.includes('codex-controls-update') === true);
     const change = useCallback(async (model: string, reasoningEffort: string | null) => {
         if (!id || !current || !enabled || pending.current?.id === id) return;
-        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        const live = storage.getState().sessions[id];
+        if (!live || nativeWriteConnectionBlocked(live.metadata, apiSocket.peerConnected()) || nativeComposerInputReadOnly(live)
+            || live.metadata?.capabilities?.rpcMethods?.includes('codex-controls-update') !== true
+            || nativeReadingIdentity(id, live.metadata, 'native-model') !== nativeReadingIdentity(id, session?.metadata ?? null, 'native-model')
+            || live.metadata?.bridge?.source.runtimeGeneration !== session?.metadata?.bridge?.source.runtimeGeneration) return;
         const capturedScope = scope ? { ...scope } : null;
         if (claude) {
-            const live = storage.getState().sessions[id], currentScope = readNativeModelControlScope(live);
+            const currentScope = readNativeModelControlScope(live);
             if (!capturedScope || !currentScope || !canWriteNativeModelControls(live) || !nativeModelControlScopesEqual(capturedScope, currentScope)) return;
         }
         const params = { model, reasoningEffort, expectedModel: current.model, expectedReasoningEffort: current.reasoningEffort,

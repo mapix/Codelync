@@ -63,6 +63,29 @@ function localRequestUrl(channel, path) { return 'http://127.0.0.1:' + new URL(c
 /** @param {Value} f @param {Value} value */
 function unseal(f, value) { const plain = nacl.box.open(Buffer.from(value.ciphertext, 'base64url'), Buffer.from(value.nonce, 'base64url'), f.mac.publicKey, f.phone.secretKey); assert.ok(plain); return JSON.parse(Buffer.from(plain).toString()); }
 
+test('sealed HTTP activity serves the existing Mac replica without native source or WebSocket preparation', async t => {
+  const f = await fixture(t);
+  let polls = 0;
+  const daemon = /** @type {Value} */ (f.daemon);
+  daemon.activity = { poll: (/** @type {Value} */ request) => ({ ok: true, version: 1, epoch: 'native-status-owner', sequence: ++polls, observedAt: Date.now(),
+    groups: request.groups.map((/** @type {Value} */ group) => ({ id: group.id, total: 1, active: 1, waiting: 0, unknown: 0, status: 'ready' })) }) };
+  const channel = f.service.candidates().find(row => row.kind === 'local'), path = '/api/peer/activity';
+  assert.ok(channel);
+  const send = async (/** @type {Value} */ body) => {
+    const response = await fetch(localRequestUrl(channel, path), { method: 'POST', headers: { Authorization: header(f, channel, path, 'POST'), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 200); return unseal(f, await response.json()).payload;
+  };
+  const first = await send({ clientId: 'phone-view', requestSeq: 1, activityProtocol: 2, groups: [{ id: 'project', projectKey: '/fixture', hostId: 'local' }] });
+  assert.equal(first.mode, 'full'); assert.equal(first.groups[0].active, 1); assert.equal(first.machineId, 'machine-fixture');
+  const next = await send({ clientId: 'phone-view', requestSeq: 2, activityProtocol: 2, interestToken: first.interestToken, since: first.watermark });
+  assert.equal(next.mode, 'unchanged'); assert.deepEqual(next.groups, []);
+  const large = await send({ clientId: 'phone-view', requestSeq: 3, activityProtocol: 2, groups: [{ id: 'project-' + 'x'.repeat(5000), projectKey: '/fixture', hostId: 'local' }] });
+  assert.equal(large.mode, 'full'); assert.equal(large.groups.length, 1);
+  assert.deepEqual(f.counters(), { reads: 0, starts: 0, preparations: 0, backendHeaders: null });
+  f.daemon.ownsLease = false;
+  await assert.rejects(f.service.peerApi(path, 'POST', { clientId: 'phone-view', requestSeq: 4, groups: [] }, f.deviceId), { code: 'source-unavailable' });
+});
+
 test('LAN discovery selects at most three distinct actual private IPv4 addresses', () => {
   const interfaces = { test: [{ address: '127.0.0.1', family: 'IPv4', internal: true }, { address: '8.8.8.8', family: 'IPv4', internal: false }, { address: '192.168.1.2', family: 'IPv4', internal: false },
     { address: '192.168.1.2', family: 'IPv4', internal: false }, { address: '10.0.0.2', family: 'IPv4', internal: false }, { address: '172.20.1.2', family: 'IPv4', internal: false }, { address: '10.0.0.3', family: 'IPv4', internal: false }, { address: 'fe80::1', family: 'IPv6', internal: false }] };

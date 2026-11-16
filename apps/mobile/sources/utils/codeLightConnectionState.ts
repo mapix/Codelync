@@ -7,7 +7,7 @@ export type CodeLightConnectionState = {
     canInspect: boolean;
 };
 
-/** Connection health comes from the live socket; message reads cannot replace it. */
+/** A readable HTTP route is recovery state, never a connected write socket. */
 export function codeLightConnectionState(input: {
     status: 'disconnected' | 'connecting' | 'connected' | 'error';
     snapshot: ConnectionSnapshot;
@@ -27,6 +27,7 @@ export function codeLightConnectionState(input: {
         || !canReconnect && ['missing-token', 'invalid-token'].includes(error?.code ?? '');
     if (accessEnded) return { ...base, kind: 'access-ended', busy: false, canRetry: false };
     if (snapshot.failureCode) return { ...base, kind: 'failed', busy: false };
+    if (snapshot.readable && snapshot.realtimeRecovering) return { ...base, kind: 'connecting', busy: snapshot.connecting };
     if (snapshot.connecting || status === 'connecting') return { ...base, kind: 'connecting', busy: true };
     return { ...base, kind: 'failed' };
 }

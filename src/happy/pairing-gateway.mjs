@@ -6,6 +6,7 @@ import nacl from 'tweetnacl';
 import { WebSocketServer } from 'ws';
 import { PEER_RESPONSE_CODEC_HEADER } from '@slopus/happy-wire/peer-codec';
 import { sealPeerResponse } from './peer-response-codec.mjs';
+import { openPeerActivityRequest, PEER_ACTIVITY_CARRIER_MAX_BYTES } from './peer-request-codec.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const CODE = /^[A-Za-z0-9_-]{43}$/u;
@@ -155,8 +156,17 @@ export function createPairingGateway(options) {
       const device = authorize(req);
       if (!device || !options.peerApi || !options.devices) { res.writeHead(401).end(); return; }
       try {
-        let body = ''; for await (const chunk of req) { body += chunk.toString(); if (body.length > 4096) throw Error('request-too-large'); }
-        const payload = await options.peerApi(req.url ?? '', req.method ?? 'GET', body ? JSON.parse(body) : {}, device);
+        const chunks = []; let size = 0;
+        const limit = localPath === '/api/peer/activity' ? PEER_ACTIVITY_CARRIER_MAX_BYTES : localPath.startsWith('/api/peer/desktop/') ? 16_384 : 4096;
+        for await (const chunk of req) { size += chunk.length; if (size > limit) throw Error('request-too-large'); chunks.push(chunk); }
+        const body = Buffer.concat(chunks).toString('utf8');
+        let input = body ? JSON.parse(body) : {};
+        if (localPath === '/api/peer/activity') {
+          const requestKey = options.devices.publicKey(device); if (!requestKey) throw Error('unknown-device');
+          input = openPeerActivityRequest(input, { peerId: options.peerId?.() ?? '', path: req.url ?? '', method: req.method ?? 'GET',
+            devicePublicKey: bytes(requestKey), macSecretKey: options.invitations.pair.secretKey });
+        }
+        const payload = await options.peerApi(req.url ?? '', req.method ?? 'GET', input, device);
         const key = options.devices.publicKey(device); if (!key) throw Error('unknown-device');
         const packet = sealPeerResponse(options.peerId?.(), payload, bytes(key), options.invitations.pair.secretKey, req.headers[PEER_RESPONSE_CODEC_HEADER]);
         res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
@@ -211,6 +221,32 @@ export function createPairingGateway(options) {
     }
     // Happy 的实时通道是 /v1/updates；误用 socket.io 默认路径会让 HTTP 列表可读而控制链路一直报错。
     const path = req.url?.split('?')[0];
+    if (path === '/api/peer/desktop/media/rtc' || path === '/api/peer/desktop/media/rtc/v1') {
+      const desktopMedia = /** @type {typeof options & {desktopMedia?:(path:string)=>Promise<{origin:string,path:string,device:string}>}} */ (options).desktopMedia;
+      if (!desktopMedia) { socket.destroy(); return; }
+      void desktopMedia(req.url ?? '').then(target => {
+        if (socket.destroyed) return;
+        const media = new URL(target.origin);
+        if (media.protocol !== 'http:' || media.hostname !== '127.0.0.1') { socket.destroy(); return; }
+        options.devices?.connected(target.device, /** @type {import('node:net').Socket} */ (socket));
+        const headers = /** @type {Record<string,string>} */ ({ host: media.host, connection: 'Upgrade', upgrade: 'websocket' });
+        for (const key of ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-protocol']) {
+          const value = req.headers[key]; if (typeof value === 'string') headers[key] = value;
+        }
+        const proxy = proxyRequest({ hostname: media.hostname, port: media.port, path: target.path, headers });
+        proxy.on('upgrade', (response, remote, responseHead) => {
+          const responseHeaders = Object.entries(response.headers).flatMap(([key, value]) => Array.isArray(value) ? value.map(v => `${key}: ${v}`) : [`${key}: ${value}`]);
+          socket.write(`HTTP/1.1 101 Switching Protocols\r\n${responseHeaders.join('\r\n')}\r\n\r\n`);
+          if (responseHead.length) socket.write(responseHead); if (head.length) remote.write(head);
+          socket.pipe(remote); remote.pipe(socket);
+          socket.on('error', () => remote.destroy()); remote.on('error', () => socket.destroy());
+          socket.on('close', () => remote.destroy()); remote.on('close', () => socket.destroy());
+        });
+        proxy.on('response', response => { response.resume(); socket.destroy(); });
+        proxy.on('error', () => socket.destroy()); proxy.end();
+      }).catch(() => socket.destroy());
+      return;
+    }
     if (path !== '/v1/updates' && path !== '/v1/updates/') { socket.destroy(); return; }
     const device = authorize(req);
     if (!device) { socket.destroy(); return; }

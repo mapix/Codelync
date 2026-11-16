@@ -48,7 +48,7 @@ export const SidebarNavigator = React.memo(() => {
         isWeb,
         isRunningOnMac: runningOnMac,
     });
-    const isDesktopLayout = auth.isAuthenticated && isTablet && !suppressTabletShell;
+    const isDesktopLayout = auth.isAuthenticated && isTablet && !suppressTabletShell && pathname !== '/desktop';
     const showSidebar = isDesktopLayout && !zenMode;
     const { width: windowWidth } = useLayoutDimensions();
 

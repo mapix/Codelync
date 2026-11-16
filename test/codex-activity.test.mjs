@@ -235,3 +235,18 @@ test('cold owner failures stay unconfirmed and closing before start prevents lat
   const late = new CodexActivityObserver({ id: 'native-thread', ipc: lateIpc });
   const pending = late.start(); late.close(); await pending; assert.equal(lateIpc.subscriptions, 0);
 });
+
+test('scope-valid own idle with incomplete roster keeps observation health without claiming aggregate idle', async t => {
+  const { ipc, observer } = await fixture(t);
+  const native = state(); native.threadRuntimeStatus.type = 'idle'; native.turns[0].status = 'completed';
+  ipc.snapshot(native);
+  const activity = /** @type {Value} */ (observer.status());
+  assert.equal(activity.ownKnown, true); assert.equal(activity.known, false);
+  assert.equal(activity.aggregateActivity.rosterComplete, false); assert.equal(observer.observationReady(), true); assert.equal(observer.needsRefresh(), false);
+  const captured = observer.status().observedAt;
+  assert.equal(observer.status().status, 'unavailable'); assert.equal(observer.status().observedAt, captured);
+  ipc.owner = 'local:new-owner'; assert.equal(observer.observationReady(), false); assert.equal(observer.needsRefresh(), true);
+  await observer.refresh(); assert.equal(ipc.subscriptions, 2);
+  ipc.snapshot(native, 2); assert.equal(observer.observationReady(), true); assert.equal(observer.status().known, false);
+  observer.close(); assert.equal(observer.observationReady(), false); assert.equal(observer.needsRefresh(), false);
+});

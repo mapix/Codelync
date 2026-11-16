@@ -74,3 +74,21 @@ original authenticated endpoint still verifies session ownership and supplies th
 fresh owner; a cached match never proves current native ownership. Diagnostics
 may retain the bounded input relation, parent/child classification and owner-scope
 fields, without message text, keys or draft contents.
+## Sealed activity request bodies — 2026-11-16
+
+New paired clients seal the activity POST body with the existing Mac public key
+and device secret key. The compact carrier is `[2, nonce, ciphertext]`; its
+authenticated plaintext is `[peerId, method, path, payload]`. Project
+paths, UI group keys and native IDs are absent from the plaintext HTTP carrier,
+including local HTTP routes. Device proof remains the existing admission owner;
+the body is opened only after device authorization. A wrong device key, Mac,
+route, method, malformed carrier or oversized plaintext is rejected before
+activity interest or native work is changed. No new account, key or permission
+flow is introduced.
+
+The activity carrier is limited to 360 KiB before parsing; decrypted activity
+payloads retain the 256 KiB budget. Other peer routes retain their 4 KiB body
+limit. The server retains older object-body compatibility, while new clients
+always use sealed bodies. Existing request sequence, same-peer scope, interest
+tokens and read-only recovery remain unchanged.
+

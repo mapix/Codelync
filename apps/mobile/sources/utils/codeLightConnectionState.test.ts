@@ -7,6 +7,10 @@ const input = { status: 'error' as const, snapshot, error: null, canReconnect: t
 it('terminal socket failure remains a failure even if HTTP and cached channel flags look healthy', () => {
     expect(codeLightConnectionState({ ...input, snapshot: { ...snapshot, channels: snapshot.channels.map(c => ({ ...c, state: 'connected' })) } })).toMatchObject({ kind: 'failed', busy: false, canRetry: true });
 });
+it('a currently proved HTTP route is realtime recovery and never a connected write socket',()=>{
+ expect(codeLightConnectionState({...input,snapshot:{...snapshot,readable:true,realtimeRecovering:true}})).toMatchObject({kind:'connecting',busy:false});
+ expect(codeLightConnectionState({...input,error:{code:'device-revoked'},snapshot:{...snapshot,readable:true,realtimeRecovering:true}})).toMatchObject({kind:'access-ended',canRetry:false});
+});
 it('a proven live connection wins over an obsolete error and failed source metadata', () => {
     expect(codeLightConnectionState({ ...input, status: 'connected', error: { code: 'transport-error', httpStatus: 403 },
         snapshot: { ...snapshot, failureCode: 'connection-failed' } }).kind).toBe('connected');

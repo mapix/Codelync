@@ -14,13 +14,13 @@ async function readHeaders(backend, hostId, now) {
   }
   const generation = backend.generation();
   const prior = headers.get(backend);
-  if (prior?.hostId === hostId && prior.generation === generation && prior.at + 1000 > now && prior.rows) return { rows: prior.rows, observedAt: prior.at };
+  if (prior?.hostId === hostId && prior.generation === generation && prior.at + 1000 > now && prior.rows) return { rows: prior.rows, observedAt: prior.at, runtimeGeneration: generation };
   if (prior?.hostId === hostId && prior.generation === generation && prior.flight) return prior.flight;
-  const entry = { hostId, generation, at: now, rows: /** @type {Value[]|null} */ (null), flight: /** @type {Promise<{rows:Value[],observedAt:number}>|null} */ (null) };
+  const entry = { hostId, generation, at: now, rows: /** @type {Value[]|null} */ (null), flight: /** @type {Promise<{rows:Value[],observedAt:number,runtimeGeneration:any}>|null} */ (null) };
   const flight = Promise.resolve().then(() => backend.list({ expectedHostId: hostId })).then((/** @type {Value[]} */ rows) => {
     if (!Array.isArray(rows) || rows.length > 10000 || backend.hostId() !== hostId || backend.generation() !== generation) throw new BridgeError('source-epoch-changed', 'The original Claude header namespace changed.');
     for (const row of rows) if (Number.isSafeInteger(row.nativeActivityObservedAt) && row.nativeActivityObservedAt > 0) entry.at = Math.min(entry.at, row.nativeActivityObservedAt);
-    entry.rows = rows; return { rows, observedAt: entry.at };
+    entry.rows = rows; return { rows, observedAt: entry.at, runtimeGeneration: generation };
   }).finally(() => { entry.flight = null; });
   entry.flight = flight; headers.set(backend, entry); return flight;
 }
@@ -30,14 +30,20 @@ export class ClaudeActivityObserver {
   /** @param {{id:string,backend:Value,expectedHostId:string,now?:()=>number}} options */
   constructor(options) {
     this.options = options; this.now = options.now ?? Date.now; this.closed = false;
-    this.at = 0; this.owner = /** @type {string|null} */ (null); this.nativeStatus = 'unknown'; this.refreshing = false;
+    this.at = 0; this.owner = /** @type {string|null} */ (null); this.runtimeGeneration = /** @type {string|null} */ (null); this.nativeStatus = 'unknown'; this.refreshing = false;
   }
   status() {
-    const known = !this.closed && this.owner !== null && this.at + 5000 > this.now()
+    const known = !this.closed && this.owner !== null && this.runtimeGeneration !== null
+      && this.options.backend.generation() === this.runtimeGeneration && this.at + 5000 > this.now()
       && this.options.backend.hostId() === this.options.expectedHostId && this.options.backend.generation(this.options.id) === this.owner
       && ['idle', 'running', 'waiting'].includes(this.nativeStatus);
     return { known, active: known && ['running', 'waiting'].includes(this.nativeStatus), waiting: known && this.nativeStatus === 'waiting',
       status: known ? 'ready' : this.refreshing ? 'refreshing' : 'unavailable', observedAt: this.at };
+  }
+  /** Original capture deadline only; the shared service owns timers/reads. */
+  refreshDueAt() {
+    if (this.closed || this.refreshing || !this.status().known || !Number.isFinite(this.at) || this.at < 0) return null;
+    return this.at + 3000;
   }
   async refresh() {
     if (this.closed || this.refreshing) return;
@@ -48,9 +54,10 @@ export class ClaudeActivityObserver {
       if (this.closed) return;
       if (!row || typeof row.runtimeGeneration !== 'string' || this.options.backend.generation(this.options.id) !== row.runtimeGeneration
         || this.options.backend.hostId() !== this.options.expectedHostId) throw new BridgeError('source-epoch-changed', 'The original Claude header owner changed.');
-      this.owner = row.runtimeGeneration; this.nativeStatus = row.nativeStatus; this.at = snapshot.observedAt;
-    } catch { this.owner = null; this.nativeStatus = 'unknown'; }
+      this.owner = row.runtimeGeneration; this.runtimeGeneration = typeof snapshot.runtimeGeneration === 'string' && snapshot.runtimeGeneration ? snapshot.runtimeGeneration : null;
+      this.nativeStatus = row.nativeStatus; this.at = snapshot.observedAt;
+    } catch { this.owner = null; this.runtimeGeneration = null; this.nativeStatus = 'unknown'; }
     finally { this.refreshing = false; }
   }
-  close() { this.closed = true; this.owner = null; }
+  close() { this.closed = true; this.owner = null; this.runtimeGeneration = null; }
 }

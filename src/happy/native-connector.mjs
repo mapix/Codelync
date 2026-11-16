@@ -92,6 +92,9 @@ export class NativeHappyConnector extends EventEmitter {
    * must be established again on every attachment, independently of content. */
   #attachmentMetadata = /** @type {{epoch:string|null,lease:boolean}|null} */ (null);
   #historyProjectionPrimed = false;
+  /** Bounded public row seed only; never persisted or used for admission.
+   * @type {{reply:Value,capturedAt:number,epoch:string}|null} */ #recentCache = null;
+  /** @type {Promise<void>|null} */ #recentRefreshFlight = null;
   #suppressedProjectionEvents = /** @type {Set<string>|null} */ (null);
   #retiring = false;
   /** @type {Promise<void>|null} */ #closeFlight = null;
@@ -191,11 +194,7 @@ export class NativeHappyConnector extends EventEmitter {
       }
     }
     if (options.fresh !== false) {
-      if (typeof this.#options.adapter.freshSnapshot !== 'function') throw new BridgeError('fresh-native-unavailable', 'This observer cannot confirm a fresh original-owner view.', 503);
-      const fresh = viewOf(await this.#options.adapter.freshSnapshot(this.nativeId));
-      if (!available(fresh)) throw new BridgeError('source-unavailable', 'The original owner did not provide a fresh usable view.', 503);
-      if (this.#closed || this.#retiring || typeof fresh.ownerGeneration === 'string' && fresh.ownerGeneration !== await this.#epoch()) throw new BridgeError('source-epoch-changed', 'The original owner changed during the recent read.', 409);
-      await this.project(fresh);
+      await this.#refreshRecentView();
     } else if (options.cursor && !historyView && !loadedCodexPage && this.#view.historyComplete === false) {
       if (typeof this.#options.adapter.completeSnapshot !== 'function') throw new BridgeError('complete-history-unavailable', 'The original observer cannot load earlier native history.', 503);
       const complete = viewOf(await this.#options.adapter.completeSnapshot(this.nativeId, boundary ?? undefined));
@@ -213,6 +212,51 @@ export class NativeHappyConnector extends EventEmitter {
       || this.#view.historicalRead.namespaceHash !== savedReadScope.namespaceHash)) throw new BridgeError('source-epoch-changed', 'The saved-data projection changed before page publication.', 409);
     if (dataPageOwner && (await this.#epoch() !== dataPageOwner || view.ownerGeneration !== dataPageOwner)) throw new BridgeError('source-epoch-changed', 'The original history owner changed before page publication.', 409);
     const pageView = historyView ?? view;
+    const reply = this.#recentPage(pageView, options, dataPageOwner);
+    return { ...reply, ...(options.fresh !== false ? { freshness: { version: 1, mode: 'fresh', capturedAt: Date.now(),
+      ownerGeneration: reply.ownerGeneration, currentControlAuthority: !this.#historical(pageView) && typeof reply.ownerGeneration === 'string'
+        && this.#state.sourceStatus === 'connected' && this.#attachmentMetadata?.lease === true
+        && this.#attachmentMetadata.epoch === reply.ownerGeneration, revalidationPending: false } } : {}) };
+
+    });
+  }
+
+  /** One native tail refresh across background/foreground readers and limits. */
+  #refreshRecentView() {
+    if (this.#recentRefreshFlight) return this.#recentRefreshFlight;
+    const flight = (async () => {
+      if (typeof this.#options.adapter.freshSnapshot !== 'function') throw new BridgeError('fresh-native-unavailable', 'This observer cannot confirm a fresh original-owner view.', 503);
+      const fresh = viewOf(await this.#options.adapter.freshSnapshot(this.nativeId));
+      if (!available(fresh)) throw new BridgeError('source-unavailable', 'The original owner did not provide a fresh usable view.', 503);
+      if (this.#closed || this.#retiring || typeof fresh.ownerGeneration === 'string' && fresh.ownerGeneration !== await this.#epoch()) throw new BridgeError('source-epoch-changed', 'The original owner changed during the recent read.', 409);
+      await this.project(fresh);
+    })().finally(() => { if (this.#recentRefreshFlight === flight) this.#recentRefreshFlight = null; });
+    this.#recentRefreshFlight = flight; return flight;
+  }
+  /** No startup, native snapshot, history, metadata write or command replay.
+   * @param {{limit?:unknown,cursor?:unknown}} [options] @returns {Promise<Value|null>} */
+  readCachedRecent(options = {}) {
+    if (options.cursor !== undefined) return Promise.reject(new BridgeError('invalid-history-cursor', 'A warm recent cache cannot load an older-history cursor.'));
+    return this.#operation(async () => {
+      const cached = this.#recentCache;
+      if (!cached || !this.#started || this.#starting || this.#state.sourceStatus !== 'connected') return null;
+      const epoch = await this.#epoch();
+      if (!epoch || epoch !== cached.epoch || this.#state.epoch !== epoch || !await this.#lease()) return null;
+      if (this.#closed || this.#retiring || await this.#epoch() !== epoch) return null;
+      const current = this.#recentCache;
+      if (!current || current.epoch !== epoch) return null;
+      const count = options.limit == null ? 50 : Number(options.limit);
+      if (!Number.isSafeInteger(count) || count < 1 || count > 100) throw new BridgeError('invalid-page-limit', 'A bounded recent row limit is required.');
+      const rows = current.reply.rows.slice(-count);
+      return { ...structuredClone(current.reply), rows: structuredClone(rows), status: 'unknown', currentTurnId: null,
+        hasMore: current.reply.hasMore || current.reply.rows.length > rows.length, nextCursor: null,
+        freshness: { version: 1, mode: 'cached', capturedAt: current.capturedAt, ownerGeneration: epoch,
+          currentControlAuthority: false, revalidationPending: true } };
+    });
+  }
+  /** @param {Value} pageView @param {Value} options @param {string|null} [dataPageOwner] */
+  #recentPage(pageView, options, dataPageOwner = null) {
+    const view = this.#view;
     const page = this.#historical(pageView) ? nativeSavedHistoryPage(this.#options.transport.sessionId, pageView, options)
       : recentRowsPage(this.#options.transport.sessionId, pageView.rows ?? [], { ...options, ...(dataPageOwner ? { cursor: undefined } : {}), historyComplete: pageView.historyComplete, nativeStepOffset: pageView.nativeStepOffset,
         ...(['claude-desktop', 'codex'].includes(this.#options.sourceIdentity.app) ? { ownerGeneration: this.#state.epoch } : {}) });
@@ -236,7 +280,26 @@ export class NativeHappyConnector extends EventEmitter {
       currentTurnId: view.currentTurnId ?? null, seq: this.#options.transport.peerSnapshot?.().seq ?? 0,
       historyComplete: pageView.historyComplete ?? null, historyCoverage: this.#historical(pageView) ? 'original-saved-data' : pageView.historyComplete === true ? 'complete-native-view' : 'loaded-native-view',
       ...(this.#historical(pageView) ? { historicalRead: { ...pageView.historicalRead, readOnly: true } } : {}) };
-    });
+  }
+  /** Cache only bounded complete public rows after a validated projection.
+   * @param {Value} view */
+  #rememberRecent(view) {
+    if (!available(view) || this.#historical(view) || view.kind === 'window' || typeof this.#state.epoch !== 'string'
+      || !viewOwnerMatches(view, this.#state.epoch) || this.#attachmentMetadata?.lease !== true
+      || this.#attachmentMetadata.epoch !== this.#state.epoch) return;
+    try {
+      let count = 100, reply;
+      while (count >= 1) {
+        reply = this.#recentPage(view, { limit: count });
+        if (Buffer.byteLength(JSON.stringify(reply), 'utf8') <= 1024 * 1024) break;
+        if (count === 1) { this.#recentCache = null; return; }
+        count = Math.max(1, Math.floor(count / 2));
+      }
+      if (!reply) return;
+      const prior = this.#recentCache;
+      const unchanged = prior?.epoch === this.#state.epoch && hash(prior.reply.rows) === hash(reply.rows);
+      this.#recentCache = { reply: structuredClone(reply), capturedAt: unchanged ? prior.capturedAt : Date.now(), epoch: this.#state.epoch };
+    } catch { this.#recentCache = null; } // Optional acceleration cannot break a native projection.
   }
 
   start() {
@@ -535,6 +598,7 @@ export class NativeHappyConnector extends EventEmitter {
       this.#historyProjectionPrimed = true;
       const lease = await this.#lease(), attachment = this.#attachmentMetadata;
       if (!attachment || attachment.epoch !== epoch || attachment.lease !== lease) await this.#ensureAttachmentMetadata(actual, epoch, lease);
+      this.#rememberRecent(actual);
       return;
     }
     this.#pendingView = structuredClone(actual);
@@ -639,6 +703,7 @@ export class NativeHappyConnector extends EventEmitter {
     }); } finally { this.#suppressedProjectionEvents = null; }
     this.#historyProjectionPrimed = true;
     await this.#ensureAttachmentMetadata(view, epoch, lease);
+    this.#rememberRecent(view);
     await this.#flushEvents();
     if (lease && epoch && available(view) && view.kind !== 'window' && isCodeLightNativeSource({ ...this.#options.sourceIdentity, runtimeGeneration: epoch }, { controlMode: 'session' })) this.emit('notification-observation', { ...notificationSummary(view, this.#state.requestMap), epoch });
   }
@@ -1464,5 +1529,5 @@ export class NativeHappyConnector extends EventEmitter {
     this.#taskTransfers.clear(); this.#latestTasks = null; this.#taskCapture = null; this.#taskInvalidation = null;
     this.#releaseState();
   }
-  #releaseState() { if (this.#ownsState) { owners.delete(this.statePath); this.#ownsState = false; } }
+  #releaseState() { this.#recentCache = null; if (this.#ownsState) { owners.delete(this.statePath); this.#ownsState = false; } }
 }

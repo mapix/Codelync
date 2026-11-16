@@ -10,6 +10,7 @@ import { applyAppThemePreference } from '@/utils/appThemePreference';
 import { resolveLanguage, resolvePreferredLanguage } from '@/text/resolveLanguage';
 import { getLanguageNativeName, t } from '@/text';
 import { CodeLightSettingsView } from './CodeLightSettingsView';
+import { codeLightTopLevelRoute } from './CodeLightBottomNavigation';
 
 /** Global app preferences subscribe to existing owners; mounting this page never selects a route or chat. */
 export const CodeLightSettings = React.memo(function CodeLightSettings() {
@@ -23,6 +24,6 @@ export const CodeLightSettings = React.memo(function CodeLightSettings() {
     const version = [Application.nativeApplicationVersion || Constants.expoConfig?.version, Application.nativeBuildVersion].filter(Boolean).join(' · ');
     return <CodeLightSettingsView snapshot={snapshot} themePreference={themePreference} languageLabel={languageLabel} version={version}
         onSelectConnection={selectConnection} onScan={() => { void pairing.scan(); }} onLanguage={() => router.push('/settings/language')}
-        onNavigate={page => router.navigate(page === 'sessions' ? '/' : '/settings')}
+        onNavigate={page => router.navigate(codeLightTopLevelRoute(page))}
         onThemeChange={preference => { setThemePreference(preference); applyAppThemePreference(preference); }} />;
 });

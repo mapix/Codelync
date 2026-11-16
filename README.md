@@ -45,6 +45,17 @@ See the [current product contract](spec/codelight-product.md),
 
 ## Development
 
+The current source also includes an optional, independent remote desktop. It is
+off by default on the Mac and uses a bundled local LiveKit media server, or an
+explicitly configured external LiveKit server. The phone has a separate desktop
+tab with landscape, display switching, quality controls and immersive fullscreen.
+See [the remote desktop contract](spec/codelight-remote-desktop.md). This feature
+is under simulator acceptance and is not included in the older public downloads.
+
+Building its native runtime additionally requires Go 1.26+ and Xcode with Swift
+6.1+. `pnpm build:native` builds the pinned LiveKit server and Swift capture helper;
+`pnpm build:desktop` rebuilds only those desktop runtime components.
+
 Use Node 24.15.0 and pnpm 10.11.0:
 
 ```sh
@@ -73,9 +84,12 @@ For a signed iPhone trial, use `pnpm build:mobile --device YOUR_DEVICE_ID --team
 - A session tap requests desktop selection immediately and starts synchronization; no extra Open Desktop step.
 - Native project conversations use a session select box. Long titles fit the closed control, and the platform menu lists the available conversations.
 - Foreground project headers and visible session rows use lightweight native active/waiting summaries. Unknown, stale or disconnected observations remain explicit; message history is loaded only for selected sessions.
-- Opening a session waits for its existing observation and reads a fresh recent window, positioned at the newest messages. Earlier history loads in bounded pages only when you scroll upward; list/background work does not prefetch old history. A long active turn's start time is not used to date every new message.
+- Mac prepares directory snapshots and maintains a bounded native status replica every five seconds, independently of phone connections. Native directory scans run separately every twenty seconds. The default background status pool covers sixteen ordinary sessions plus existing message actors, within 128 total observers. Sessions without reliable current proof remain unconfirmed.
+- Opening a warm session displays its retained recent window first, then confirms the original owner in the background. Cold sessions use the existing fresh-read path. Earlier history loads in bounded pages only when you scroll upward; list/background work does not prefetch old history. A long active turn's start time is not used to date every new message.
+- An authenticated HTTP route remains readable while its realtime socket recovers. Same-Mac route changes retain cached messages, expanded rows and drafts. Directory and activity reads use independent incremental watermarks; unknown writes only query their original receipt IDs.
 - After pairing, the Mac App defaults to a statistics dashboard with realtime/cumulative gateway traffic and interaction counts. Use the Statistics/Pairing switch to scan again.
 - Mac **Start** and **Pause** control the CodeLight service. Pause completes its owned service shutdown before Start becomes available. Pairing, settings and operation journals are retained; the original desktop sessions keep running.
+- Mac **Sources** independently enables Codex, Antigravity Desktop and Claude Desktop (Gateway), with all three selected by default. Choices persist. Turning a source off stops CodeLight discovery, observation and controls for that source; the original app and sessions continue running. Re-enabling loads current source state without replaying old commands.
 - Mac **Connections** has independent Local network and Cloudflare checkboxes,
   plus Relay after a compatible HTTPS Relay server/key has been configured.
   Available channels start enabled by default; later checkbox choices persist.

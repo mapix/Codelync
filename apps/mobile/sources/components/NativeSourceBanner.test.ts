@@ -2,18 +2,33 @@ import React from 'react';
 // @ts-expect-error This workspace does not ship declarations for its existing react-test-renderer runtime.
 import { act, create } from 'react-test-renderer';
 import { expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ select: vi.fn(), visible: vi.fn(), state: 'connecting', progress: 'idle', connected: true, recovering: false, session: { id: 'test-session', metadata: { bridge: { sourceStatus: 'owner-unavailable' } } } }));
+const mocks = vi.hoisted(() => ({ select: vi.fn(), visible: vi.fn(), state: 'connecting', progress: 'idle', connected: true, recovering: false, revalidating:false, revalidationFailed:false, session: { id: 'test-session', metadata: { bridge: { sourceStatus: 'owner-unavailable' } } } }));
 vi.mock('react-native', () => ({ ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable', Text: 'Text', View: 'View' }));
 vi.mock('react-native-unistyles', () => ({ useUnistyles: () => ({ theme: { colors: { text: 'black', textSecondary: 'gray', groupped: { background: 'white' } } } }) }));
 vi.mock('@/sync/codeLightSessionSelection', () => ({ selectCodeLightSession: mocks.select, useCodeLightSelectionState: () => mocks.state }));
 vi.mock('@/sync/storage', () => ({ useSession: () => mocks.session, useSocketStatus: () => ({ status: mocks.connected ? 'connected' : mocks.recovering ? 'connecting' : 'error' }) }));
-vi.mock('@/sync/codeLightLoadingProgress', () => ({ useCodeLightMessageProgress: () => ({ phase: mocks.progress }) }));
-vi.mock('@/sync/sync', () => ({ sync: { onSessionVisible: mocks.visible } }));
+vi.mock('@/sync/codeLightLoadingProgress', () => ({ useCodeLightMessageProgress: () => ({ phase: mocks.progress, revalidating:mocks.revalidating,revalidationFailed:mocks.revalidationFailed }) }));
+vi.mock('@/sync/sync', () => ({ sync: { retryCodeLightSession: mocks.visible } }));
 vi.mock('@/constants/Typography', () => ({ Typography: { default: () => ({}) } }));
 vi.mock('@/text', () => ({ getCurrentLanguage: () => 'en', t: (value: string) => value }));
 vi.mock('./NativeParentControl', () => ({ NativeParentControl: 'ParentControl' }));
 import { NativeSourceBanner } from './NativeSourceBanner';
 import { nativeSessionAvailabilityLabels } from '@/text/nativeSessionAvailabilityLabels';
+import { nativeReadRecoveryLabels } from '@/text/nativeReadRecoveryLabels';
+
+it('cached confirmation has distinct nonblocking copy and a failed revalidation retains an explicit read retry', () => {
+    mocks.progress='complete';mocks.revalidating=true;
+    let renderer!:ReturnType<typeof create>;act(()=>{renderer=create(React.createElement(NativeSourceBanner,{sessionId:'test-session'}));});
+    expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(0);
+    expect(renderer.root.findAllByType('Text').map((node:any)=>node.props.children)).toContain(nativeReadRecoveryLabels.en.checking);
+    expect(renderer.root.findAllByType('Pressable')).toHaveLength(0);
+    mocks.revalidating=false;mocks.revalidationFailed=true;
+    act(()=>renderer.update(React.createElement(NativeSourceBanner,{sessionId:'test-session'})));
+    expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(0);
+    expect(renderer.root.findAllByType('Text').map((node:any)=>node.props.children)).toContain(nativeReadRecoveryLabels.en.failed);
+    expect(renderer.root.findAllByType('Pressable')).toHaveLength(1);
+    act(()=>renderer.unmount());mocks.revalidationFailed=false;
+});
 
 it('shows automatic progress without an Open Desktop button or navigation on preload mount', () => {
     mocks.state = 'connecting'; mocks.progress = 'idle'; mocks.select.mockReset();
@@ -34,11 +49,11 @@ it('idle selection failure Retry only reads messages and coalesces repeated pres
     expect(mocks.visible).toHaveBeenCalledExactlyOnceWith('test-session'); expect(mocks.select).not.toHaveBeenCalled();
     act(() => renderer.unmount());
 });
-it('terminal idle connection failure explains reconnection without a permanent spinner', () => {
+it('socket failure does not replace an in-flight source read with a connection error', () => {
     mocks.state = 'connecting'; mocks.progress = 'idle'; mocks.connected = false; mocks.recovering = false;
     let renderer!: ReturnType<typeof create>; act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
-    expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(0);
-    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain(nativeSessionAvailabilityLabels.en.connectionUnavailable);
+    expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(1);
+    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.messages');
     act(() => renderer.unmount()); mocks.connected = true;
 });
 it('retries a failed message read without repeating a failed desktop selection', async () => {
@@ -68,12 +83,13 @@ it('a current fresh-read failure offers a read Retry without another desktop nav
     expect(mocks.visible).toHaveBeenCalledWith('test-session'); expect(mocks.select).not.toHaveBeenCalled();
     act(() => renderer.unmount());
 });
-it('an old read error stays synchronization while the route is recovering', () => {
+it('a read failure keeps its explicit Retry while the independent route recovers', () => {
     mocks.state = 'failed'; mocks.progress = 'error'; mocks.connected = false; mocks.recovering = true;
     let renderer!: ReturnType<typeof create>;
     act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
-    expect(renderer.root.findAllByType('Pressable')).toHaveLength(0);
-    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.messages');
+    expect(renderer.root.findAllByType('Pressable')).toHaveLength(1);
+    expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(0);
+    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain(nativeSessionAvailabilityLabels.en.readFailed);
     act(() => renderer.unmount()); mocks.connected = true; mocks.recovering = false;
 });
 

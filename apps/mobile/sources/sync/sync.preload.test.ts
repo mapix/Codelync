@@ -325,6 +325,79 @@ describe('CodeLight recent-first entry and peer reads', () => {
         expect(mocks.peerRequest).toHaveBeenCalledTimes(2); expect(mocks.applyMessagesLoaded).toHaveBeenCalledWith('child');
         expect(codeLightLoadingProgress.getSession('child').phase).toBe('complete'); expect(mocks.select).not.toHaveBeenCalled();
     });
+    it('cached first body finishes immediately, preserves expanded rows/cursors, and shares one background fresh read', async () => {
+        peer(); mocks.state.currentViewingSessionId = 'child';
+        const data: any = uncachedChild(); data.freshness = { version: 1, mode: 'cached', capturedAt: 900, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true };
+        mocks.state.sessions.child = { ...data.session, draft: 'local draft' };
+        mocks.state.sessionMessages.child = { messages: ['expanded-retained-row'], hasMoreOlder: true };
+        engine.codeLightHistoryCursors.set('child', 'previous-fresh-cursor'); engine.codeLightHistoryOwners.set('child', 'owner');
+        mocks.applyMessages.mockImplementation((id, messages) => {
+            mocks.state.sessionMessages[id] = { ...mocks.state.sessionMessages[id], messages: [...mocks.state.sessionMessages[id].messages, ...messages] };
+            return { changed: [], hasReadyEvent: false, enteredPlanMode: false };
+        });
+        let finish!: (value: any) => void;
+        mocks.peerRequest.mockResolvedValueOnce({ ok: true, json: async () => data }).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        await engine.retryCodeLightSession('child');
+        await vi.waitFor(() => expect(mocks.peerRequest).toHaveBeenCalledTimes(2));
+        expect(codeLightLoadingProgress.getSession('child')).toMatchObject({ phase: 'complete', revalidating: true });
+        expect(mocks.state.sessionMessages.child.messages).toContain('expanded-retained-row'); expect(mocks.state.sessions.child.draft).toBe('local draft');
+        expect(mocks.state.sessions.child.metadata.capabilities).toMatchObject({ readOnly: true, steering: false });
+        expect(engine.codeLightHistoryCursors.get('child')).toBe('previous-fresh-cursor');
+        await engine.fetchMessages('child'); await engine.retryCodeLightSession('child');
+        expect(mocks.peerRequest).toHaveBeenCalledTimes(2); expect(codeLightLoadingProgress.getSession('child').phase).toBe('complete');
+        expect(await engine.loadOlderMessages('child')).toBe(false);
+        const fresh: any = uncachedChild(); fresh.session.metadata.capabilities = { readOnly: false, steering: true };
+        finish({ ok: true, json: async () => fresh });
+        await vi.waitFor(() => expect(codeLightLoadingProgress.getSession('child').revalidating).toBe(false));
+        expect(mocks.state.sessions.child.metadata.capabilities.readOnly).toBe(false);
+        expect(engine.codeLightHistoryCursors.get('child')).toBe('earlier'); expect(mocks.select).not.toHaveBeenCalled();
+        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 1, readPolicy: 'cache-first' });
+        expect(JSON.parse(mocks.peerRequest.mock.calls[1][1].body)).toEqual({ limit: 1 });
+    });
+    it('failed fresh revalidation retains the cached body/draft and ends without an initial-error spinner', async () => {
+        peer(); mocks.state.currentViewingSessionId = 'child'; const data: any = uncachedChild();
+        data.freshness = { version: 1, mode: 'cached', capturedAt: 900, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true };
+        mocks.state.sessions.child = { ...data.session, draft: 'local draft' };
+        mocks.peerRequest.mockResolvedValueOnce({ ok: true, json: async () => data }).mockRejectedValueOnce(Error('packet lost'));
+        await engine.retryCodeLightSession('child');
+        await vi.waitFor(() => expect(codeLightLoadingProgress.getSession('child')).toMatchObject({ phase: 'complete', revalidating: false, revalidationFailed: true }));
+        expect(mocks.state.sessions.child.draft).toBe('local draft'); expect(mocks.state.sessionMessages.child.messages).not.toHaveLength(0);
+        expect(mocks.state.sessions.child.metadata.capabilities.readOnly).toBe(true); expect(mocks.peerRequest).toHaveBeenCalledTimes(2); expect(mocks.select).not.toHaveBeenCalled();
+    });
+    it('newer current-run live metadata survives late cached and older fresh packets; disk retained versions cannot lend authority', async () => {
+        peer(); mocks.state.currentViewingSessionId = 'child';
+        const first: any = uncachedChild(); first.session.metadata.nativeSession.isSubagent = false;
+        first.session.metadata.capabilities = { readOnly: false, steering: true, rpcMethods: ['codex-controls-update'] };
+        mocks.peerRequest.mockResolvedValueOnce({ ok: true, json: async () => first });
+        await engine.fetchPeerRecentWindow('child');
+        let releaseCache!: (value: any) => void, releaseFresh!: (value: any) => void;
+        mocks.peerRequest.mockImplementationOnce(() => new Promise(resolve => { releaseCache = resolve; }))
+            .mockImplementationOnce(() => new Promise(resolve => { releaseFresh = resolve; }));
+        const entering = engine.retryCodeLightSession('child'); await vi.waitFor(() => expect(releaseCache).toBeTypeOf('function'));
+        (encryption as any).decryptMetadata = vi.fn().mockResolvedValue({ ...first.session.metadata, name: 'newer live metadata' });
+        await engine.handleUpdate({ id: 'ws-current', seq: 300, createdAt: 1000, body: { t: 'update-session', id: 'child', metadata: { version: 3, value: 'opaque-encrypted-metadata' } } });
+        engine.sessionLastSeq.set('child', 300);
+        const cached: any = { ...first, freshness: { version: 1, mode: 'cached', capturedAt: 900, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true } };
+        releaseCache({ ok: true, json: async () => cached }); await entering;
+        expect(mocks.state.sessions.child.metadataVersion).toBe(3); expect(mocks.state.sessions.child.metadata.capabilities.readOnly).toBe(false);
+        const olderFresh = { ...first, session: { ...first.session, metadataVersion: 2 } };
+        releaseFresh({ ok: true, json: async () => olderFresh });
+        await vi.waitFor(() => expect(codeLightLoadingProgress.getSession('child').revalidating).toBe(false));
+        expect(mocks.state.sessions.child.metadataVersion).toBe(3); expect(mocks.state.sessions.child.metadata.name).toBe('newer live metadata');
+        expect(engine.sessionLastSeq.get('child')).toBe(300);
+        const equalCached={...cached,session:{...cached.session,metadataVersion:3}};
+        mocks.peerRequest.mockResolvedValueOnce({ok:true,json:async()=>equalCached}).mockResolvedValueOnce({ok:true,json:async()=>olderFresh});
+        await engine.retryCodeLightSession('child');
+        await vi.waitFor(()=>expect(codeLightLoadingProgress.getSession('child').revalidating).toBe(false));
+        expect(mocks.state.sessions.child.metadataVersion).toBe(3);expect(mocks.state.sessions.child.metadata.capabilities.readOnly).toBe(false);
+        engine.codeLightPeerLiveMetadata.clear();
+        mocks.state.sessions.child = { ...mocks.state.sessions.child, metadataVersion: 3, draft: 'disk draft' };
+        mocks.peerRequest.mockResolvedValueOnce({ ok: true, json: async () => cached }).mockResolvedValueOnce({ ok: true, json: async () => olderFresh });
+        await engine.retryCodeLightSession('child');
+        await vi.waitFor(() => expect(codeLightLoadingProgress.getSession('child').revalidating).toBe(false));
+        expect(mocks.state.sessions.child.metadataVersion).toBe(2); expect(mocks.state.sessions.child.metadata.capabilities.readOnly).toBe(false);
+        expect(mocks.state.sessions.child.draft).toBe('disk draft');
+    });
     it.each([403, 423, 404, 500, 503])('a %s read failure preserves cached child identity/body and never initializes controls', async status => {
         peer(); mocks.state.currentViewingSessionId = 'child';
         const retained = uncachedChild().session; mocks.state.sessions.child = { ...retained, draft: 'Retained child draft' };
@@ -387,7 +460,7 @@ describe('CodeLight recent-first entry and peer reads', () => {
         await vi.waitFor(() => expect(mocks.applyMessagesLoaded).toHaveBeenCalled());
         expect(mocks.select).toHaveBeenCalledTimes(1); expect(mocks.activate).not.toHaveBeenCalled();
         expect(mocks.peerRequest).toHaveBeenCalledTimes(1); expect(mocks.peerRequest.mock.calls[0][0]).toContain('/recent');
-        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 1 });
+        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 1, readPolicy: 'cache-first' });
         expect(mocks.applyMessages.mock.calls.at(-1)?.[1][0].content.text).toBe('full latest native content');
     });
     it('a pending desktop navigation cannot block the combined authoritative peer recent read', async () => {

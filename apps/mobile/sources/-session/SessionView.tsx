@@ -22,8 +22,6 @@ import { useProjectWorktreeSummary } from '@/hooks/useProjectWorktree';
 import { ChatList } from '@/components/ChatList';
 import { Deferred } from '@/components/Deferred';
 import { NativeSourceBanner } from '@/components/NativeSourceBanner';
-import { CodeLightConnectionNotice } from '@/components/CodeLightConnectionNotice';
-import { useCodeLightConnectionState } from '@/hooks/useCodeLightConnectionState';
 import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 import { apiSocket } from '@/sync/apiSocket';
 import { NativeSessionUnavailable } from '@/components/NativeSessionUnavailable';
@@ -46,6 +44,7 @@ import { codeLightSourceAppName, codeLightSourceLabel } from '@/utils/codeLightS
 import { readNativeQuery } from '@/utils/nativeQuery';
 import { CodeLightSessionLoading } from '@/components/CodeLightSessionLoading';
 import { useCodeLightModelControls } from '@/hooks/useCodeLightModelControls';
+import { useCodeLightSelectedSessionActivity } from '@/hooks/useCodeLightProjectActivity';
 import { NativeWindowPanel } from '@/components/NativeWindowPanel';
 import { EmptyMessages } from '@/components/EmptyMessages';
 import { Avatar } from '@/components/Avatar';
@@ -472,11 +471,11 @@ export const SessionView = React.memo((props: { id: string }) => {
             isConnected,
         };
     }, [session, isDataReady, pendingChat, availability, retainedNative]);
-    const headerRight = availability === 'available' && session && !isTablet && Platform.OS !== 'web'
+    const headerRight = !isTablet && Platform.OS !== 'web' && (config.noninvasiveLocal || availability === 'available' && session)
         ? (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {isNoninvasiveBridge(session.metadata) ? <PeerChannelControl presentation="header" /> : null}
-            <Pressable
+            {config.noninvasiveLocal || isNoninvasiveBridge(session?.metadata) ? <PeerChannelControl presentation="header" sessionId={sessionId ?? routeId} /> : null}
+            {session ? <Pressable
                 onPress={() => router.push(`/session/${session.id}/info`)}
                 style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
             >
@@ -491,7 +490,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                     imageUrl={avatar?.uri}
                     thumbhash={avatar?.thumbhash}
                 />
-            </Pressable>
+            </Pressable> : null}
             </View>
         )
         : null;
@@ -902,10 +901,9 @@ export function SessionViewLoaded({
     const { messages, isLoaded, isLoadingOlder } = useSessionMessages(sessionId ?? '');
     const nativeMessageProgress = useCodeLightMessageProgress(sessionId ?? '');
     const nativeModels = useCodeLightModelControls(session ?? null);
+    useCodeLightSelectedSessionActivity(session ?? null, active);
     const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected();
-    const { state: macConnection } = useCodeLightConnectionState();
     const nativeWritesBlocked = nativeWriteConnectionBlocked(session?.metadata, socketConnected);
-    const connectionNoticeVisible = isNoninvasiveBridge(session?.metadata) && macConnection.kind !== 'connected' && macConnection.kind !== 'hidden';
     const pendingCommunications = useSessionPendingCommunications(sessionId ?? '');
     const acknowledgedCliVersions = useLocalSetting('acknowledgedCliVersions');
     const zenMode = useLocalSetting('zenMode');
@@ -1243,10 +1241,9 @@ export function SessionViewLoaded({
         ? <NativeWindowPanel sessionId={sessionId} topInset={chatListTopContentInset} />
         : session ? (
         <>
-            {isNoninvasiveBridge(session.metadata) ? <CodeLightConnectionNotice topInset={chatListTopContentInset ?? 0} showPicker={false} /> : null}
-            {sourceActivationRequired && <NativeSourceBanner sessionId={sessionId} topInset={connectionNoticeVisible ? 0 : chatListTopContentInset ?? 0} />}
+            {sourceActivationRequired && !isLoaded && <NativeSourceBanner sessionId={sessionId} topInset={chatListTopContentInset ?? 0} />}
             {embedded || Platform.OS === 'ios' && isLandscape && !isTablet ? <CodeLightSubagents session={session} active={active} /> : null}
-            {isNoninvasiveBridge(session.metadata) && (!connectionNoticeVisible || nativeMessageProgress.phase === 'loading' || isLoadingOlder) && (!sourceActivationRequired || savedHistoryOnly || nativeParentControl(session)) && <CodeLightSessionLoading sessionId={session.id} initial={!isLoaded || nativeMessageProgress.phase !== 'complete'} older={isLoadingOlder} topInset={connectionNoticeVisible ? 0 : chatListTopContentInset ?? 0} />}
+            {isNoninvasiveBridge(session.metadata) && (!isLoaded || isLoadingOlder) && (!sourceActivationRequired || savedHistoryOnly || nativeParentControl(session)) && <CodeLightSessionLoading sessionId={session.id} initial={!isLoaded} older={isLoadingOlder} topInset={chatListTopContentInset ?? 0} />}
             {nativeModels.message ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', top: (chatListTopContentInset ?? 0) + 4, left: 14, right: 14, zIndex: 12, padding: 12, borderRadius: 12, backgroundColor: theme.colors.groupped.background }}>
                 <Text style={{ color: theme.colors.textSecondary }}>{nativeModels.message}</Text>
                 {nativeModels.status !== 'saving' && nativeModels.canRefresh ? <Pressable accessibilityRole="button" testID="codelight-check-model-settings" onPress={() => { void nativeModels.refresh().catch(() => {}); }} style={{ paddingTop: 8, minHeight: 44 }}><Text style={{ color: theme.colors.text }}>{t('codeLightModels.check')}</Text></Pressable> : null}

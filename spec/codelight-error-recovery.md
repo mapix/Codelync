@@ -39,10 +39,10 @@ remain deferred.
   Reconnection only restores eligible controls; it never replays a rejected
   offline action or replaces an unknown operation ID. Ordinary legacy behavior,
   message/scroll caches and local drafts are unchanged.
-- The session connection notice is independent of source/message status and
-  appears before the source banner. It uses the existing header connection
-  picker; the body notice does not create a second picker. When visible, that
-  notice owns the header inset and the following source banner uses zero inset.
+- Session connection status stays in the fixed header connection control.
+  Its details and safe recovery actions use the existing picker. Retained
+  messages do not mount a connection card or change their header inset when
+  the socket reconnects. Initial source-read recovery keeps its normal inset.
 - Retry means a safe read/connection action. Mutations with uncertain outcomes
   offer Check result. Repeated presses coalesce and busy actions are disabled.
 - A missing or unavailable native session keeps its title, status and Retry
@@ -67,6 +67,26 @@ remain deferred.
   that has passed the source's published acceptance contract.
 
 ## Acceptance
+
+### Fixed connection geometry — phone feedback, 2026-11-16
+
+The session header keeps one 44-by-44 connection control slot throughout live,
+recovering and failed connections. Only its icon/color/accessibility state
+changes; connection failure text and recovery actions belong to its existing
+picker. Do not mount a connection notice above retained messages or change the
+message/header inset when WebSocket status flaps. The settings and header reuse
+the same picker; no second picker is added inside session content.
+
+Retained message rows, scroll position and device-local draft keep their renderer
+and geometry through deterministic connected/connecting/error/disconnected
+sequences. Network readiness still cannot authorize original-owner writes.
+
+Source-read failure is separate from WebSocket failure. A completed genuinely
+unavailable source or failed read keeps an explicit read Retry in the header
+picker even during realtime recovery. Cache revalidation is not a new source
+failure. Cold/uncached unavailable screens retain their existing recovery and
+do not manufacture an empty successful session. Their initial loading may change
+when actual data arrives; socket status alone cannot insert/remove source panels.
 
 Verify offline cold start, cached browsing during disconnection, exhausted
 connections, read failure/retry/recovery, source loss with saved content,

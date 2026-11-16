@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, cp, symlink, access } from 'node:fs/promise
 import { createRequire } from 'node:module';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { dirname, join, resolve, relative } from 'node:path';
+import { basename, dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { productionPackageRoot as packageRoot } from './package-root.mjs';
@@ -27,6 +27,18 @@ async function run(command, args, cwd = root) {
   const code = await new Promise((resolveDone, reject) => { process.once('error', reject); process.once('exit', resolveDone); });
   if (code !== 0) throw Error(`${command} exited ${code}`);
 }
+async function verifyDesktopHelper() {
+  const child = spawn(join(runtime, 'native/bin/CodeLightDesktopHost'), [], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let output = ''; child.stdout.on('data', bytes => { output += bytes.toString(); }); child.stderr.resume();
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 10_000);
+  try {
+    const done = new Promise((resolveDone, reject) => { child.once('error', reject); child.once('exit', resolveDone); });
+    child.stdin.end(JSON.stringify({ id: 'build-probe', operation: 'status' }) + '\n');
+    const code = await done;
+    const reply = JSON.parse(output.trim());
+    if (code !== 0 || reply.id !== 'build-probe' || reply.ok !== true || reply.result?.capturing !== false) throw Error('The packaged remote desktop helper failed its startup check.');
+  } finally { clearTimeout(timeout); }
+}
 /** @type {Map<string,string>} */ const copied = new Map();
 /** @param {string} name @param {string} from @param {string} target */
 async function copyPackage(name, from, target) {
@@ -48,7 +60,14 @@ await access(output).then(() => { throw Error('The output app directory already 
 await mkdir(join(output, 'Contents/MacOS'), { recursive: true }); await mkdir(join(runtime, 'server'), { recursive: true }); await mkdir(join(runtime, 'src/happy'), { recursive: true });
 await cp(process.env.CODELIGHT_NODE_BINARY ?? process.execPath, join(runtime, 'node'));
 await cp(process.env.CODELIGHT_CLOUDFLARED_BINARY ?? join(root, '.runtime/cloudflared'), join(runtime, 'cloudflared'));
-await cp(join(root, 'native/bin'), join(runtime, 'native/bin'), { recursive: true });
+await cp(join(root, 'native/bin'), join(runtime, 'native/bin'), { recursive: true,
+  filter: path => !['LiveKitWebRTC.framework', 'RustLiveKitFFI.framework', 'desktop-licenses'].includes(basename(path)) });
+await mkdir(join(output, 'Contents/Frameworks'), { recursive: true });
+for (const name of ['LiveKitWebRTC.framework', 'RustLiveKitFFI.framework']) {
+  await cp(join(root, 'native/bin', name), join(output, 'Contents/Frameworks', name), { recursive: true, verbatimSymlinks: true });
+}
+await cp(join(root, 'native/bin/LiveKit_LiveKit.bundle'), join(resources, 'LiveKit_LiveKit.bundle'), { recursive: true });
+await cp(join(root, 'native/bin/desktop-licenses'), join(resources, 'licenses/desktop'), { recursive: true });
 await cp(join(root, 'src/adapters/codex-schemas'), join(runtime, 'src/happy/codex-schemas'), { recursive: true });
 await cp(join(root, 'src/happy/codex-index-worker.mjs'), join(runtime, 'src/happy/codex-index-worker.mjs'));
 await cp(join(happy, 'packages/relay/prisma'), join(runtime, 'server/prisma'), { recursive: true });
@@ -80,7 +99,20 @@ await writeFile(join(output, 'Contents/Info.plist'), `<?xml version="1.0"?><!DOC
 <key>CFBundleIconFile</key><string>CodeLight.icns</string><key>CFBundleExecutable</key><string>CodeLight</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${packageMetadata.version}</string><key>CFBundleVersion</key><string>${appBuild}</string>
 <key>NSLocalNetworkUsageDescription</key><string>Connect your paired phone to CodeLight on the local network.</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>`);
+await verifyDesktopHelper();
 const chinese = {
+  "Remote desktop": "远程桌面",
+  "Media relay": "媒体 Relay",
+  "This Mac": "本机",
+  "Custom server": "自定义服务器",
+  "LiveKit server URL": "LiveKit 服务地址",
+  "API key": "API Key",
+  "API secret": "API Secret",
+  "Save media relay": "保存媒体 Relay",
+  "Allow Screen Recording": "允许屏幕录制",
+  "Allow Accessibility": "允许辅助功能",
+  "Could not load remote desktop settings.": "无法读取远程桌面设置。",
+  "Could not update remote desktop. Check permissions and server settings.": "远程桌面设置失败，请检查权限和服务器配置。",
   "Codex, Antigravity and Claude Desktop on your phone": "在手机上使用 Codex、Antigravity 和 Claude Desktop",
   "Native sessions from Codex, Antigravity Desktop and Claude Desktop (Gateway). Available actions follow the desktop's current state.": "连接 Codex、Antigravity Desktop 和 Claude Desktop（Gateway）原生会话，当前可用操作依桌面状态而定。",
   "Start": "开始",
@@ -88,6 +120,13 @@ const chinese = {
   "Paused": "已暂停",
   "Pausing…": "正在暂停…",
   "Connections": "连接方式",
+  "Sources": "接入来源",
+  "Antigravity Desktop": "Antigravity Desktop",
+  "Claude Desktop (Gateway)": "Claude Desktop（Gateway）",
+  "Restore defaults": "恢复默认",
+  "Could not load desktop source choices. Try again.": "接入设置读取失败，请重试。",
+  "Could not save desktop source choices. Try again.": "接入设置保存失败，请重试。",
+  "Source choices are saved. Switching is not complete; retry.": "接入设置已保存，切换尚未完成，请重试。",
   "Local network": "本地网络",
   "Configure Relay": "配置 Relay",
   "Ready": "已就绪",

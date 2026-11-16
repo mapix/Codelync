@@ -1,13 +1,16 @@
 export interface CodeLightProjectDescriptor { id: string; projectKey: string; hostId: string; machineId: string; app?: 'codex' | 'antigravity' | 'claude-desktop'; sessions?: Array<{ id: string; nativeId: string }> }
-export interface CodeLightSessionActivity { known: boolean; active: boolean; waiting: boolean; status: 'ready' | 'refreshing' | 'unavailable' | 'stale'; observedAt: number }
+export interface CodeLightSessionActivity { known: boolean; active: boolean; waiting: boolean; status: 'ready' | 'refreshing' | 'unavailable' | 'stale'; observedAt: number; sourceScopeKey?: string }
+export const codeLightActivitySourceScope = (machine: string, app: string, host: string, nativeId: string) => JSON.stringify([machine, app, host, nativeId]);
 export interface CodeLightProjectActivity {
     total: number; active: number; waiting: number; unknown: number;
     status: 'ready' | 'refreshing' | 'unavailable' | 'stale'; observedAt: number;
 }
-interface ActivityReply {
+export interface ActivityReply {
     ok: true; version: 1; epoch: string; sequence: number; observedAt: number;
     groups: Array<CodeLightProjectActivity & { id: string; sessions?: Array<{ id: string; known: boolean; active: boolean; waiting: boolean }> }>;
+    unchanged?: true;
 }
+export type CodeLightActivityRequest = { clientId: string; requestSeq: number; groups: Array<Omit<CodeLightProjectDescriptor, 'machineId'>> };
 const EMPTY: CodeLightProjectActivity = Object.freeze({ total: 0, active: 0, waiting: 0, unknown: 0, status: 'refreshing', observedAt: 0 });
 const EMPTY_SESSION: CodeLightSessionActivity = Object.freeze({ known: false, active: false, waiting: false, status: 'refreshing', observedAt: 0 });
 
@@ -21,6 +24,10 @@ export class CodeLightProjectActivityStore {
     private scope = '';
     get(id: string) { return this.values.get(id) ?? EMPTY; }
     getSession(id: string) { return this.sessions.get(id) ?? EMPTY_SESSION; }
+    getSessionScoped(id: string, sourceScopeKey: string | null, peerIdentity: string | null) {
+        const value = this.getSession(id);
+        return sourceScopeKey && peerIdentity && this.scope.startsWith(peerIdentity + ':') && value.sourceScopeKey === sourceScopeKey ? value : EMPTY_SESSION;
+    }
     subscribeSession(id: string, listener: () => void) {
         let set = this.sessionListeners.get(id); if (!set) { set = new Set(); this.sessionListeners.set(id, set); } set.add(listener);
         return () => { set!.delete(listener); if (!set!.size) this.sessionListeners.delete(id); };
@@ -43,18 +50,24 @@ export class CodeLightProjectActivityStore {
     markSessions(ids: readonly string[], status: 'refreshing' | 'unavailable' | 'stale') {
         for (const id of ids) this.setSession(id, { ...this.getSession(id), status });
     }
-    private setSession(id: string, value: CodeLightSessionActivity) {
+    private setSession(id: string, value: CodeLightSessionActivity, receiptOnly = false) {
         const old = this.sessions.get(id);
         if (old && Object.keys(value).every(key => old[key as keyof CodeLightSessionActivity] === value[key as keyof CodeLightSessionActivity])) return;
+        if (receiptOnly && old && Object.keys(value).every(key => key === 'observedAt' || old[key as keyof CodeLightSessionActivity] === value[key as keyof CodeLightSessionActivity])) {
+            this.sessions.set(id, value); return;
+        }
         this.sessions.set(id, value); for (const listener of this.sessionListeners.get(id) ?? []) listener();
     }
-    private set(id: string, value: CodeLightProjectActivity) {
+    private set(id: string, value: CodeLightProjectActivity, receiptOnly = false) {
         const old = this.values.get(id);
         if (old && Object.keys(value).every(key => old[key as keyof CodeLightProjectActivity] === value[key as keyof CodeLightProjectActivity])) return;
+        if (receiptOnly && old && Object.keys(value).every(key => key === 'observedAt' || old[key as keyof CodeLightProjectActivity] === value[key as keyof CodeLightProjectActivity])) {
+            this.values.set(id, value); return;
+        }
         this.values.set(id, value);
         for (const listener of this.listeners.get(id) ?? []) listener();
     }
-    apply(machineId: string, raw: unknown, requested: ReadonlySet<string>, requestedSessions: ReadonlyMap<string, ReadonlySet<string>> = new Map()) {
+    apply(machineId: string, raw: unknown, requested: ReadonlySet<string>, requestedSessions: ReadonlyMap<string, ReadonlySet<string>> = new Map(), sourceScopes: ReadonlyMap<string, string> = new Map()) {
         const reply = parseActivityReply(raw);
         const previous = this.versions.get(machineId);
         if (previous?.epoch === reply.epoch && reply.sequence < previous.sequence) return;
@@ -64,10 +77,10 @@ export class CodeLightProjectActivityStore {
             if (!requested.has(group.id)) continue;
             seen.add(group.id);
             const { id, sessions, ...value } = group;
-            this.set(id, { ...value, observedAt: reply.observedAt });
+            this.set(id, { ...value, observedAt: reply.observedAt }, reply.unchanged);
             const wanted = requestedSessions.get(id) ?? new Set<string>(), received = new Set<string>();
             for (const row of sessions ?? []) if (wanted.has(row.id)) {
-                received.add(row.id); this.setSession(row.id, { known: row.known, active: row.active, waiting: row.waiting, status: 'ready', observedAt: reply.observedAt });
+                received.add(row.id); this.setSession(row.id, { known: row.known, active: row.active, waiting: row.waiting, status: 'ready', observedAt: reply.observedAt, ...(sourceScopes.has(row.id) ? { sourceScopeKey: sourceScopes.get(row.id) } : {}) }, reply.unchanged);
             }
             for (const rowId of wanted) if (!received.has(rowId)) this.setSession(rowId, { ...EMPTY_SESSION, status: 'unavailable' });
         }
@@ -99,13 +112,13 @@ export function parseActivityReply(raw: unknown): ActivityReply {
         });
         return { id: group.id, total: group.total, active: group.active, waiting: group.waiting, unknown: group.unknown, status: group.status, observedAt: value.observedAt!, ...(sessions ? { sessions } : {}) };
     });
-    return { ok: true, version: 1, epoch: value.epoch, sequence: value.sequence!, observedAt: value.observedAt!, groups };
+    return { ok: true, version: 1, epoch: value.epoch, sequence: value.sequence!, observedAt: value.observedAt!, groups, ...(value.unchanged === true ? { unchanged: true } : {}) };
 }
 
 interface ControllerOptions {
     store: CodeLightProjectActivityStore; clientId: string;
     scope: () => Promise<string>;
-    request: (machineId: string, params: { clientId: string; requestSeq: number; groups: Array<Omit<CodeLightProjectDescriptor, 'machineId'>> }) => Promise<unknown>;
+    request: (machineId: string, params: CodeLightActivityRequest, authority?: string) => Promise<unknown>;
     intervalMs?: number;
 }
 
@@ -159,12 +172,13 @@ export class CodeLightProjectActivityController {
                 if (!this.current(revision)) return;
                 this.lastMachines.add(machine);
                 const groups = items.map(({ machineId: _machine, ...group }) => group);
-                const result = await this.options.request(machine, { clientId: this.options.clientId, requestSeq: ++this.requestOrder, groups });
+                const result = await this.options.request(machine, { clientId: this.options.clientId, requestSeq: ++this.requestOrder, groups }, scope);
                 // 原账户/入口已变化的迟到回复不能写进当前项目；这条读链路不重放任何会话动作。
                 if (!this.current(revision)) return;
                 const currentScope = await this.options.scope();
                 if (currentScope !== scope) { this.options.store.reset(currentScope); return; }
-                this.options.store.apply(machine, result, new Set(items.map(item => item.id)), new Map(items.map(item => [item.id, new Set(item.sessions?.map(row => row.id) ?? [])])));
+                const scopes = new Map(items.flatMap(item => item.sessions?.map(row => [row.id, codeLightActivitySourceScope(machine, item.app ?? 'codex', item.hostId, row.nativeId)] as const) ?? []));
+                this.options.store.apply(machine, result, new Set(items.map(item => item.id)), new Map(items.map(item => [item.id, new Set(item.sessions?.map(row => row.id) ?? [])])), scopes);
             }
             this.failures = 0;
         })().catch(() => {
@@ -187,7 +201,7 @@ export class CodeLightProjectActivityController {
     private async release() {
         const scope = this.lastScope, machines = [...this.lastMachines].map(machine => ({ machine, requestSeq: ++this.requestOrder })); this.lastMachines.clear();
         if (!scope || await this.options.scope().catch(() => '') !== scope) return;
-        await Promise.allSettled(machines.map(({ machine, requestSeq }) => this.options.request(machine, { clientId: this.options.clientId, requestSeq, groups: [] })));
+        await Promise.allSettled(machines.map(({ machine, requestSeq }) => this.options.request(machine, { clientId: this.options.clientId, requestSeq, groups: [] }, scope)));
     }
     close() {
         if (this.closed) return;

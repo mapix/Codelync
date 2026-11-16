@@ -1296,3 +1296,58 @@ test('unknown command history survives idle retirement and reopening without nat
     assert.equal(f.adapter.calls.length, 1); assert.equal(events(f.transport).some(item => item.ev.t === 'user-message-accepted'), false);
   } finally { await connector.close(); await f.dispose(); }
 });
+
+test('warm recent cache returns bounded whole rows immediately while a shared native refresh is held', async () => {
+  const f = await fixture({ ownerGeneration: 'owner-1', status: 'active', currentTurnId: 'current-native-turn', historyComplete: false,
+    rows: [1, 2, 3].map(i => ({ id: `cached-row-${i}`, role: 'assistant', turnId: 'current-native-turn', text: `whole native row ${i}`, status: 'inProgress' })) });
+  const connector = await f.create(); let release = () => {};
+  try {
+    await connector.start();
+    const records = f.transport.records.length, before = JSON.stringify(f.transport.metadata);
+    let nativeReads = 0;
+    const held = new Promise(resolve => { release = () => resolve(undefined); });
+    f.adapter.freshSnapshot = async () => { nativeReads++; await held; return structuredClone(f.adapter.view); };
+    const first = connector.readRecent({ fresh: true, limit: 1 });
+    const second = connector.readRecent({ fresh: true, limit: 2 });
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(nativeReads, 1);
+    const cached = await connector.readCachedRecent({ limit: 1 }); assert.ok(cached);
+    assert.equal(cached.rows[0].id, 'cached-row-3'); assert.equal(cached.rows[0].text, 'whole native row 3');
+    assert.equal(cached.rows[0].ownerGeneration, 'owner-1'); assert.equal(cached.status, 'unknown'); assert.equal(cached.currentTurnId, null);
+    assert.equal(cached.nextCursor, null); assert.equal(cached.hasMore, true);
+    assert.deepEqual(cached.freshness, { version: 1, mode: 'cached', capturedAt: cached.freshness.capturedAt,
+      ownerGeneration: 'owner-1', currentControlAuthority: false, revalidationPending: true });
+    const again = await connector.readCachedRecent({ limit: 2 }); assert.ok(again); assert.equal(again.rows.length, 2); assert.equal(again.freshness.capturedAt, cached.freshness.capturedAt);
+    cached.rows[0].text = 'consumer edit'; const third = await connector.readCachedRecent({ limit: 1 }); assert.ok(third); assert.equal(third.rows[0].text, 'whole native row 3');
+    assert.equal(f.transport.records.length, records); assert.equal(JSON.stringify(f.transport.metadata), before);
+    assert.equal(nativeReads, 1); assert.equal(f.adapter.completeReads, 0); assert.equal(f.adapter.calls.length, 0);
+    release(); const fresh = await Promise.all([first, second]);
+    assert.deepEqual(fresh.map(x => x.rows.length), [1, 2]); assert.equal(fresh[0].freshness.mode, 'fresh'); assert.equal(fresh[0].freshness.currentControlAuthority, true);
+    assert.equal(nativeReads, 1);
+  } finally { release(); await connector.close(); await f.dispose(); }
+});
+
+test('warm recent caches reject foreign owner, lost lease, older cursors and closed connectors', async () => {
+  const f = await fixture({ ownerGeneration: 'owner-1', rows: [{ id: 'cache-row', role: 'assistant', turnId: 'native-turn', text: 'retained whole row' }] });
+  const connector = await f.create();
+  try {
+    assert.equal(await connector.readCachedRecent({ limit: 1 }), null);
+    await connector.start(); assert.ok(await connector.readCachedRecent({ limit: 1 }));
+    await assert.rejects(connector.readCachedRecent({ cursor: 'old-cursor', limit: 1 }), { code: 'invalid-history-cursor' });
+    f.epoch('owner-2'); assert.equal(await connector.readCachedRecent({ limit: 1 }), null);
+    f.epoch('owner-1'); f.lease(false); assert.equal(await connector.readCachedRecent({ limit: 1 }), null);
+    f.lease(true); await connector.project({ status: 'owner-unavailable', rows: [], currentTurnId: null });
+    assert.equal(await connector.readCachedRecent({ limit: 1 }), null);
+    await connector.close(); await assert.rejects(connector.readCachedRecent({ limit: 1 }), { code: 'source-unavailable' });
+    assert.equal(f.adapter.completeReads, 0); assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});
+
+test('an oversized public recent row disables optional caching without breaking native message reads', async () => {
+  const text = 'x'.repeat(1024 * 1024), f = await fixture({ ownerGeneration: 'owner-1', rows: [{ id: 'large-cache-row', role: 'assistant', turnId: 'native-turn', text }] });
+  const connector = await f.create({ publishInitialHistory: false });
+  try {
+    await connector.start(); assert.equal(await connector.readCachedRecent({ limit: 1 }), null);
+    const fresh = await connector.readRecent({ limit: 1 }); assert.equal(fresh.rows[0].text.length, text.length); assert.equal(fresh.freshness.mode, 'fresh');
+    assert.equal(f.adapter.calls.length, 0);
+  } finally { await connector.close(); await f.dispose(); }
+});

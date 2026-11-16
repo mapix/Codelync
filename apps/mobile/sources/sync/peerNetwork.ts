@@ -18,6 +18,21 @@ function decodeStage<T>(stage: PeerDecodeStage, read: () => T, observer?: PeerDe
 
 export function peerResponseHeaders(): Record<string, string> { return { [PEER_RESPONSE_CODEC_HEADER]: PEER_RESPONSE_CODEC_VALUE }; }
 
+export const PEER_ACTIVITY_REQUEST_MAX_BYTES = 256 * 1024;
+export const PEER_ACTIVITY_CARRIER_MAX_BYTES = 360 * 1024;
+/** The activity request carries descriptors privately even on a local HTTP route. */
+export function sealPeerRequest(peer: PeerCredentials, payload: Record<string, unknown>, path: string, method: string): [2, string, string] {
+    if (path !== '/api/peer/activity' || method !== 'POST' || typeof peer.id !== 'string' || !peer.id
+        || !payload || typeof payload !== 'object' || Array.isArray(payload)) throw Error('Unsupported sealed activity request');
+    const plain = new TextEncoder().encode(JSON.stringify([peer.id, method, path, payload]));
+    if (plain.length > PEER_ACTIVITY_REQUEST_MAX_BYTES) throw Error('Sealed activity request is too large');
+    const nonce = getRandomBytes(24);
+    const ciphertext = nacl.box(plain, nonce, decodeBase64(peer.key, 'base64url'), decodeBase64(peer.device.secretKey, 'base64url'));
+    const carrier: [2, string, string] = [2, encodeBase64(nonce, 'base64url'), encodeBase64(ciphertext, 'base64url')];
+    if (new TextEncoder().encode(JSON.stringify(carrier)).length > PEER_ACTIVITY_CARRIER_MAX_BYTES) throw Error('Sealed activity carrier is too large');
+    return carrier;
+}
+
 export function peerAuthorization(token: string, peer: PeerCredentials, origin: string, method: string, url: string): string {
     if (!peer.channels.some(channel => channel.url === origin)) throw Error('The selected channel does not belong to this Mac');
     // 冷启动 sync 早于 PairingProvider：nonce 直接取系统安全随机源，不能依赖界面安装全局 PRNG。

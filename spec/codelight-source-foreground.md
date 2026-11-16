@@ -115,3 +115,75 @@ historical sources or claim the full catalog is complete. A failed current nativ
 index still makes activity unavailable; stale historical descriptors do not
 manufacture an idle or active state.
 
+## Mac-owned activity and unreliable public delivery — 2026-11-16
+
+The Mac maintains a bounded pool of native activity observations independently
+of phone interest. Phone visibility prioritizes that pool and chooses the small
+projection to return; it is not the only trigger for native state maintenance.
+Activity never starts message actors or loads older histories. Unobserved,
+expired or unavailable owners remain unknown, and coverage stays explicit.
+
+Paired phones may POST `/api/peer/activity` through sealed HTTP while the
+WebSocket reconnects. This reads the same Mac activity replica and never waits
+for a native snapshot or a socket RPC. Client ordering is isolated by approved
+device plus client identity. Existing version-1 request/response fields remain
+available. `activityProtocol: 2` adds device-scoped, expiring `interestToken`
+and `since` watermarks. Initial/changed interest sends `groups`; stable interest
+sends only its token and sequence. A missing/expired token returns 409 and the
+phone resends its bounded descriptors once. A token is routing state and never
+native activity or control authority.
+
+Version-2 responses include `mode`, `watermark`, `baseWatermark`, `interestToken`
+and the original activity epoch/sequence/capture fields. Full replies establish
+the requested groups; delta replies replace only changed groups and remove
+explicit IDs; unchanged replies carry no group data. Semantic comparison omits
+delivery timestamps, preserving native unknown/ready state changes. The phone
+keeps its store across same-peer channel changes and fences different peers,
+epochs, interests and late replies. Reconnect does not repeat native mutations.
+
+
+## Claude header renewal deadline — 2026-11-16
+
+A current Claude header observer declares `refreshDueAt()` at its original
+native read-start capture time plus three seconds, while its five-second proof
+is still valid. This applies to an admitted foreground or Mac intrinsic pool
+observer, so a header first received one second after the five-second maintenance
+timer began is refreshed before it expires at second six. The existing shared
+queue and concurrency budget own the refresh; no per-row timer is created.
+
+Closed, already refreshing, unknown, expired or changed host/session/runtime
+owners have no renewal deadline. Reading or scheduling a deadline never renews
+the capture time. A failed or late read remains unknown; a runtime change cannot
+borrow a prior header proof even if the session owner ID and host remain equal.
+
+## Codex observation health and coverage — 2026-11-16
+
+A live Codex reduced baseline and complete aggregate coverage are separate
+facts. `observationReady()` means a validated native baseline is held for the
+current source owner, IPC socket and follower client. `needsRefresh()` reports
+whether that baseline needs read-only recovery. Missing subagent coverage in a
+partial already-loaded window keeps aggregate activity unknown; it does not
+turn a healthy subscription into a refresh request.
+
+The shared maintenance queue skips repeated full loaded snapshots when only
+aggregate coverage is unknown. It preserves native capture time, unknown counts
+and supported lifecycle states. Native patches can complete or change coverage
+later. This never requests full history, infers idle from message recency,
+creates a runner, or replays a message/model/permission operation.
+
+A connection/owner change, invalid frame or patch gap removes baseline health
+and uses the existing bounded recovery queue. A missing owner is rediscovered
+only for an already-registered read-only subscription; a refresh cannot create
+an unsubscribed source or claim native ownership. Concurrent subscription,
+reconnect and refresh recovery share one attachment attempt for that source.
+
+Cold recovery attempts within the same visibility priority use attempt ordering:
+never-attempted sources precede retries, and retries rotate rather than repeatedly
+occupying the front of the shared budget. Explicit visible rows keep priority.
+A failed Codex baseline recovery has a five-second local retry cooldown; this is
+request scheduling only, not a native capture or status TTL extension. Native
+pushes remain accepted during cooldown and can restore valid proof immediately.
+
+A later validated push baseline clears only the local failed-read cooldown,
+even if the fire-and-forget follow request completed before that frame arrived.
+It does not change native capture age, aggregate coverage or command receipts.

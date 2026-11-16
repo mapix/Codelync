@@ -12,6 +12,7 @@ import { createBoundSource } from '../src/happy/bound-source.mjs';
 import { sourceKey } from '../src/happy/source-registry.mjs';
 import { BridgeError } from '../src/errors.mjs';
 import { DeviceRegistry } from '../src/happy/device-registry.mjs';
+import { NativeProjectActivityService } from '../src/happy/project-activity.mjs';
 
 /** @typedef {Record<string,any>} Value */
 test('pairing uses an ephemeral public key, decrypts the approved account and preserves server identity', async () => {
@@ -47,7 +48,8 @@ async function daemonFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'codelight-daemon-')), source = { app: 'codex', hostId: 'local', id: 'fixture-original-source', kind: 'session' }, key = sourceKey(source);
   const binding = { happySessionId: 'fixture-projection', source, sessionKey: randomBytes(32).toString('base64'), metadata: { bridge: { source } } };
   const machine = machineFixture(); let created = 0, opened = 0, started = 0, fail = false;
-  const options = { directory, account: { serverUrl: 'http://127.0.0.1:9999', token: 'fixture-token', secret: randomBytes(32).toString('base64') },
+  const options = { directory, activityBackgroundSources: 0, account: { serverUrl: 'http://127.0.0.1:9999', token: 'fixture-token', secret: randomBytes(32).toString('base64') },
+    activityFactory: (/** @type {Value} */ _options) => ({ intrinsicRefresh() {}, close() {} }),
     discovery: { discover: async () => ({ sources: [source] }), adapter: () => ({}) },
     registry: { machine: async () => ({ id: 'fixture-machine', metadata: {} }), register: async () => binding },
     machineConnection: () => machine.connection, sourceFactory: async () => { created++; return { openDesktop: async () => { opened++; if (fail) throw new BridgeError('delivery-unknown', 'Fixture lost open ACK'); }, start: async () => { started++; }, status: () => ({ sourceStatus: 'connected' }), close: async () => {} }; } };
@@ -76,7 +78,7 @@ test('fresh HTTP foreground keeps an idle Antigravity observer across socket los
   const devices = new DeviceRegistry(join(f.directory, 'devices.json'), [{ id: 'fixture-device', publicKey: 'fixture-only', revoked: false }]);
   const socket = new Socket(); devices.connected('fixture-device', socket);
   let retired = 0, starts = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, viewedSessions: () => devices.viewedSessions(),
+  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, actorIdleMs: 30000, viewedSessions: () => devices.viewedSessions(),
     discovery: { discover: async () => ({ sources: [source] }), adapter: () => ({}) },
     registry: { ...f.options.registry, register: async () => binding },
     sourceFactory: async () => ({ supportsDesktopNavigation: false, start: async () => { starts++; }, close: async () => {},
@@ -197,17 +199,17 @@ test('three-app completeness and cold reconciliation respect configured native a
   const claude = { app: 'claude-desktop', kind: 'session', id: 'native', hostId: 'local:claude-desktop:' + 'a'.repeat(64), protocol: 'claude-desktop-native',
     runtimeGeneration: 'owner', appMode: 'code', nativeCollection: 'claude-code-sessions' };
   const savedClaude = { happySessionId: 'cached-claude', machineId: 'fixture-machine', source: claude, metadata: { nativeSession: { catalogueAvailable: true } } };
-  let result = /** @type {{sources:Value[],errors:string[],inventoryApps:string[]}} */ ({ sources: [f.source], errors: [], inventoryApps: [] });
+  let result = /** @type {{sources:Value[],errors:string[],inventoryApps:string[]}} */ ({ sources: [f.source], errors: [], inventoryApps: ['codex', 'antigravity'] });
   const removed = /** @type {string[]} */ ([]);
   const daemon = new CodeLightMacDaemon({ ...f.options, discovery: { ...f.options.discovery, discover: async () => result },
     registry: { ...f.options.registry, savedBindings: async () => [savedClaude], markUnavailable: async (/** @type {Value} */ binding) => { removed.push(binding.source.app); } } });
   try {
     await daemon.start(); assert.equal(daemon.inventoryAvailable, true); assert.equal(daemon.registrationAvailable, true); assert.deepEqual(removed, []);
-    result = { sources: [], errors: ['claude-desktop-index-unavailable'], inventoryApps: [] }; await daemon.scan();
+    result = { sources: [], errors: ['claude-desktop-index-unavailable'], inventoryApps: ['codex', 'antigravity'] }; await daemon.scan();
     assert.equal(daemon.inventoryAvailable, false); assert.equal(daemon.inventoryApps.has('claude-desktop'), false);
     assert.equal(daemon.sources.has(sourceKey(claude)), true); assert.equal(savedClaude.metadata.nativeSession.catalogueAvailable, true);
     assert.equal(removed.filter(app => app === 'claude-desktop').length, 0); assert.equal(daemon.registrationAvailable, true);
-    result = { sources: [], errors: [], inventoryApps: ['claude-desktop'] }; await daemon.scan();
+    result = { sources: [], errors: [], inventoryApps: ['codex', 'antigravity', 'claude-desktop'] }; await daemon.scan();
     assert.equal(daemon.inventoryAvailable, true); assert.equal(daemon.inventoryApps.size, 3);
     assert.equal(removed.filter(app => app === 'claude-desktop').length, 1);
     await daemon.scan(); assert.equal(removed.filter(app => app === 'claude-desktop').length, 1);
@@ -337,5 +339,84 @@ test('capacity recycling protects the other foreground viewer and serializes fac
     viewed.clear();
     await Promise.all([daemon.prepareSource(sourceKey(sources[1])), daemon.prepareSource(sourceKey(sources[3]))]);
     assert.equal(peak, 1); assert.equal(daemon.actors.size, 2);
+  } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('Mac discovery maintains native status before phone interest and creates no message actor', async () => {
+  const f = await daemonFixture(); let statusRefreshes = 0, closed = 0;
+  const daemon = new CodeLightMacDaemon({ ...f.options, activityBackgroundSources: 16,
+    activityFactory: options => new NativeProjectActivityService({ .../** @type {any} */ (options), ipcFactory: () => ({ dispose() {} }),
+      observerFactory: () => { let known = false; return { status: () => ({ known, active: known, waiting: false, status: known ? 'ready' : 'refreshing' }),
+        refresh: async () => { statusRefreshes++; known = true; }, close: () => { closed++; } }; } }) });
+  try {
+    await daemon.start(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(daemon.activity?.interests.size, 0); assert.equal(daemon.activity?.entries.size, 1); assert.equal(statusRefreshes, 1);
+    assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
+    await daemon.scan(); await new Promise(resolve => setImmediate(resolve)); assert.equal(statusRefreshes, 1);
+    daemon.ownsLease = false; daemon.maintainActivity(); assert.equal(daemon.activity?.entries.size, 0); assert.equal(closed, 1);
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(daemon.activity?.entries.size, 0);
+  } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('actual idle actor use renews its five-minute grace while expired source pins still prevent retirement', async () => {
+  const f = await daemonFixture(); let now = 10000, retired = 0, created = 0;
+  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, now: () => now,
+    sourceFactory: async () => { created++; return { status: () => ({ sourceStatus: 'connected' }), close: async () => {},
+      tryCloseIfIdle: async () => { retired++; return true; } }; } });
+  let finish = () => {};
+  try {
+    await daemon.start(); await daemon.prepareSource(f.key);
+    now += 31000; await daemon.retireUnviewed(); assert.equal(retired, 0);
+    now += 268999; await daemon.retireUnviewed(); assert.equal(retired, 0);
+    await daemon.prepareSource(f.key); assert.equal(created, 1);
+    now += 299999; await daemon.retireUnviewed(); assert.equal(retired, 0);
+    const pending = daemon.useSource(f.key, () => new Promise(resolve => { finish = () => resolve({}); }));
+    now += 2; await daemon.retireUnviewed(); assert.equal(retired, 0);
+    finish(); await pending; await daemon.retireUnviewed(); assert.equal(retired, 1); assert.equal(daemon.actors.size, 0);
+  } finally { finish(); await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('an already visited native busy actor survives five minutes, while idle, unknown and lease-invalid actors retire', async () => {
+  const f = await daemonFixture(); let now = 10000, known = true, active = true, waiting = false, retired = 0, nativeStatusReads = 0;
+  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, now: () => now,
+    activityFactory: options => new NativeProjectActivityService({ .../** @type {any} */ (options), ipcFactory: () => ({ dispose() {} }),
+      observerFactory: () => ({ status: () => ({ known, active, waiting, status: known ? 'ready' : 'unavailable' }),
+        refresh: async () => { nativeStatusReads++; }, close() {} }) }),
+    sourceFactory: async () => ({ status: () => ({ sourceStatus: 'connected' }), close: async () => {},
+      tryCloseIfIdle: async () => { retired++; return true; } }) });
+  try {
+    await daemon.start(); await daemon.prepareSource(f.key); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(daemon.activity?.entries.size, 1); now += 300001;
+    await daemon.retireUnviewed(); assert.equal(retired, 0); assert.equal(daemon.actors.size, 1);
+    active = false; waiting = true; await daemon.retireUnviewed(); assert.equal(retired, 0);
+    waiting = false; await daemon.retireUnviewed(); assert.equal(retired, 1); assert.equal(nativeStatusReads, 0);
+    await daemon.prepareSource(f.key); now += 300001; known = false; active = true;
+    await daemon.retireUnviewed(); assert.equal(retired, 2, 'unknown cannot borrow a stale active summary');
+    known = true; await daemon.prepareSource(f.key); now += 300001;
+    daemon.ownsLease = false; daemon.maintainActivity(); assert.equal(daemon.activity?.entries.size, 0);
+    await daemon.retireUnviewed(); assert.equal(retired, 3); assert.equal(daemon.actors.size, 0);
+    assert.equal(nativeStatusReads, 0, 'retirement never requests native history or refresh');
+  } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
+});
+
+test('sixteen-actor capacity reclaims idle before older busy cache, then uses busy LRU when every candidate is busy', async () => {
+  const f = await daemonFixture(), sources = Array.from({ length: 18 }, (_, i) => ({ ...f.source, id: `capacity-${i}` }));
+  let now = 1000, nativeActions = 0;
+  const busy = new Set(sources.slice(0, 15).map(source => source.id)), retired = /** @type {string[]} */ ([]);
+  const daemon = new CodeLightMacDaemon({ ...f.options, now: () => now,
+    discovery: { discover: async () => ({ sources }), adapter: () => ({ command: () => { nativeActions++; throw Error('Capacity cannot control a native session'); } }) },
+    registry: { ...f.options.registry, register: async (/** @type {Value} */ source) => ({ source, happySessionId: 'mirror-' + source.id, metadata: { bridge: { source } } }) },
+    activityFactory: () => ({ intrinsicRefresh() {}, close() {}, cachedSourceStatus: (/** @type {Value} */ source) => ({ sameSource: true, known: true, active: busy.has(source.id), waiting: false }) }),
+    sourceFactory: async options => ({ status: () => ({ sourceStatus: 'connected' }), close: async () => {},
+      tryCloseIfIdle: async () => { retired.push(options.binding.source.id); return true; } }) });
+  try {
+    await daemon.start();
+    for (const source of sources.slice(0, 16)) { await daemon.prepareSource(sourceKey(source)); now++; }
+    assert.equal(daemon.actors.size, 16); assert.equal(daemon.sourceIsBusy(sourceKey(sources[0])), true);
+    await daemon.prepareSource(sourceKey(sources[16])); assert.deepEqual(retired, ['capacity-15']); assert.equal(daemon.actors.size, 16);
+    assert.equal(daemon.actors.has(sourceKey(sources[0])), true, 'the oldest busy native cache survives while idle capacity exists');
+    busy.add(sources[16].id); now++;
+    await daemon.prepareSource(sourceKey(sources[17])); assert.deepEqual(retired, ['capacity-15', 'capacity-0']); assert.equal(daemon.actors.size, 16);
+    assert.equal(nativeActions, 0, 'reclaiming a CodeLight observer never stops the original native session');
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
 });

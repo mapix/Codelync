@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { CodexIpcAdapter } from '../src/adapters/codex-ipc.mjs';
+import { NativeProjectActivityService } from '../src/happy/project-activity.mjs';
+import { CodexActivityObserver } from '../src/adapters/codex-activity.mjs';
 
 /** @typedef {Record<string, any>} Frame */
 /** @param {Frame} value */
@@ -388,10 +390,11 @@ test('temporary owner gap recovers when the replacement IPC client connects', as
   });
   await adapter.subscribe('test-session', () => {});
   await until(() => frames.some((frame) => frame.params?.following === true));
+  const initialDiscoveries = frames.filter(frame => frame.method === 'thread-owner-discovery').length;
   owner = null;
   [...sockets][0].write(encode({ type: 'broadcast', method: 'client-status-changed', version: 0,
     sourceClientId: 'desktop-owner', params: { clientId: 'desktop-owner', status: 'disconnected', clientType: 'desktop' } }));
-  await until(() => frames.filter((frame) => frame.method === 'thread-owner-discovery').length >= 3);
+  await until(() => frames.filter((frame) => frame.method === 'thread-owner-discovery').length >= initialDiscoveries + 1);
   owner = 'replacement-owner';
   [...sockets][0].write(encode({ type: 'broadcast', method: 'client-status-changed', version: 0,
     sourceClientId: owner, params: { clientId: owner, status: 'connected', clientType: 'desktop' } }));
@@ -471,4 +474,78 @@ test('snapshot refresh reuses the existing follower and owner without new initia
   assert.equal(frames.filter((frame) => frame.method === 'initialize').length, 1);
   assert.equal(frames.some((frame) => frame.method?.startsWith('thread-follower-')), false);
   await assert.rejects(adapter.refreshSnapshot('unsubscribed'), { code: 'codex-owner-unavailable' });
+});
+
+test('registered refresh rediscovers a lost owner without requiring another client connection event', async t => {
+  let owner = 'desktop-owner';
+  const f = await fixture(t, {}, (frame, socket) => {
+    if (frame.method !== 'thread-owner-discovery') return false;
+    reply(socket, frame, { supportsUntrustedAppInput: true }, owner); return true;
+  });
+  const release = await f.adapter.subscribe('existing-thread', () => {});
+  await until(() => f.frames.some(frame => frame.params?.following === true));
+  const originalDiscoveries = f.frames.filter(frame => frame.method === 'thread-owner-discovery').length;
+  f.adapter.owners.delete('existing-thread'); const sub = f.adapter.subscriptions.get('existing-thread'); assert.ok(sub); sub.owner = null;
+  owner = 'replacement-desktop-owner'; let requested = 0;
+  await f.adapter.refreshSnapshot('existing-thread', () => { requested++; });
+  await until(() => f.frames.some(frame => frame.params?.following === true && frame.targetClientIds?.includes(owner)));
+  assert.equal(f.adapter.generation('existing-thread'), 'local:replacement-desktop-owner'); assert.equal(requested, 1);
+  assert.equal(f.frames.filter(frame => frame.method === 'thread-owner-discovery').length, originalDiscoveries + 1);
+  assert.equal(f.frames.some(frame => frame.method?.startsWith('thread-follower-') || frame.method === 'set-thread-ownership'), false);
+  release();
+});
+
+test('same-source attachment and invalid-baseline recovery share one existing-owner discovery', async t => {
+  let hold = false, discoveries = 0;
+  let finish = /** @type {()=>void} */ (() => {});
+  const f = await fixture(t, {}, (frame, socket) => {
+    if (frame.method !== 'thread-owner-discovery') return false;
+    discoveries++; const send = () => reply(socket, frame, { supportsUntrustedAppInput: true }, 'desktop-owner');
+    if (hold) finish = send; else send(); return true;
+  });
+  const release = await f.adapter.subscribe('existing-thread', () => {});
+  hold = true; const before = discoveries;
+  const attach = f.adapter.attach('existing-thread');
+  const recovery = f.adapter.refreshSnapshot('existing-thread', undefined, { recoverOwner: true });
+  await until(() => discoveries === before + 1); finish(); await Promise.all([attach, recovery]);
+  assert.equal(discoveries, before + 1); assert.equal(f.adapter.attaching.size, 0);
+  assert.equal(f.frames.some(frame => frame.method?.startsWith('thread-follower-') || frame.method === 'set-thread-ownership'), false);
+  const unsubscribedBefore = discoveries;
+  await assert.rejects(f.adapter.refreshSnapshot('unsubscribed', undefined, { recoverOwner: true }), { code: 'codex-owner-unavailable' });
+  assert.equal(discoveries, unsubscribedBefore); release();
+});
+
+test('status-only owner and socket events keep real discovery requests inside the shared four-read bound', async t => {
+  let owner = 'desktop-owner', active = 0, peak = 0, discoveries = 0;
+  const f = await fixture(t, {}, (frame, socket) => {
+    if (frame.method === 'thread-owner-discovery') {
+      discoveries++; active++; peak = Math.max(peak, active);
+      setTimeout(() => { active--; reply(socket, frame, { supportsUntrustedAppInput: true }, owner); }, 10); return true;
+    }
+    if (frame.method === 'thread-stream-following-changed' && frame.params?.following === true) {
+      socket.write(encode({ type: 'broadcast', method: 'thread-stream-state-changed', version: 11, sourceClientId: owner,
+        targetClientIds: ['bridge-client'], params: { hostId: 'local', conversationId: frame.params.conversationId,
+          change: { type: 'snapshot', revision: 1, conversationState: { threadRuntimeStatus: { type: 'active', activeFlags: [] }, requests: [], turns: [] } } } }));
+      return true;
+    }
+    return false;
+  });
+  const sources = Array.from({ length: 8 }, (_, i) => ({ app: 'codex', id: `status-native-${i}`, hostId: 'local', kind: 'session', workspace: '/fixture', updatedAt: i }));
+  const service = new NativeProjectActivityService({ sources: () => sources, inventoryAvailable: () => true, backgroundSources: 8, concurrency: 4,
+    ipcFactory: () => f.adapter, observerFactory: options => new CodexActivityObserver(/** @type {any} */ (options)) });
+  t.after(() => service.close()); service.intrinsicRefresh();
+  await until(() => service.entries.size === 8 && service.inFlight === 0 && [...service.entries.values()].every(entry => entry.observer.observationReady()));
+  assert.equal(peak <= 4, true); assert.equal(discoveries, 8);
+  owner = 'replacement-owner'; peak = 0;
+  const socket = [...f.sockets][0];
+  socket.write(encode({ type: 'broadcast', method: 'client-status-changed', version: 0,
+    sourceClientId: 'desktop-owner', params: { clientId: 'desktop-owner', status: 'disconnected' } }));
+  socket.write(encode({ type: 'broadcast', method: 'client-status-changed', version: 0,
+    sourceClientId: owner, params: { clientId: owner, status: 'connected' } }));
+  await until(() => discoveries >= 16 && service.inFlight === 0 && [...service.entries.values()].every(entry => entry.observer.observationReady()));
+  assert.equal(peak <= 4, true, 'client status must not auto-attach all status sources outside the shared budget');
+  peak = 0; for (const current of [...f.sockets]) current.destroy();
+  await until(() => discoveries >= 24 && [...service.entries.values()].every(entry => entry.observer.observationReady()));
+  assert.equal(peak <= 4, true, 'socket reconnect must not auto-attach all status sources outside the shared budget');
+  assert.equal(f.frames.some(frame => frame.method?.startsWith('thread-follower-') || frame.method === 'set-thread-ownership'), false);
 });

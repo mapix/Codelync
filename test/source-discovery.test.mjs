@@ -88,12 +88,12 @@ test('explicit Claude native modes retain collection identity and do not scan wi
   });
   const discovery = new LocalSourceDiscovery({ storage: { list: async () => [] }, antigravityBackend: false, claudeBackends: adapters, localWindows: async () => { windows++; return []; } });
   try {
-    const result = await discovery.discover(); assert.equal(result.sources.length, 2); assert.deepEqual(result.errors, []); assert.deepEqual(result.inventoryApps, ['claude-desktop']);
+    const result = await discovery.discover(); assert.equal(result.sources.length, 2); assert.deepEqual(result.errors, []); assert.deepEqual(result.inventoryApps, ['codex', 'claude-desktop']);
     for (let index = 0; index < 2; index++) assert.equal(discovery.adapter(result.sources[index]), adapters[index]);
     assert.throws(() => discovery.adapter({ ...result.sources[0], hostId: result.sources[1].hostId }), { code: 'unsupported-source' });
     assert.equal(windows, 0);
     adapters[1].list = async () => { throw Error('Unavailable original Chat inventory'); };
-    const partial = await discovery.discover(); assert.equal(partial.sources.length, 1); assert.deepEqual(partial.errors, ['claude-desktop-index-unavailable']); assert.deepEqual(partial.inventoryApps, []);
+    const partial = await discovery.discover(); assert.equal(partial.sources.length, 1); assert.deepEqual(partial.errors, ['claude-desktop-index-unavailable']); assert.deepEqual(partial.inventoryApps, ['codex']);
   } finally { await discovery.close(); }
   assert.equal(disposed, 2);
 });
@@ -102,7 +102,7 @@ test('an unconfigured or malformed Claude collection cannot authorize removing i
   const malformed = { appMode: 'code', hostId: () => 'local:claude-desktop:' + 'a'.repeat(64), list: async () => [{ app: 'claude-desktop', id: 'cloud' }], dispose: async () => {} };
   for (const claudeBackends of [false, [malformed]]) {
     const discovery = new LocalSourceDiscovery({ storage: { list: async () => [] }, antigravityBackend: false, claudeBackends: /** @type {false|Value[]} */ (claudeBackends) });
-    try { const found = await discovery.discover(); assert.deepEqual(found.sources, []); assert.deepEqual(found.inventoryApps, []);
+    try { const found = await discovery.discover(); assert.deepEqual(found.sources, []); assert.deepEqual(found.inventoryApps, ['codex']);
       assert.deepEqual(found.errors, claudeBackends === false ? [] : ['claude-desktop-index-unavailable']); }
     finally { await discovery.close(); }
   }

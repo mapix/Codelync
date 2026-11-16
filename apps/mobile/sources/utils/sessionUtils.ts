@@ -8,6 +8,7 @@ import { buildResumeCommand, buildResumeCommandBlock, ResumeCommandBlock } from 
 import { isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
 import { currentNativeAggregate } from './nativeAggregateActivity';
 import { readNativeQuery } from './nativeQuery';
+import { useCodeLightSessionActivityForSource } from '@/hooks/useCodeLightSessionActivity';
 
 export type { SessionState } from '@/sync/sessionState';
 
@@ -38,6 +39,15 @@ export function useSessionStatus(session: Session): SessionStatus {
         isOnline,
     });
     const aggregate = native ? currentNativeAggregate(session) : null;
+    const activity = useCodeLightSessionActivityForSource(session);
+    const labelActivity = (value: SessionStatus): SessionStatus => {
+        if (!native || session.metadata?.nativeSession?.isSubagent === true || activity.status !== 'ready' || !activity.known
+            || value.state === 'permission_required' || value.state === 'input_required') return value;
+        const status = activity.waiting ? 'waiting' : activity.active ? 'running' : 'idle';
+        const color = activity.waiting ? '#FF9500' : activity.active ? '#007AFF' : '#34C759';
+        return { ...value, statusText: codeLightSubagentLabels[getCurrentLanguage()].status[status], shouldShowStatus: true,
+            statusColor: color, statusDotColor: color, isPulsing: activity.active || activity.waiting };
+    };
 
     const vibingMessage = React.useMemo(() => {
         return vibingMessages[Math.floor(Math.random() * vibingMessages.length)].toLowerCase() + '…';
@@ -45,32 +55,32 @@ export function useSessionStatus(session: Session): SessionStatus {
 
     if (query && state !== 'disconnected' && state !== 'permission_required' && state !== 'input_required' && query.status !== 'idle') {
         const waiting = query.status === 'waiting';
-        return { state: waiting ? 'waiting' : 'thinking', isConnected: true, shouldShowStatus: true,
+        return labelActivity({ state: waiting ? 'waiting' : 'thinking', isConnected: true, shouldShowStatus: true,
             statusText: codeLightSubagentLabels[getCurrentLanguage()].status[waiting ? 'waiting' : 'running'],
-            statusColor: waiting ? '#FF9500' : '#007AFF', statusDotColor: waiting ? '#FF9500' : '#007AFF', isPulsing: true };
+            statusColor: waiting ? '#FF9500' : '#007AFF', statusDotColor: waiting ? '#FF9500' : '#007AFF', isPulsing: true });
     }
 
     if (aggregate && state !== 'disconnected' && state !== 'permission_required' && state !== 'input_required') {
-        if (!aggregate.known) return { state: 'waiting', isConnected: true, statusText: t('codeLightSessionStatus.unknown'), shouldShowStatus: true,
-            statusColor: '#999', statusDotColor: '#999' };
-        if (aggregate.active || aggregate.waiting) return { state: aggregate.active ? 'thinking' : 'waiting', isConnected: true,
+        if (!aggregate.known) return labelActivity({ state: 'waiting', isConnected: true, statusText: t('codeLightSessionStatus.unknown'), shouldShowStatus: true,
+            statusColor: '#999', statusDotColor: '#999' });
+        if (aggregate.active || aggregate.waiting) return labelActivity({ state: aggregate.active ? 'thinking' : 'waiting', isConnected: true,
             statusText: codeLightSubagentLabels[getCurrentLanguage()].status[aggregate.waiting ? 'waiting' : 'running'], shouldShowStatus: true,
-            statusColor: aggregate.waiting ? '#FF9500' : '#007AFF', statusDotColor: aggregate.waiting ? '#FF9500' : '#007AFF', isPulsing: true };
+            statusColor: aggregate.waiting ? '#FF9500' : '#007AFF', statusDotColor: aggregate.waiting ? '#FF9500' : '#007AFF', isPulsing: true });
     }
 
     if (state === 'disconnected') {
-        return {
+        return labelActivity({
             state,
             isConnected: false,
             statusText: isNoninvasiveBridge(session.metadata) ? t('codeLightSessionStatus.unknown') : t('status.lastSeen', { time: formatLastSeen(session.activeAt, false) }),
             shouldShowStatus: true,
             statusColor: '#999',
             statusDotColor: '#999'
-        };
+        });
     }
 
     if (state === 'permission_required') {
-        return {
+        return labelActivity({
             state,
             isConnected: true,
             statusText: t('status.permissionRequired'),
@@ -78,11 +88,11 @@ export function useSessionStatus(session: Session): SessionStatus {
             statusColor: '#FF9500',
             statusDotColor: '#FF9500',
             isPulsing: true
-        };
+        });
     }
 
     if (state === 'input_required') {
-        return {
+        return labelActivity({
             state,
             isConnected: true,
             statusText: t('status.inputRequired'),
@@ -90,11 +100,11 @@ export function useSessionStatus(session: Session): SessionStatus {
             statusColor: '#FF9500',
             statusDotColor: '#FF9500',
             isPulsing: true,
-        };
+        });
     }
 
     if (state === 'thinking') {
-        return {
+        return labelActivity({
             state,
             isConnected: true,
             statusText: vibingMessage,
@@ -102,17 +112,18 @@ export function useSessionStatus(session: Session): SessionStatus {
             statusColor: '#007AFF',
             statusDotColor: '#007AFF',
             isPulsing: true
-        };
+        });
     }
 
-    return {
+    const executionUnknown = native && !aggregate?.known && query?.status !== 'idle';
+    return labelActivity({
         state,
         isConnected: true,
-        statusText: t('status.online'),
-        shouldShowStatus: false,
-        statusColor: '#34C759',
-        statusDotColor: '#34C759'
-    };
+        statusText: executionUnknown ? t('codeLightSessionStatus.unknown') : t('status.online'),
+        shouldShowStatus: executionUnknown,
+        statusColor: executionUnknown ? '#999' : '#34C759',
+        statusDotColor: executionUnknown ? '#999' : '#34C759'
+    });
 }
 
 /**

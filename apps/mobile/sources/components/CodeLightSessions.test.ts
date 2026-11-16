@@ -27,7 +27,7 @@ vi.mock('@/constants/Typography', () => ({ Typography: { default: () => ({}) } }
 vi.mock('@/text', () => ({ t: (key: string) => key }));
 vi.mock('@/hooks/useCodeLightConnectionState', () => ({ useCodeLightConnectionState: () => ({ state: { kind: mocks.status === 'connected' ? 'connected' : mocks.status === 'connecting' ? 'connecting' : 'failed' } }) }));
 vi.mock('./CodeLightConnectionNotice', () => ({ CodeLightConnectionNotice: () => React.createElement('MacNotice', { status: mocks.status }) }));
-vi.mock('./PeerChannelControl', () => ({ PeerChannelControl: () => null }));
+vi.mock('./PeerChannelControl', () => ({ PeerChannelControl: (props: any) => React.createElement('PeerControl', props) }));
 import { CodeLightSessions } from './CodeLightSessions';
 it('known rows remain pressable during title synchronization and an obsolete connection error', () => {
     for (const state of [{ phase: 'loading', status: 'connected' }, { phase: 'error', status: 'connecting' }]) {
@@ -38,8 +38,7 @@ it('known rows remain pressable during title synchronization and an obsolete con
         act(() => { row = create(list.props.renderItem({ item: list.props.data[0] })); });
         const button = row.root.findByType('Button'); expect(button.props.disabled).not.toBe(true);
         act(() => button.props.onPress()); expect(mocks.navigate).toHaveBeenCalledWith(expect.anything(), 'known-session');
-        if (state.status === 'connected') expect(screen.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.titles');
-        else expect(screen.root.findAllByType('Text').map((node: any) => node.props.children)).not.toContain('codeLightLoading.titles');
+        expect(screen.root.findAllByType('Text').map((node: any) => node.props.children)).not.toContain('codeLightLoading.titles');
         expect(screen.root.findAllByType('Text').map((node: any) => node.props.children)).not.toContain('codeLightLoading.failed');
         act(() => { row.unmount(); screen.unmount(); });
     }
@@ -49,7 +48,8 @@ it('terminal connection failure does not spin or hide cached browsing behind tit
     mocks.phase = 'loading'; mocks.status = 'error'; let screen!: ReturnType<typeof create>;
     act(() => { screen = create(React.createElement(CodeLightSessions)); });
     expect(screen.root.findAllByType('Spinner')).toHaveLength(0);
-    expect(screen.root.findByType('MacNotice').props.status).toBe('error');
+    expect(screen.root.findAllByType('MacNotice')).toHaveLength(0);
+    expect(screen.root.findByType('PeerControl').props).toMatchObject({ presentation: 'header', directory: true });
     expect(screen.root.findByType('List').props.data).toHaveLength(1);
     expect(screen.root.findAllByType('Text').map((n: any) => n.props.children)).not.toContain('codeLightLoading.titles');
     act(() => screen.unmount()); mocks.phase = 'loading'; mocks.status = 'connected';
@@ -66,4 +66,17 @@ it('a visible cross-project subagent uses the parent display interest without cr
     expect(mocks.activities.mock.lastCall?.[0]).toEqual([{ id: 'parent-project', machineId: 'machine', hostId: 'local', projectKey: 'parent-project', app: 'codex',
         sessions: [{ id: 'child', nativeId: 'native-child' }] }]);
     act(() => screen.unmount()); mocks.sessions = null; mocks.machines = []; mocks.rows = null;
+});
+
+it('cached directory preserves the same list, row data and header control throughout socket flapping', () => {
+    const Component = (CodeLightSessions as unknown as { type: React.ComponentType }).type;
+    mocks.sessions = [mocks.session]; mocks.phase = 'complete'; mocks.status = 'connected'; let screen!: ReturnType<typeof create>;
+    act(() => { screen = create(React.createElement(Component)); });
+    const list = screen.root.findByType('List'), data = list.props.data, header = screen.root.findByType('PeerControl');
+    for (const status of ['connecting', 'error', 'connected']) {
+        mocks.status = status; act(() => screen.update(React.createElement(Component)));
+        expect(screen.root.findByType('List')).toBe(list); expect(list.props.data).toBe(data); expect(screen.root.findByType('PeerControl')).toBe(header);
+        expect(screen.root.findAllByType('MacNotice')).toHaveLength(0); expect(screen.root.findAllByType('Spinner')).toHaveLength(0);
+    }
+    act(() => screen.unmount()); mocks.sessions = null;
 });

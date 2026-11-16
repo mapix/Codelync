@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeCatalogDeltas } from '../src/happy/recent-data.mjs';
+import { NativeCatalogDeltas, CodeLightRecentService } from '../src/happy/recent-data.mjs';
 
 /** @param {string} id @param {number} [version] */
 function entry(id, version = 1) {
@@ -107,4 +107,65 @@ test('pagination capture time stays immutable while active access extends retent
   assert.equal(next.watermark, first.watermark); assert.equal(next.scannedAt, first.scannedAt);
   now += 1000;
   assert.throws(() => service.page(entries, { cursor: first.nextCursor }, 'machine'), { code: 'stale-catalog-cursor' });
+});
+
+test('Mac maintains headers before phone arrival and HTTP pages never read source checkpoints', t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let now = 1000, sourceReads = 0, checkpoints = 0;
+  const entries = Array.from({ length: 1500 }, (_, at) => ({ ...entry(String(at).padStart(4, '0')),
+    actor: { transport: { peerSnapshot() { checkpoints++; return {}; } } } }));
+  const service = new CodeLightRecentService({ sources: () => { sourceReads++; return entries; }, resolveSource: async () => { throw Error('No native reads'); },
+    machineId: () => 'machine', catalogRefreshMs: 5000, now: () => now });
+  t.after(() => service.close());
+  assert.throws(() => service.catalog({ catalogVersion: 2 }), { code: 'source-unavailable' });
+  service.startCatalogMaintenance(); assert.equal(sourceReads, 1); assert.equal(checkpoints, 1500);
+  const first = service.catalog({ catalogVersion: 2, limit: 2000 });
+  assert.equal(first.sessions.length, 1500); assert.equal(first.scannedAt, 1000);
+  for (let i = 0; i < 5; i++) assert.deepEqual(service.catalog({ catalogVersion: 2, since: first.watermark }).sessions, []);
+  const legacy = service.catalog({ limit: 1000 });
+  assert.equal(legacy.sessions.length, 1000); assert.equal(service.catalog({ cursor: legacy.nextCursor }).sessions.length, 500);
+  assert.equal(sourceReads, 1); assert.equal(checkpoints, 1500);
+  entries[0].source.title = 'Updated independently'; entries[0].binding.metadataVersion++;
+  now += 5000; t.mock.timers.tick(5000);
+  assert.equal(sourceReads, 2); assert.equal(checkpoints, 3000);
+  const delta = service.catalog({ catalogVersion: 2, since: first.watermark });
+  assert.equal(delta.sessions.length, 1); assert.equal(delta.sessions[0].metadata.nativeSession.title, 'Updated independently');
+  console.log(JSON.stringify({ fixtureOnly: true, maintainedHeaders: 1500, HTTPReadCheckpointCalls: 0, backgroundCaptureIntervalMs: 5000 }));
+});
+
+test('failed background directory capture retains its original time and closes maintenance cleanly', t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let now = 1000, available = true, reads = 0;
+  const service = new CodeLightRecentService({ sources: () => { reads++; return [entry('a')]; }, resolveSource: async () => { throw Error('No native reads'); },
+    available: () => available, machineId: () => 'machine', catalogRefreshMs: 5000, now: () => now });
+  t.after(() => service.close()); service.startCatalogMaintenance();
+  const first = service.catalog({ catalogVersion: 2 });
+  available = false; now += 5000; t.mock.timers.tick(5000);
+  assert.throws(() => service.catalog({ catalogVersion: 2, since: first.watermark }), { code: 'source-unavailable' });
+  assert.equal(service.catalogDeltas.current?.at, 1000); assert.equal(reads, 1);
+  available = true; now += 5000; t.mock.timers.tick(5000);
+  assert.equal(service.catalog({ catalogVersion: 2, since: first.watermark }).scannedAt, now);
+  service.close(); const before = reads; t.mock.timers.tick(20000);
+  assert.equal(reads, before); assert.equal(service.catalogTimer, null); assert.equal(service.catalogDeltas.current, null);
+});
+
+test('maintained captures and older page continuations cannot cross machine identity', () => {
+  const service = new NativeCatalogDeltas({ maintained: true }), entries = [entry('a'), entry('b')];
+  assert.throws(() => service.page(entries, {}, 'machine-a'), { code: 'source-unavailable' });
+  service.refresh(entries, 'machine-a'); const first = service.page([], { limit: 1 }, 'machine-a');
+  entries[0].source.title = 'Next capture'; service.refresh(entries, 'machine-a');
+  const next = service.page([], { cursor: first.nextCursor }, 'machine-a');
+  assert.equal(next.sessions[0].metadata.nativeSession.title.startsWith('Source '), true);
+  assert.throws(() => service.page([], {}, 'machine-b'), { code: 'source-unavailable' });
+  assert.throws(() => service.legacyPage({}, 'machine-b'), { code: 'source-unavailable' });
+});
+
+test('closing maintenance cannot admit a deferred revalidation or activate another reader', async () => {
+  let nativeReaders = 0;
+  const service = new CodeLightRecentService({ sources: () => [], resolveSource: async () => { nativeReaders++; throw Error('Must not activate'); } });
+  service.revalidate('phone-a', 20); service.close();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(nativeReaders, 0);
+  assert.throws(() => service.recent('phone-a'), { code: 'source-unavailable' });
+  assert.throws(() => service.history('phone-a', { cursor: 'old' }), { code: 'source-unavailable' });
 });
