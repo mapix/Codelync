@@ -41,7 +41,7 @@ Apple checks outside the repository; publish only this public status projection.
 
 ## Static staging and publication
 
-1. Stage `index.html`, `app.js`, `styles.css`, `assets/`, `privacy.html`,
+1. Stage `index.html`, `app.js`, `language.js`, `japanese.js`, `styles.css`, `assets/`, `privacy.html`,
    `support.html`, the reviewed `testflight.json`, and the current verified
    `release.json`. Documentation/schema files need not be served.
 2. Hash `app.js` and put its leading 16 SHA-256 characters in the HTML script
