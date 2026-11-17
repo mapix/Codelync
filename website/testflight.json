@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
-  "status": "coming-soon",
-  "build": null,
-  "externalGroupEnabled": false,
-  "externalGroupContainsBuild": false,
-  "version": null,
+  "status": "in-review",
+  "version": "1.0.0",
+  "build": "2026111705",
+  "appId": "6835734876",
+  "groupId": "eaa4762f-309c-4938-882e-8f245c7e1c92",
   "publicURL": null,
   "externalApproved": false,
-  "publishedAt": null,
-  "appId": null,
-  "groupId": null
+  "externalGroupEnabled": true,
+  "externalGroupContainsBuild": true,
+  "publishedAt": "2026-11-17T09:12:32.196032+00:00"
 }
