@@ -7,14 +7,14 @@ not change existing encrypted attachment-ref downloads.
 
 ## Current methods
 
-| Source | Observed metadata / existing path | Current CodeLight read support |
+| Source | Observed metadata / existing path | Current Codelync read support |
 | --- | --- | --- |
 | Local original Codex | Native `imageView` item ID and its image path | `native-image-read(imageId)` resolves only that item in the current bound view; 64 MiB input image, JPEG preview below 499960 bytes; immutable encrypted attachment ref |
 | Codex MCP results | Native `resource_link` blocks can identify URI, name, MIME and source server | No generic resource-link file/video reader is implemented; URI alone is not a download grant |
 | Antigravity | Native trajectory tool/file-change/view-file metadata | No generic file/video reader; tool arguments, change paths and command output paths do not grant reads |
 | Claude Code | Native session file, image, media and document delegates exist in shipped 4.16336.0 | Current stock9a/copy0003 RPC exposes no file/image/video byte read; content blocks beyond text/thinking/tool data are projected unsupported |
-| Claude native artifacts | Typed native artifact UUID/store metadata and MCP vouch state exist | No CodeLight artifact reader or verified per-message reference catalogue yet |
-| Existing CodeLight attachment | Encrypted session attachment ref and MIME metadata | Existing request-download/decrypt path; clicking opens the ref, without eager media IO |
+| Claude native artifacts | Typed native artifact UUID/store metadata and MCP vouch state exist | No Codelync artifact reader or verified per-message reference catalogue yet |
+| Existing Codelync attachment | Encrypted session attachment ref and MIME metadata | Existing request-download/decrypt path; clicking opens the ref, without eager media IO |
 
 The local Codex image reader checks regular-file identity with lstat/open,
 O_NOFOLLOW and O_NONBLOCK, compares device/inode/size/mtime during the read,
@@ -62,13 +62,13 @@ These are static shipped-interface findings, not native read acceptance:
   `readSessionMediaAsDataUrl`, `readSessionPanelMediaAsDataUrl`,
   `getSessionMediaStreamUrl` and `getSessionPanelMediaStreamUrl`. The media
   data-URL limits are 50 MiB and 25 MiB for the contained panel route; neither
-  automatically meets CodeLight's 10 MiB attachment limit.
+  automatically meets Codelync's 10 MiB attachment limit.
 - Native media stream URLs use an opaque random token in the original
   application's custom protocol. The native registry holds at most 64 entries
   with a six-hour idle lifetime. Its handler checks the native session/file
   policy on each request and supports a single byte range with 206/416 responses.
   This is a candidate for bounded reads through the original Electron handler,
-  not a public HTTP URL or an established CodeLight byte reader. An actual
+  not a public HTTP URL or an established Codelync byte reader. An actual
   native directory/item reference, original handler invocation and range/file
   identity fencing still require copied-owner acceptance before enabling it.
 - Native panel document reads cover PDF/XLSX and gated DOCX/PPTX conversion.

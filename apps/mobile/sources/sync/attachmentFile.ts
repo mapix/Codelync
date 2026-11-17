@@ -56,7 +56,7 @@ export async function loadAttachmentFile(sessionId: string, ref: string, metadat
         dispose = async () => { URL.revokeObjectURL(uri); };
     } else {
         if (!cacheDirectory) throw Error('Attachment cache unavailable');
-        uri = `${cacheDirectory}codelight-file-${randomUUID()}-${name}`;
+        uri = `${cacheDirectory}codelync-file-${randomUUID()}-${name}`;
         dispose = async () => { await deleteAsync(uri, { idempotent: true }).catch(() => {}); };
         try {
             await writeAsStringAsync(uri, encodeBase64(bytes), { encoding: EncodingType.Base64 });

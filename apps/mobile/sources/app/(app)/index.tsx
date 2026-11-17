@@ -22,13 +22,13 @@ import { decodeBase64 } from '@/encryption/base64';
 import { getServerUrl } from '@/sync/serverConfig';
 import { useUnistyles } from 'react-native-unistyles';
 import { config } from '@/config';
-import { CodeLightScanScreen } from '@/components/onboarding/CodeLightScanScreen';
-import { CodeLightSessions } from '@/components/CodeLightSessions';
+import { CodelyncScanScreen } from '@/components/onboarding/CodelyncScanScreen';
+import { CodelyncSessions } from '@/components/CodelyncSessions';
 
 export default function Home() {
     const auth = useAuth();
     if (!auth.isAuthenticated) {
-        return config.noninvasiveLocal ? <CodeLightScanScreen /> : <NotAuthenticated />;
+        return config.noninvasiveLocal ? <CodelyncScanScreen /> : <NotAuthenticated />;
     }
     return (
         <Authenticated />
@@ -51,9 +51,9 @@ function Authenticated() {
         isRunningOnMac: isRunningOnMac(),
     });
     if (showInstallStep && !(config.noninvasiveLocal && auth.credentials?.peer)) {
-        return config.noninvasiveLocal ? <CodeLightScanScreen /> : <OnboardingLinkComputer />;
+        return config.noninvasiveLocal ? <CodelyncScanScreen /> : <OnboardingLinkComputer />;
     }
-    return config.noninvasiveLocal ? <CodeLightSessions /> : <MainView variant="phone" />;
+    return config.noninvasiveLocal ? <CodelyncSessions /> : <MainView variant="phone" />;
 }
 
 function NotAuthenticated() {
@@ -78,7 +78,7 @@ function NotAuthenticated() {
             await creator.current!.create(getServerUrl());
             trackAccountCreated();
         } catch (error) {
-            setError(error instanceof AnonymousAccountError && error.code === 'storage' ? t('codeLightSetup.storageFailed') : t('codeLightSetup.createFailed'));
+            setError(error instanceof AnonymousAccountError && error.code === 'storage' ? t('codelyncSetup.storageFailed') : t('codelyncSetup.createFailed'));
         } finally { setCreating(false); }
     }
 

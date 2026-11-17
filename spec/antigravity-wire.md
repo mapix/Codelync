@@ -3,18 +3,18 @@
 Investigated 2026-11-13 against Antigravity Desktop 2.31.2, macOS arm64.
 This extends the [integration contract](antigravity-remote-control.md).
 
-## CodeLight path
+## Codelync path
 
 The shipped remote-control V2 transport wraps native HTTP RPCs. It is possible
 to use the same native conversation service on the existing owner's loopback
-listener, with CodeLight owning the remote channel, pairing, device authorization
+listener, with Codelync owning the remote channel, pairing, device authorization
 and sealed traffic. This is **native remote-control RPC interoperability**. It
-does not imply that CodeLight has implemented Google's WebChannel relay, WebRTC
+does not imply that Codelync has implemented Google's WebChannel relay, WebRTC
 mesh, companion site or account service.
 
 ```mermaid
 sequenceDiagram
-    participant Phone as CodeLight phone
+    participant Phone as Codelync phone
     participant Connector as Mac Connector
     participant Native as Existing Antigravity owner
     Phone->>Connector: Sealed source-bound command / observation
@@ -55,7 +55,7 @@ These are derived control-flow observations, not runtime proof of Google's relay
 The following field numbers are recovered from the current executable's embedded
 `devtools/jetski/boq/api/proto/api.proto` FileDescriptorProto. Proto JSON uses the
 camelCase names below. `requestId` is int64 and therefore uses a decimal string in
-standard proto JSON; it is a relay correlation ID, not CodeLight's durable UUID.
+standard proto JSON; it is a relay correlation ID, not Codelync's durable UUID.
 
 | Message | Fields |
 | --- | --- |
@@ -150,7 +150,7 @@ unvalidated filenames never become session support.
 
 ## Security boundary and custom endpoint
 
-The user selected CodeLight's security scheme. The connector can therefore use
+The user selected Codelync's security scheme. The connector can therefore use
 native loopback RPC without the vendor companion authentication path.
 
 The vendor V2 `resolveAuth` function logs TokenSource/quota lookup failures and

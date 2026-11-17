@@ -166,7 +166,7 @@ export default function ServerConfigScreen() {
             apiSocket.disconnect(); setServerUrl(nextOrigin); setInputUrl(nextOrigin);
             // 改地址后必须重载自己的连接图；不复用上一服务器的 token/socket，也不依赖被禁用的 OTA reload。
             if (Platform.OS === 'web') window.location.reload(); else await reloadAppAsync();
-        } catch { setError(t('codeLightSetup.reloadFailed')); }
+        } catch { setError(t('codelyncSetup.reloadFailed')); }
     };
 
     const handleReset = async () => {
@@ -181,7 +181,7 @@ export default function ServerConfigScreen() {
                 if (auth.isAuthenticated) await auth.logout({ reload: false });
                 apiSocket.disconnect(); setServerUrl(null); setUseCustomServerForVoice(false);
                 if (Platform.OS === 'web') window.location.reload(); else await reloadAppAsync();
-            } catch { setError(t('codeLightSetup.reloadFailed')); }
+            } catch { setError(t('codelyncSetup.reloadFailed')); }
         }
     };
 

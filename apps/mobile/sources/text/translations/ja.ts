@@ -1,5 +1,5 @@
 /**
- * Japanese translations for the CodeLight app
+ * Japanese translations for the Codelync app
  * Values can be:
  * - String constants for static text
  * - Functions with typed object parameters for dynamic text
@@ -18,32 +18,32 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
 }
 
 export const ja: TranslationStructure = {
-    codeLightHandoff: {
+    codelyncHandoff: {
         action: "引き継ぐ…",
         noTargets: "この Mac に接続中の別のデスクトップセッションがありません。",
         unavailable: "元または引き継ぎ先のセッションを利用できなくなりました。",
     },
 
-    codeLightSetup: {
+    codelyncSetup: {
         createFailed: "接続を設定できませんでした。Mac との接続を確認して、もう一度お試しください。",
         storageFailed: "接続を安全に保存できませんでした。端末の空き容量を確認して、もう一度お試しください。",
-        reloadFailed: "CodeLight を閉じて開き直すと、保存済みの設定で再接続します。",
-        pairFailed: "このペアリングリンクは利用できません。Mac の CodeLight に表示される新しい QR コードを読み取ってください。",
-        macHelp: "Mac で CodeLight を開き、既存の Codex / Antigravity / Claude Desktop セッションを実行したままにしてください。",
-        helpBody: "Mac で CodeLight を開き、実行したままにしてください。このスマートフォンで QR コードを読み取ります。接続先アドレスが変わったら、更新して新しいコードを読み取ってください。登録や VPN は不要です。",
+        reloadFailed: "Codelync を閉じて開き直すと、保存済みの設定で再接続します。",
+        pairFailed: "このペアリングリンクは利用できません。Mac の Codelync に表示される新しい QR コードを読み取ってください。",
+        macHelp: "Mac で Codelync を開き、既存の Codex / Antigravity / Claude Desktop セッションを実行したままにしてください。",
+        helpBody: "Mac で Codelync を開き、実行したままにしてください。このスマートフォンで QR コードを読み取ります。接続先アドレスが変わったら、更新して新しいコードを読み取ってください。登録や VPN は不要です。",
     },
 
     windowControl: en.windowControl,
 
-    codeLightPairing: {
+    codelyncPairing: {
         refresh: "Mac の QR コードを更新して、もう一度読み取ってください。",
         storage: "接続を安全に保存できませんでした。端末の空き容量を確認して再試行してください。",
-        invalid: "このコードを確認できませんでした。Mac の CodeLight に表示される QR コードを読み取ってください。",
-        network: "Mac に接続できませんでした。CodeLight を実行したまま、もう一度お試しください。",
+        invalid: "このコードを確認できませんでした。Mac の Codelync に表示される QR コードを読み取ってください。",
+        network: "Mac に接続できませんでした。Codelync を実行したまま、もう一度お試しください。",
     },
 
-    codeLightCommands: { modelMenu: '入力欄の横にあるモデルボタンで、この会話のモデルを選択してください。', unsupported: "このアプリのこのコマンドは CodeLight で利用できません。下書きは保持されています。", busy: "このセッションは処理中です。下書きは保持されています。", unconfirmed: "コマンドの結果は未確認です。結果を確認してください。" },
-    codeLightModels: {
+    codelyncCommands: { modelMenu: '入力欄の横にあるモデルボタンで、この会話のモデルを選択してください。', unsupported: "このアプリのこのコマンドは Codelync で利用できません。下書きは保持されています。", busy: "このセッションは処理中です。下書きは保持されています。", unconfirmed: "コマンドの結果は未確認です。結果を確認してください。" },
+    codelyncModels: {
         nextMessage: '次のメッセージ',
         default: "既定",
         check: "設定を確認",
@@ -53,7 +53,7 @@ export const ja: TranslationStructure = {
         unconfirmed: "変更の結果は未確認です。変更を繰り返さずに結果を確認してください。",
     },
 
-    codeLightChannels: {
+    codelyncChannels: {
         title: "接続経路",
         automatic: "自動選択",
         automaticDetail: "保存済みの接続を確認して、この Mac に接続します。",
@@ -72,14 +72,14 @@ export const ja: TranslationStructure = {
         switchFailed: "接続できませんでした。以前の選択は保持されています。",
         connectingTitle: "Mac に接続中…",
         failedTitle: "Mac に接続できません",
-        failedHelp: "Mac で CodeLight を開き、ネットワークを確認して再接続するか、別の接続を選んでください。",
+        failedHelp: "Mac で Codelync を開き、ネットワークを確認して再接続するか、別の接続を選んでください。",
         accessEndedTitle: "Mac 接続を確認できません",
-        accessEndedHelp: "その Mac の CodeLight に表示されている QR コードを読み取ってください。保存済みのメッセージと下書きは保持されます。",
+        accessEndedHelp: "その Mac の Codelync に表示されている QR コードを読み取ってください。保存済みのメッセージと下書きは保持されます。",
         retryConnection: "接続を再試行",
         scanMac: "Mac のコードを読み取る",
     },
 
-    codeLightLoading: {
+    codelyncLoading: {
         titles: "Codex、Antigravity、Claude Desktop のセッションを読み込み中…",
         discovered: ({ count }: { count: number }) => "{count} 件を取得 · 引き続き読み込み中…".replace("{count}", String(count)),
         messages: "このセッションを読み込み中…",
@@ -89,7 +89,7 @@ export const ja: TranslationStructure = {
         empty: "この Mac に利用可能な Codex、Antigravity、Claude Desktop セッションはありません。",
     },
 
-    codeLightProjects: {
+    codelyncProjects: {
         active: ({ count }: { count: number }) => "実行中：{count}".replace("{count}", String(count)),
         waiting: ({ count }: { count: number }) => "操作待ち：{count}".replace("{count}", String(count)),
         unknown: ({ count }: { count: number }) => "未確認：{count}".replace("{count}", String(count)),
@@ -101,7 +101,7 @@ export const ja: TranslationStructure = {
         updated: ({ time }: { time: string }) => "更新時刻 {time}".replace("{time}", String(time)),
     },
 
-    codeLightSessionStatus: {
+    codelyncSessionStatus: {
         active: "実行中",
         waiting: "操作待ち",
         idle: "待機中",
@@ -229,7 +229,7 @@ export const ja: TranslationStructure = {
         developer: '開発者',
         developerTools: '開発者ツール',
         about: 'このアプリについて',
-        aboutFooter: "CodeLight は Mac の Codex、Antigravity、Claude Desktop セッションに接続します。Claude Desktop は Gateway を使用し、利用できる操作は各セッションによって異なります。",
+        aboutFooter: "Codelync は Mac の Codex、Antigravity、Claude Desktop セッションに接続します。Claude Desktop は Gateway を使用し、利用できる操作は各セッションによって異なります。",
         whatsNew: '新機能',
         whatsNewSubtitle: '最新のアップデートと改善を確認',
         reportIssue: '問題を報告',
@@ -461,8 +461,8 @@ export const ja: TranslationStructure = {
         services: 'サービス',
         useCustomServerForVoice: '音声にカスタムサーバーを使用',
         customServerVoiceEnabled: '音声認証情報と使用量はカスタムサーバーを使用します',
-        customServerVoiceDisabled: '音声は CodeLight Cloud と CodeLight サブスクリプションを使用します',
-        customServerVoiceFooter: 'オフの場合、音声の開始時に CodeLight Cloud と ElevenLabs へ接続します。カスタムサーバーで音声が設定済みの場合のみオンにしてください。',
+        customServerVoiceDisabled: '音声は Codelync Cloud と Codelync サブスクリプションを使用します',
+        customServerVoiceFooter: 'オフの場合、音声の開始時に Codelync Cloud と ElevenLabs へ接続します。カスタムサーバーで音声が設定済みの場合のみオンにしてください。',
     },
 
     sessionInfo: {
@@ -471,9 +471,9 @@ export const ja: TranslationStructure = {
         killSessionConfirm: 'このセッションを終了してもよろしいですか？',
         archiveSession: 'セッションをアーカイブ',
         archiveSessionConfirm: 'このセッションをアーカイブしてもよろしいですか？',
-        happySessionIdCopied: 'CodeLight Session IDがクリップボードにコピーされました',
-        failedToCopySessionId: 'CodeLight Session IDのコピーに失敗しました',
-        happySessionId: 'CodeLight Session ID',
+        happySessionIdCopied: 'Codelync Session IDがクリップボードにコピーされました',
+        failedToCopySessionId: 'Codelync Session IDのコピーに失敗しました',
+        happySessionId: 'Codelync Session ID',
         claudeCodeSessionId: 'Claude Code Session ID',
         claudeCodeSessionIdCopied: 'Claude Code Session IDがクリップボードにコピーされました',
         codexThreadId: 'Codex Thread ID',
@@ -508,7 +508,7 @@ export const ja: TranslationStructure = {
         path: 'パス',
         operatingSystem: 'オペレーティングシステム',
         processId: 'プロセスID',
-        happyHome: 'CodeLight Home',
+        happyHome: 'Codelync Home',
         copyMetadata: 'メタデータをコピー',
         agentState: 'エージェント状態',
         controlledByUser: 'ユーザーによる制御',
@@ -539,7 +539,7 @@ export const ja: TranslationStructure = {
             ...en.components.emptyMainScreen,
             // Used by EmptyMainScreen component
             readyToCode: 'コーディングを始めますか？',
-            installCli: 'CodeLight CLIをインストール',
+            installCli: 'Codelync CLIをインストール',
             runIt: '実行する',
             scanQrCode: 'QRコードをスキャン',
             openCamera: 'カメラを開く',
@@ -651,13 +651,13 @@ export const ja: TranslationStructure = {
         submitFailed: "回答を送信できませんでした",
         dismiss: "閉じる",
         unsupportedTitle: "未対応のリクエスト",
-        unsupportedDescription: ({ kind }: { kind: string }) => `このバージョンの CodeLight は「${kind}」リクエストを表示できません。アプリを更新してください。`,
+        unsupportedDescription: ({ kind }: { kind: string }) => `このバージョンの Codelync は「${kind}」リクエストを表示できません。アプリを更新してください。`,
         moreQuestions: ({ count }: { count: number }) =>
             count === 1 ? "他に1件の質問" : `${count} 件の質問`,
     },
 
     sidebar: {
-        sessionsTitle: 'CodeLight',
+        sessionsTitle: 'Codelync',
         showArchived: 'アーカイブを表示',
         hideArchived: 'アーカイブを非表示',
         newSession: '新しいセッション',
@@ -830,13 +830,13 @@ export const ja: TranslationStructure = {
         },
         // Bring your own agent
         byoTitle: '自分のエージェントを使う',
-        byoDescription: 'CodeLight のデフォルトの代わりに、独自の ElevenLabs エージェントを使用します。サブスクリプション不要 — 自分の ElevenLabs アカウントで直接接続できます。エージェントには2つのクライアントツールを定義する必要があります: sendMessageToSession（コーディングエージェントにテキストを送信）と processPermissionRequest（ツール使用を許可または拒否）。セッションコンテキストは {{initialConversationContext}} 動的変数を通じて受信されます。',
+        byoDescription: 'Codelync のデフォルトの代わりに、独自の ElevenLabs エージェントを使用します。サブスクリプション不要 — 自分の ElevenLabs アカウントで直接接続できます。エージェントには2つのクライアントツールを定義する必要があります: sendMessageToSession（コーディングエージェントにテキストを送信）と processPermissionRequest（ツール使用を許可または拒否）。セッションコンテキストは {{initialConversationContext}} 動的変数を通じて受信されます。',
         customAgentId: 'ElevenLabs Agent ID',
         customAgentIdNotSet: '未設定',
-        customAgentIdDescription: 'ElevenLabs Agent ID を入力してください。空のままにすると CodeLight のデフォルトが使用されます。',
+        customAgentIdDescription: 'ElevenLabs Agent ID を入力してください。空のままにすると Codelync のデフォルトが使用されます。',
         customAgentIdPlaceholder: 'e.g. abc123def456',
         bypassToken: '直接接続',
-        bypassTokenSubtitle: 'CodeLight サーバーをスキップし、ElevenLabs に直接接続',
+        bypassTokenSubtitle: 'Codelync サーバーをスキップし、ElevenLabs に直接接続',
         promptGuideTitle: 'エージェントプロンプトガイド',
         promptGuideDescription: 'ElevenLabs エージェントには以下が必要です:\n\n• ツール: sendMessageToSession — パラメータ: sessionId (string), message (string)。指定されたコーディングセッションにメッセージを送信します。\n• ツール: processPermissionRequest — パラメータ: requestId (string), decision ("allow" または "deny")。保留中のツール許可を承認または拒否します。\n• 動的変数: {{initialConversationContext}} — 開始時にセッション履歴とコンテキストを受信します。\n\nエージェントはユーザーとコーディングエージェント間の音声ブリッジとして機能します。簡潔に、話しかけられた時のみ応答し、コーディングエージェントが作業を完了したら報告する必要があります。',
         usageTitle: '使用状況（過去30日間）',
@@ -873,7 +873,7 @@ export const ja: TranslationStructure = {
         secretKeyCopied: 'シークレットキーがクリップボードにコピーされました。安全な場所に保管してください！',
         secretKeyCopyFailed: 'シークレットキーのコピーに失敗しました',
         privacy: 'プライバシー',
-        privacyDescription: '使用している機能やデバイスの種類などの使用データを共有し、CodeLight の改善に役立てます。メッセージやコードが共有されることはありません。',
+        privacyDescription: '使用している機能やデバイスの種類などの使用データを共有し、Codelync の改善に役立てます。メッセージやコードが共有されることはありません。',
         analytics: 'アナリティクス',
         analyticsDisabled: 'データは共有されません',
         analyticsEnabled: '使用データが共有されます',
@@ -925,7 +925,7 @@ export const ja: TranslationStructure = {
         invalidConnectionLink: '無効な接続リンク',
         invalidConnectionLinkDescription: '接続リンクが見つからないか無効です。URLを確認して再試行してください。',
         connectTerminal: 'ターミナルを接続',
-        terminalRequestDescription: 'ターミナルがCodeLightアカウントへの接続を要求しています。これにより、ターミナルは安全にメッセージを送受信できるようになります。',
+        terminalRequestDescription: 'ターミナルがCodelyncアカウントへの接続を要求しています。これにより、ターミナルは安全にメッセージを送受信できるようになります。',
         connectionDetails: '接続の詳細',
         publicKey: '公開鍵',
         encryption: '暗号化',
@@ -975,24 +975,34 @@ export const ja: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
+        createAccount: 'アカウントを作成', restoreExisting: '既存のアカウントを復元',
+        installBodyPrefix: 'Mac で ', installBodySuffix: ' を開いてください。',
+        terminalComment: '# Mac のネイティブアプリを開く', offlineTitleMany: 'コンピューターがオフラインです',
+        offlineTroubleshoot: '接続を確認', linkAnother: '別のコンピューターに接続', helpMessage: 'お困りの場合はお問い合わせください。',
+        helpDiscord: 'Discord で質問', helpBra1nDump: 'X で @bra1n_dump に連絡', helpEx3ndr: 'X で @Ex3NDR に連絡', helpIssues: '既知の問題を確認',
+        logoutStartOver: 'ログアウトしてやり直す', logoutFooter: 'このアカウントにはまだデータがありません。',
+        logoutConfirmTitle: 'ログアウトしてやり直しますか？', logoutConfirmBody: 'アカウント作成に戻ります。コンピューターの内容は変わりません。',
+        restoreTitle: 'アカウントを復元', restoreScan: 'もう一台の iPhone でこのコードをスキャンしてください。',
+        restoreScanPath: 'Codelync › 設定 › アカウント › 新しいデバイスを接続', restoreUseKey: 'シークレットキーを使用',
+        secretKeyTitle: 'シークレットキー', secretKeyBody: 'シークレットキーを貼り付けてください。もう一台のデバイスの Codelync › 設定 › アカウントにあります。', restoreButton: '復元',
         headline: "Codex / Antigravity / Claude Desktop セッションを、\nどこにいても",
         propEncrypted: "エンドツーエンド暗号化",
         propNoPassword: "登録や VPN は不要",
         propOpenSource: "オープンソース、MIT ライセンス",
         linkTitle: "Mac に接続",
-        installStep: "Mac で CodeLight を開く",
+        installStep: "Mac で Codelync を開く",
         openStep: "Codex / Antigravity / Claude Desktop セッションを実行したままにする",
-        openBody: "Mac で CodeLight を開き、Codex / Antigravity / Claude Desktop を実行したままにしてください。CodeLight にペアリング用 QR コードが表示されます。",
+        openBody: "Mac で Codelync を開き、Codex / Antigravity / Claude Desktop を実行したままにしてください。Codelync にペアリング用 QR コードが表示されます。",
         scanStep: "QR コードを読み取る",
         scanButton: "QR コードを読み取る",
         pasteLink: "読み取れない場合はリンクを貼り付け",
         pasteLinkTitle: "ペアリングリンクを貼り付け",
-        pasteLinkMessage: "Mac の CodeLight で「ペアリングリンクをコピー」を選び、ここに貼り付けてください。",
+        pasteLinkMessage: "Mac の Codelync で「ペアリングリンクをコピー」を選び、ここに貼り付けてください。",
         pasteLinkConfirm: "接続",
         linking: "接続しています…",
         linkFailed: "接続できませんでした。Mac の QR コードを更新して、もう一度読み取ってください。",
-        offlineOpenStep: "Mac で CodeLight を開く",
-        offlineOpenBody: "Mac をスリープさせずにネットワークに接続し、CodeLight を開いてください。再接続するとこの画面が更新されます。",
+        offlineOpenStep: "Mac で Codelync を開く",
+        offlineOpenBody: "Mac をスリープさせずにネットワークに接続し、Codelync を開いてください。再接続するとこの画面が更新されます。",
         getHelp: "ヘルプ",
         settingsTitle: "設定",
         settingsServer: "サーバー",

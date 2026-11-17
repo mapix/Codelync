@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm, symlink, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readNativeImage, compressNativeImage, MAX_NATIVE_IMAGE_BYTES } from '../src/happy/native-image.mjs';
+import { readNativeImage, compressNativeImage, MAX_NATIVE_IMAGE_BYTES } from '../src/codelync/native-image.mjs';
 import sharp from 'sharp';
 import { randomBytes } from 'node:crypto';
 

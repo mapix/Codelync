@@ -23,7 +23,7 @@ async function scan(folder) {
   }
 }
 await scan(join(app, 'Contents'));
-const entitlements = join(tmpdir(), 'codelight-sign-' + randomUUID() + '.plist');
+const entitlements = join(tmpdir(), 'codelync-sign-' + randomUUID() + '.plist');
 await writeFile(entitlements, '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>', { mode: 0o600 });
 try {
   for (const binary of binaries) {

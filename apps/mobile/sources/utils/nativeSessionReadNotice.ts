@@ -1,5 +1,5 @@
 import type { Session } from '@/sync/storageTypes';
-import type { LoadingProgress } from '@/sync/codeLightLoadingProgress';
+import type { LoadingProgress } from '@/sync/codelyncLoadingProgress';
 import { nativeCachedReadControlsUnavailable } from './nativeCachedRead';
 
 export type NativeSessionReadNotice = 'checking' | 'read-failed' | 'source-unavailable' | null;

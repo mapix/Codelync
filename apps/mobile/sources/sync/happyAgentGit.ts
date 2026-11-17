@@ -6,12 +6,12 @@ import { isRigMetadataV1 } from './rig';
 import { storage } from './storage';
 import type { Metadata } from './storageTypes';
 
-const HAPPY_AGENT_GIT_RPC_METHODS = ['gitState', 'readFile', 'readFileAtRevision'] as const;
-const HAPPY_AGENT_GIT_REVISION_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
-const HAPPY_AGENT_GIT_MAX_BYTES = 512 * 1024;
-const HAPPY_AGENT_GIT_MAX_TEXT_LINES = 20_000;
+const CODELYNC_AGENT_GIT_RPC_METHODS = ['gitState', 'readFile', 'readFileAtRevision'] as const;
+const CODELYNC_AGENT_GIT_REVISION_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const CODELYNC_AGENT_GIT_MAX_BYTES = 512 * 1024;
+const CODELYNC_AGENT_GIT_MAX_TEXT_LINES = 20_000;
 
-const HAPPY_AGENT_GIT_FILE_STATUSES = [
+const CODELYNC_AGENT_GIT_FILE_STATUSES = [
     'added',
     'conflicted',
     'copied',
@@ -35,7 +35,7 @@ const HappyAgentGitFactsSchema = z.object({
 export const HappyAgentGitFileSchema = z.object({
     path: z.string().min(1),
     previousPath: z.string().min(1).optional(),
-    status: z.enum(HAPPY_AGENT_GIT_FILE_STATUSES),
+    status: z.enum(CODELYNC_AGENT_GIT_FILE_STATUSES),
     staged: z.boolean(),
     unstaged: z.boolean(),
     binary: z.boolean(),
@@ -48,7 +48,7 @@ export type HappyAgentGitFile = z.infer<typeof HappyAgentGitFileSchema>;
 export const HappyAgentGitStateSchema = z.object({
     facts: HappyAgentGitFactsSchema,
     comparison: z.enum(['ready', 'unavailable']),
-    base: z.string().regex(HAPPY_AGENT_GIT_REVISION_PATTERN).nullable(),
+    base: z.string().regex(CODELYNC_AGENT_GIT_REVISION_PATTERN).nullable(),
     changedFiles: z.number().int().nonnegative(),
     insertions: z.number().int().nonnegative(),
     deletions: z.number().int().nonnegative(),
@@ -130,7 +130,7 @@ function requireSupportedSession(sessionId: string): void {
 }
 
 function parseGitRevision(value: string): boolean {
-    return HAPPY_AGENT_GIT_REVISION_PATTERN.test(value);
+    return CODELYNC_AGENT_GIT_REVISION_PATTERN.test(value);
 }
 
 function parseFailureOrThrow<T extends { success: boolean }>(
@@ -149,7 +149,7 @@ export function supportsHappyAgentGit(metadata: Metadata | null | undefined): bo
     const capabilities = metadata?.capabilities;
     return capabilities?.files?.read === true
         && Array.isArray(capabilities.rpcMethods)
-        && HAPPY_AGENT_GIT_RPC_METHODS.every((method) => capabilities.rpcMethods.includes(method));
+        && CODELYNC_AGENT_GIT_RPC_METHODS.every((method) => capabilities.rpcMethods.includes(method));
 }
 
 /** Fetches and validates one native Git snapshot for a session. */
@@ -246,9 +246,9 @@ function countTextLinesWithin(text: string, maximum: number): number | null {
 }
 
 function hasTooManyTextLines(oldText: string, newText: string): boolean {
-    const oldLines = countTextLinesWithin(oldText, HAPPY_AGENT_GIT_MAX_TEXT_LINES);
+    const oldLines = countTextLinesWithin(oldText, CODELYNC_AGENT_GIT_MAX_TEXT_LINES);
     if (oldLines === null) return true;
-    return countTextLinesWithin(newText, HAPPY_AGENT_GIT_MAX_TEXT_LINES - oldLines) === null;
+    return countTextLinesWithin(newText, CODELYNC_AGENT_GIT_MAX_TEXT_LINES - oldLines) === null;
 }
 
 async function readSide(
@@ -330,7 +330,7 @@ export async function readHappyAgentGitFile(
             if (!inspected) {
                 throw new Error('Happy Agent returned invalid file contents.');
             }
-            if (inspected.decodedBytes > HAPPY_AGENT_GIT_MAX_BYTES) {
+            if (inspected.decodedBytes > CODELYNC_AGENT_GIT_MAX_BYTES) {
                 throw new Error('This file is too large to preview on the phone.');
             }
             if (inspected.decodedBytes === 0) {
@@ -349,7 +349,7 @@ export async function readHappyAgentGitFile(
     if (!oldBytes || !newBytes) {
         throw new Error('Happy Agent returned invalid file contents.');
     }
-    if (oldBytes.decodedBytes > HAPPY_AGENT_GIT_MAX_BYTES || newBytes.decodedBytes > HAPPY_AGENT_GIT_MAX_BYTES) {
+    if (oldBytes.decodedBytes > CODELYNC_AGENT_GIT_MAX_BYTES || newBytes.decodedBytes > CODELYNC_AGENT_GIT_MAX_BYTES) {
         throw new Error('This file is too large to preview on the phone.');
     }
     const oldText = decodeUtf8(oldBytes);

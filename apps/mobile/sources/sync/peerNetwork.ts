@@ -3,12 +3,40 @@ import { getRandomBytes } from 'expo-crypto';
 import { decodeBase64, encodeBase64 } from '@/encryption/base64';
 import { openPeerBox } from '@/encryption/openPeerBox';
 import { decodePeerText } from '@/encryption/decodePeerText';
-import { channelPath, type PeerCredentials } from '@slopus/happy-wire/codelight';
+import { channelPath, type PeerCredentials } from '@codelync/wire/codelync';
 import type { AuthCredentials } from '@/auth/tokenStorage';
 import { isSameServerEndpoint } from '@/utils/serverOrigin';
-import { decodeCompactPeerPlaintext, inspectCompactPeerPlaintext, parseCompactPeerJson, PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_CODEC_VALUE, PEER_RESPONSE_MAX_BYTES } from '@slopus/happy-wire/peer-codec';
-import type { PeerDecodeObserver, PeerDecodeStage } from '@slopus/happy-wire/peer-codec';
+import { decodeCompactPeerPlaintext, inspectCompactPeerPlaintext, parseCompactPeerJson, PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_CODEC_VALUE, PEER_RESPONSE_MAX_BYTES } from '@codelync/wire/peer-codec';
+import type { PeerDecodeObserver, PeerDecodeStage } from '@codelync/wire/peer-codec';
 import { decodeNativePeerPayload, nativePeerPayloadAvailable } from '@/encryption/nativePeerPayload';
+
+let routeWriteRevision = 0;
+let routeWriteFence: PeerCredentials | null = null;
+let admittedWriteOrigin: string | null = null;
+const READ_RPC_METHODS = new Set(['bridge-receipt', 'codelync-receipt', 'codex-controls-read', 'native-image-read',
+    'native-task-read', 'native-task-log-read', 'native-task-output-read']);
+function samePeerDevice(a: PeerCredentials, b: PeerCredentials) {
+    return a.id === b.id && a.key === b.key && a.device.publicKey === b.device.publicKey && a.device.secretKey === b.device.secretKey;
+}
+/** Local intent only. This state never grants a route or changes wire credentials. */
+export function setPeerRouteWriteFence(peer: PeerCredentials | null, admittedOrigin: string | null = null) { routeWriteRevision++; routeWriteFence = peer; admittedWriteOrigin = admittedOrigin; }
+export function peerRouteWritable(peer: PeerCredentials, origin?: string): boolean {
+    return !routeWriteFence || !samePeerDevice(routeWriteFence, peer) || admittedWriteOrigin !== null && (origin === undefined || origin === admittedWriteOrigin);
+}
+export function peerRouteWriteRevision() { return routeWriteRevision; }
+export function assertPeerRouteWrite(peer: PeerCredentials, method: string, revision?: number, origin?: string) {
+    if (READ_RPC_METHODS.has(method)) return;
+    if (!peerRouteWritable(peer, origin) || revision !== undefined && revision !== routeWriteRevision) {
+        throw Object.assign(Error('The selected connection is not ready for sending'), { code: 'preferred-route-unavailable', effectMayHaveOccurred: false });
+    }
+}
+function assertPeerHttpRouteWrite(peer: PeerCredentials, method: string, path: string, origin: string) {
+    path = path.split('?')[0];
+    if (method === 'GET' || method === 'HEAD' || method === 'POST' && ['/api/peer/activity', '/api/peer/desktop/heartbeat',
+        '/api/peer/desktop/ready', '/api/peer/desktop/leave', '/api/peer/desktop/displays'].includes(path)
+        || method === 'POST' && /^\/api\/peer\/sessions\/[^/]+\/recent$/.test(path)) return;
+    assertPeerRouteWrite(peer, path, undefined, origin);
+}
 
 function decodeStage<T>(stage: PeerDecodeStage, read: () => T, observer?: PeerDecodeObserver): T {
     if (!observer) return read();
@@ -35,11 +63,12 @@ export function sealPeerRequest(peer: PeerCredentials, payload: Record<string, u
 
 export function peerAuthorization(token: string, peer: PeerCredentials, origin: string, method: string, url: string): string {
     if (!peer.channels.some(channel => channel.url === origin)) throw Error('The selected channel does not belong to this Mac');
+    assertPeerHttpRouteWrite(peer, method, channelPath(origin, url), origin);
     // 冷启动 sync 早于 PairingProvider：nonce 直接取系统安全随机源，不能依赖界面安装全局 PRNG。
     const nonce = getRandomBytes(24);
     const payload = new TextEncoder().encode(JSON.stringify({ version: 2, token, origin, method, path: channelPath(origin, url), at: Date.now() }));
     const ciphertext = nacl.box(payload, nonce, decodeBase64(peer.key, 'base64url'), decodeBase64(peer.device.secretKey, 'base64url'));
-    return 'CodeLight ' + encodeBase64(new TextEncoder().encode(JSON.stringify({ publicKey: peer.device.publicKey, nonce: encodeBase64(nonce, 'base64url'), ciphertext: encodeBase64(ciphertext, 'base64url') })), 'base64url');
+    return 'Codelync ' + encodeBase64(new TextEncoder().encode(JSON.stringify({ publicKey: peer.device.publicKey, nonce: encodeBase64(nonce, 'base64url'), ciphertext: encodeBase64(ciphertext, 'base64url') })), 'base64url');
 }
 export function credentialHeaders(credentials:AuthCredentials,url:string,method:string,base:string):Record<string,string> {
     if(credentials.peer){

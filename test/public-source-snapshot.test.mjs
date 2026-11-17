@@ -7,12 +7,13 @@ import { copyPublicSourceSnapshot, publicSourcePath } from '../src/release/sourc
 
 test('public source keeps current standalone inputs and excludes credentials and deferred prototype artifacts', () => {
   for (const name of ['apps/mobile/package.json', 'apps/mobile/sources/App.tsx', 'src/network/relay-server.mjs', 'packages/relay/.env.example', '.github/workflows/verify.yml', 'patches/image-size@1.2.1.patch', 'README.zh-CN.md']) assert.equal(publicSourcePath(name), true, name);
-  for (const name of ['src/network-access.json', 'src/network-identity.json', 'apps/mobile/.xcode.env.local', 'src/key.pem', 'src/private/state.json', 'native/bin/helper', 'native/codelight-qa/Tests.swift', 'website/release.json', 'website/downloads/app.zip', 'apps/mobile/google-services.json', 'scripts/package.mjs', 'spec/delivery.md', 'spec/native-mobile-app.md', 'spec/native-mobile-transport.md', 'research/extracted.js', 'clients/happy/package.json', 'src/../account.json', 'src/.env', 'src/WORKLOG-private.md', 'docs/tasks/private-device-review.md']) assert.equal(publicSourcePath(name), false, name);
+  for (const name of ['src/network-access.json', 'src/network-identity.json', 'apps/mobile/.xcode.env.local', 'src/key.pem', 'src/private/state.json', 'native/bin/helper', 'native/codelync-qa/Tests.swift', 'website/release.json', 'website/downloads/app.zip', 'apps/mobile/google-services.json', 'scripts/package.mjs', 'spec/delivery.md', 'spec/native-mobile-app.md', 'spec/native-mobile-transport.md', 'research/extracted.js', 'clients/happy/package.json', 'src/../account.json', 'src/.env', 'src/WORKLOG-private.md', 'docs/tasks/private-device-review.md']) assert.equal(publicSourcePath(name), false, name);
   for (const name of ['src/._private-note', 'src/__MACOSX/private-metadata']) assert.equal(publicSourcePath(name), false, name);
+  for (const name of ['native/codelight-qa/Tests.swift', 'native/codelight-native-worker-qa/Tests/Private.swift', 'native/codelync-native-worker-qa/Tests/Private.swift']) assert.equal(publicSourcePath(name), false, name);
 });
 
 test('public source excludes private task notes while preserving the original and curated documentation', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-task-note-')), root = join(directory, 'input'), stage = join(directory, 'stage');
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-task-note-')), root = join(directory, 'input'), stage = join(directory, 'stage');
   t.after(() => rm(directory, { recursive: true, force: true }));
   for (const name of ['docs/tasks/device-notes.md', 'docs/verification/public-source.md']) {
     await mkdir(dirname(join(root, name)), { recursive: true });
@@ -25,7 +26,7 @@ test('public source excludes private task notes while preserving the original an
 });
 
 test('a public source snapshot preserves task deletions and fails closed on external symlinks', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-public-source-')), root = join(directory, 'input'), stage = join(directory, 'stage');
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-public-source-')), root = join(directory, 'input'), stage = join(directory, 'stage');
   t.after(() => rm(directory, { recursive: true, force: true }));
     for (const name of ['package.json', 'src/network/relay-server.mjs', 'src/network-access.json', 'src/connection-channels.json']) {
     await mkdir(dirname(join(root, name)), { recursive: true });

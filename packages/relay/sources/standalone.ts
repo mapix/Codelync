@@ -113,18 +113,18 @@ async function serve() {
     process.env.DB_PROVIDER = process.env.DB_PROVIDER || "pglite";
     process.env.PGLITE_DIR = process.env.PGLITE_DIR || pgliteDir;
 
-    const masterSecret = process.env.HANDY_MASTER_SECRET;
+    const masterSecret = process.env.CODELYNC_MASTER_SECRET;
     if (!masterSecret) {
-        throw new Error("HANDY_MASTER_SECRET is required");
+        throw new Error("CODELYNC_MASTER_SECRET is required");
     }
 
     const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3005;
     const host = process.env.HOST || "0.0.0.0";
     const staticDir = findStaticDir();
     let injectHtmlConfig: Record<string, unknown> | undefined;
-    if (process.env.HAPPY_INJECT_HTML_CONFIG) {
+    if (process.env.CODELYNC_INJECT_HTML_CONFIG) {
         try {
-            injectHtmlConfig = JSON.parse(process.env.HAPPY_INJECT_HTML_CONFIG);
+            injectHtmlConfig = JSON.parse(process.env.CODELYNC_INJECT_HTML_CONFIG);
         } catch {
             // ignore malformed input
         }
@@ -148,7 +148,7 @@ async function serve() {
 
 function findStaticDir(): string | undefined {
     const candidates = [
-        process.env.HAPPY_STATIC_DIR,
+        process.env.CODELYNC_STATIC_DIR,
         path.join(process.cwd(), "webapp"),
         path.join(path.dirname(process.execPath), "webapp"),
     ].filter(Boolean) as string[];
@@ -212,7 +212,7 @@ Environment variables:
   DATABASE_URL      PostgreSQL URL (if set, uses external Postgres instead of PGlite)
   REDIS_URL         Redis URL (optional, not required for standalone)
   PORT              Server port (default: 3005)
-  HANDY_MASTER_SECRET  Required: master secret for auth/encryption
+  CODELYNC_MASTER_SECRET  Required: master secret for auth/encryption
 `);
             process.exit(command === "--help" || command === "-h" ? 0 : 1);
     }

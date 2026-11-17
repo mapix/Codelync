@@ -23,7 +23,7 @@ export function useConnectTerminal(options?: UseConnectTerminalOptions) {
     const checkScannerPermissions = useCheckScannerPermissions();
 
     const processAuthUrl = React.useCallback(async (url: string) => {
-        const prefix = url.startsWith('codelight://terminal?') ? 'codelight://terminal?' : 'happy://terminal?';
+        const prefix = url.startsWith('codelync://terminal?') ? 'codelync://terminal?' : 'happy://terminal?';
         if (!url.startsWith(prefix)) {
             Modal.alert(t('common.error'), t('modals.invalidAuthUrl'), [{ text: t('common.ok') }]);
             return false;
@@ -53,7 +53,7 @@ export function useConnectTerminal(options?: UseConnectTerminalOptions) {
             if (options?.onError) {
                 options.onError(e);
             } else {
-                Modal.alert(t('common.error'), t('codeLightSetup.pairFailed'), [{ text: t('common.ok') }]);
+                Modal.alert(t('common.error'), t('codelyncSetup.pairFailed'), [{ text: t('common.ok') }]);
             }
             return false;
         } finally {
@@ -82,7 +82,7 @@ export function useConnectTerminal(options?: UseConnectTerminalOptions) {
         if (CameraView.isModernBarcodeScannerAvailable) {
             const subscription = CameraView.onModernBarcodeScanned(async (event) => {
                 if (isProcessingRef.current) return;
-                if (event.data.startsWith('happy://terminal?') || event.data.startsWith('codelight://terminal?')) {
+                if (event.data.startsWith('happy://terminal?') || event.data.startsWith('codelync://terminal?')) {
                     isProcessingRef.current = true;
                     try {
                         if (Platform.OS === 'ios') {

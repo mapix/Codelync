@@ -94,14 +94,14 @@ afterEach(() => {
 });
 
 function nativeMetadata(text: string, stamp = 100): Metadata {
-    return metadata({ client: { id: 'noninvasive-bridge', name: 'CodeLight', version: '0.6.0' },
+    return metadata({ client: { id: 'noninvasive-bridge', name: 'Codelync', version: '0.6.0' },
         bridge: { version: 1, source: { app: 'codex', id: 'native-root', hostId: 'local', kind: 'session', runtimeGeneration: 'owner', windowGeneration: null },
             controlMode: 'session', sourceStatus: 'connected', currentTurnId: null },
         nativeSession: { title: 'Root', updatedAt: 1, parentId: null, agentName: '', preview: '', isPinned: false, catalogueAvailable: true },
         draft: { ...lastMode, text }, draftUpdatedAt: stamp });
 }
 
-describe('CodeLight native drafts with the real compatible Rig metadata predicate', () => {
+describe('Codelync native drafts with the real compatible Rig metadata predicate', () => {
     it('preserves staged local text through recent/observer metadata and reconnect without metadata writes', async () => {
         const native = nativeMetadata('OLD_PREFIX');
         expect(isRigMetadataV1(native)).toBe(true);

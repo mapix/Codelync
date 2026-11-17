@@ -1,4 +1,4 @@
-title = "CodeLight source release secret scanning"
+title = "Codelync source release secret scanning"
 
 [extend]
 useDefault = true

@@ -2,9 +2,9 @@ import { readdir, lstat, mkdir, copyFile, chmod, readFile, writeFile } from 'nod
 import { join, dirname, relative } from 'node:path';
 
 export const ROOT_ENTRIES = ['src', 'scripts', 'spec', 'test', 'native', 'public', 'deployments', 'package.json', 'package-lock.json',
-  'README.md', 'CODELIGHT-MAC.md', 'CODELIGHT-DELIVERY.md', 'THIRD-PARTY-NOTICES.md', 'start-codelight.sh', 'tsconfig.json', 'eslint.config.mjs'];
-export const HAPPY_PACKAGES = new Set(['happy-app', 'happy-agent', 'happy-cli', 'happy-server', 'happy-server-self-host', 'happy-wire', 'happy-app-logs', 'happy-mobile-gym', 'expo-tailcat']);
-export const HAPPY_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.gitignore', 'LICENSE', 'AGENTS.md', 'Dockerfile', 'tsconfig.json'];
+  'README.md', 'CODELYNC-MAC.md', 'CODELYNC-DELIVERY.md', 'THIRD-PARTY-NOTICES.md', 'start-codelync.sh', 'tsconfig.json', 'eslint.config.mjs'];
+export const CODELYNC_PACKAGES = new Set(['happy-app', 'happy-agent', 'happy-cli', 'happy-server', 'happy-server-self-host', 'happy-wire', 'happy-app-logs', 'happy-mobile-gym', 'expo-tailcat']);
+export const CODELYNC_FILES = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.gitignore', 'LICENSE', 'AGENTS.md', 'Dockerfile', 'tsconfig.json'];
 const EXCLUDED_DIRS = new Set(['private', 'evidence', 'data', 'research', 'deliverables', 'mobile', 'trash', '.trash', 'node_modules', 'Pods', 'build', 'dist', 'target', 'out', 'DerivedData', '.git', '.gradle', '.expo', '.cxx', '.module-cache', '.build', '__pycache__', 'xcuserdata', '.environments', '.context', '.claude', '.cache', '.turbo', 'coverage', 'logs', 'archives']);
 const FORBIDDEN_EXTENSIONS = /\.(?:log|sqlite(?:-wal|-shm)?|db|pcap|pcapng|xcresult|ipa|apk|mobileprovision|p8|p12|jks|pem|key|tsbuildinfo|xcuserstate)$/iu;
 const PRIVATE_NAMES = new Set(['account.json', 'machine.json', 'paired-clients.json', 'command-receipts.json', 'credentials.json', '.DS_Store', '.xcode.env.local', 'server.env', 'client.env', '.cursorrules', '.windsurfrules']);
@@ -14,14 +14,14 @@ const OBSOLETE_PRODUCT_SPECS = new Set(['spec/delivery.md', 'spec/native-mobile-
 export function forbiddenSourcePath(name) {
   const parts = name.replaceAll('\\', '/').split('/');
   const normalized = parts.join('/');
-  if (OBSOLETE_PRODUCT_SPECS.has(normalized) || normalized.startsWith('CodeLight/') && OBSOLETE_PRODUCT_SPECS.has(normalized.slice('CodeLight/'.length))) return true;
-  if (/(?:^|\/)native\/(?:codelight-native-worker-qa|codelight-qa)(?:\/|$)|(?:^|\/)scripts\/package\.mjs$/u.test(normalized)) return true;
+  if (OBSOLETE_PRODUCT_SPECS.has(normalized) || normalized.startsWith('Codelync/') && OBSOLETE_PRODUCT_SPECS.has(normalized.slice('Codelync/'.length))) return true;
+  if (/(?:^|\/)native\/(?:codelync-native-worker-qa|codelync-qa)(?:\/|$)|(?:^|\/)scripts\/package\.mjs$/u.test(normalized)) return true;
   return parts.some(part => EXCLUDED_DIRS.has(part) || part.startsWith('.env') || /^WORKLOG.*\.md$/iu.test(part) || PRIVATE_NAMES.has(part) || part.endsWith('-binding.json') || /\.(?:app|framework|xcframework|xcarchive|bundle|xcresult)$/iu.test(part)) || FORBIDDEN_EXTENSIONS.test(name);
 }
 
 /** Positive allowlist copy. Symlinks are rejected instead of following a path out of the source root.
  * @param {string} root @param {string} staging @param {{happyFiles?:string[]}} [options] */
-export async function copyCodeLightSource(root, staging, options = {}) {
+export async function copyCodelyncSource(root, staging, options = {}) {
   /** @type {string[]} */ const files = [];
   /** @type {string[]} */ const skipped = [];
   /** @type {{file:string, removedScripts:string[]}[]} */ const transformations = [];
@@ -50,7 +50,7 @@ export async function copyCodeLightSource(root, staging, options = {}) {
     }
   };
   for (const entry of ROOT_ENTRIES) await copy(entry);
-  for (const entry of options.happyFiles ?? HAPPY_FILES) {
+  for (const entry of options.happyFiles ?? CODELYNC_FILES) {
     const name = entry.replaceAll('\\', '/');
     if (name.startsWith('/') || name.split('/').includes('..')) throw Error('Invalid Happy source-list path.');
     await copy(join('clients', 'happy', name));

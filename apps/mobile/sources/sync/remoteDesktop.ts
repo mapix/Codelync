@@ -51,6 +51,7 @@ export async function desktopRequest<T>(action: string, value: Record<string, un
         return result as T;
     } catch (error) {
         if (error instanceof DesktopRequestError) throw error;
+        if ((error as { code?: string })?.code === 'preferred-route-unavailable') throw Object.assign(new DesktopRequestError('preferred-route-unavailable'), { effectMayHaveOccurred: false });
         throw new DesktopRequestError(action === 'input' || action === 'space' ? 'desktop-operation-unknown' : 'desktop-relay-unavailable');
     } finally { clearTimeout(timeout); }
 }

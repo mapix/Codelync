@@ -20,7 +20,7 @@ export async function validateRelayAddress(/** @type {string} */ address, /** @t
   try { for (;;) { const { value, done } = await reader.read(); if (done) break; bytes += value.length; if (bytes > 4096) throw Error('invalid-relay-service'); text += Buffer.from(value).toString('utf8'); } }
   finally { await reader.cancel().catch(() => {}); }
   const info = JSON.parse(text);
-  if (info.service !== 'codelight-network-relay' || info.version !== 1 || info.http !== true || info.websocket !== true || info.requiresToken !== true) throw Error('invalid-relay-service');
+  if (info.service !== 'codelync-network-relay' || info.version !== 1 || info.http !== true || info.websocket !== true || info.requiresToken !== true) throw Error('invalid-relay-service');
   return origin;
 }
 

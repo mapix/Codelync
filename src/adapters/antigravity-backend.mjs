@@ -11,7 +11,7 @@ import { antigravitySubagentIdentity, antigravitySubagentIndex, projectAntigravi
   antigravitySummaryHasWork } from './antigravity-subagents.mjs';
 import { AntigravitySummaryStream } from './antigravity-summary-stream.mjs';
 import { aggregateNativeActivity } from './native-aggregate-activity.mjs';
-import { resolveLocalGitProjects } from '../happy/project-identity.mjs';
+import { resolveLocalGitProjects } from '../codelync/project-identity.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const ACTIVE = new Set(['CASCADE_RUN_STATUS_RUNNING', 'CASCADE_RUN_STATUS_CANCELING', 'CASCADE_RUN_STATUS_BUSY', 2, 3, 4]);
@@ -655,7 +655,7 @@ export class AntigravityBackend {
       if (action === 'send' && view.currentTurnId !== null || action === 'steer' && view.currentTurnId === null) throw new BridgeError('stale-turn', 'The original Antigravity invocation changed.', 409);
       const message = await this.settings.message(id, view, payload, context);
       await this.rpc.call('SendUserCascadeMessage', { cascadeId: id, items: message.items, ...(message.cascadeConfig ? { cascadeConfig: message.cascadeConfig } : {}), clientMessageId: commandId,
-        remoteControlDetails: { userAgent: 'CodeLight' }, ...(action === 'steer' ? { deliveryStrategy: 'MESSAGE_DELIVERY_STRATEGY_NEXT_INVOCATION' } : {}) }, nativeOptions);
+        remoteControlDetails: { userAgent: 'Codelync' }, ...(action === 'steer' ? { deliveryStrategy: 'MESSAGE_DELIVERY_STRATEGY_NEXT_INVOCATION' } : {}) }, nativeOptions);
       const admitted = await this.readAfterDispatch(id, generation, context);
       const original = admitted.rows.find((/** @type {Value} */ row) => row.role === 'user' && row.commandId === commandId && !['failed', 'rejected'].includes(row.inputStatus));
       if (original) {

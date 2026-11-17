@@ -1,29 +1,29 @@
 {
-  "name": "codelight",
-  "version": "0.7.2",
-  "codelightBuild": "2026111702",
+  "name": "codelync",
+  "version": "1.0.0",
+  "codelyncBuild": "2026111705",
   "private": true,
   "type": "module",
-  "description": "CodeLight native mobile access to existing Codex, Antigravity Desktop and Claude Desktop Gateway sessions",
+  "description": "Codelync phone companion for existing Codex, Antigravity Desktop and Claude Desktop sessions in Gateway setups",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "security:release": "node scripts/audit-public-release.mjs",
-    "start": "node scripts/codelight-daemon.mjs",
+    "start": "node scripts/codelync-daemon.mjs",
     "test": "node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src scripts test public",
     "verify": "npm run typecheck && npm run lint && npm test",
-    "package": "node scripts/package-codelight.mjs",
+    "package": "node scripts/package-codelync.mjs",
     "start:legacy": "node scripts/launch.mjs",
-    "package:codelight": "node scripts/package-codelight.mjs",
-    "package:source": "node scripts/package-codelight.mjs --source-only",
+    "package:codelync": "node scripts/package-codelync.mjs",
+    "package:source": "node scripts/package-codelync.mjs --source-only",
     "postinstall": "node scripts/postinstall.cjs",
-    "typecheck:mobile": "pnpm --filter @codelight/mobile typecheck",
-    "typecheck:relay": "pnpm --filter @codelight/relay typecheck:prod",
+    "typecheck:mobile": "pnpm --filter @codelync/mobile typecheck",
+    "typecheck:relay": "pnpm --filter @codelync/relay typecheck:prod",
     "typecheck:all": "pnpm typecheck && pnpm typecheck:mobile && pnpm typecheck:relay",
-    "dev:mobile": "pnpm --filter @codelight/mobile start",
+    "dev:mobile": "pnpm --filter @codelync/mobile start",
     "build:mac": "node scripts/build-mac-app.mjs",
     "build:mobile": "node scripts/build-mobile.mjs",
     "build:native": "sh native/build.sh && node scripts/build-desktop-runtime.mjs",
@@ -38,7 +38,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "@slopus/happy-wire": "workspace:*",
+    "@codelync/wire": "workspace:*",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "livekit-server-sdk": "2.20.0",
@@ -53,6 +53,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mapix/CodeLight.git"
+    "url": "https://github.com/mapix/Codelync.git"
   }
 }

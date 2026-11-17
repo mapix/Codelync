@@ -2,7 +2,7 @@ const { readFileSync, writeFileSync, mkdirSync, statSync } = require('node:fs');
 const { dirname, isAbsolute } = require('node:path');
 const { randomBytes, createCipheriv, createDecipheriv } = require('node:crypto');
 
-const MAGIC = Buffer.from('codelight-claude-probe-v1\0');
+const MAGIC = Buffer.from('codelync-claude-probe-v1\0');
 
 /** Probe-only encryption; no OS/login keychain or target-code side effects. */
 function createProbeEncryption(keyPath) {
@@ -19,7 +19,7 @@ function createProbeEncryption(keyPath) {
     if (key.length !== 32) throw Error('The private probe key has an invalid size');
     return {
         isEncryptionAvailable: () => true,
-        getSelectedStorageBackend: () => 'codelight-private-file',
+        getSelectedStorageBackend: () => 'codelync-private-file',
         encryptString: (value) => {
             const nonce = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, nonce);
             return Buffer.concat([MAGIC, nonce, cipher.update(String(value), 'utf8'), cipher.final(), cipher.getAuthTag()]);

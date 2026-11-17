@@ -1,4 +1,4 @@
-# CodeLight 0.5 release preparation
+# Codelync 0.5 release preparation
 
 ## Scope
 

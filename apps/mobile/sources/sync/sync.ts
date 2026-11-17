@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import { apiSocket, getCurrentAppState, getHappyClientId } from '@/sync/apiSocket';
+import { apiSocket, getCurrentAppState, getCodelyncClientId } from '@/sync/apiSocket';
 import { notifyUnreadMessage } from '@/sync/webTabTitle';
 import { AuthCredentials } from '@/auth/tokenStorage';
 import { Encryption } from '@/sync/encryption/encryption';
@@ -48,19 +48,19 @@ import { RevenueCat, LogLevel, PaywallResult } from './revenueCat';
 import { getServerUrl } from './serverConfig';
 import { InitializationGate } from './initializationGate';
 import { canSendToNoninvasiveSource, isNoninvasiveBridge } from './noninvasiveBridge';
-import { isCodeLightSessionIdentity } from '@/utils/codeLightSourceScope';
+import { isCodelyncSessionIdentity } from '@/utils/codelyncSourceScope';
 import { config } from '@/config';
-import { fetchCodeLightSessionPages, mergeCodeLightCatalog } from './codeLightSessionPages';
-import { activateCodeLightSource } from './codeLightSourceActivation';
-import { codeLightAccountScope, loadCodeLightBackgroundCache, saveCodeLightBackgroundCache, rememberCodeLightSession } from './codeLightBackgroundCache';
-import { registerCodeLightBackgroundTask } from './codeLightBackgroundTask';
-import { startCodeLightPresence, renewCodeLightPresence } from './codeLightNotifications';
-import { selectCodeLightSession } from './codeLightSessionSelection';
-import { codeLightLoadingProgress } from './codeLightLoadingProgress';
-import { nativeRecentMessages, peerDescriptorSession, cachedPeerDescriptorSession, peerRecentIsCached, isCurrentNativeRecent, type PeerRecentWindow, type PeerSessionDescriptor } from './codeLightRecent';
+import { fetchCodelyncSessionPages, mergeCodelyncCatalog } from './codelyncSessionPages';
+import { activateCodelyncSource } from './codelyncSourceActivation';
+import { codelyncAccountScope, loadCodelyncBackgroundCache, saveCodelyncBackgroundCache, rememberCodelyncSession } from './codelyncBackgroundCache';
+import { registerCodelyncBackgroundTask } from './codelyncBackgroundTask';
+import { startCodelyncPresence, renewCodelyncPresence } from './codelyncNotifications';
+import { selectCodelyncSession } from './codelyncSessionSelection';
+import { codelyncLoadingProgress } from './codelyncLoadingProgress';
+import { nativeRecentMessages, peerDescriptorSession, cachedPeerDescriptorSession, peerRecentIsCached, isCurrentNativeRecent, type PeerRecentWindow, type PeerSessionDescriptor } from './codelyncRecent';
 import { captureNativeDispatchContext, matchesNativeDispatchContext } from '@/utils/nativeDispatchContext';
-import { loadCodeLightPeerCatalog, loadCodeLightPeerCatalogState, saveCodeLightPeerCatalog } from './codeLightPeerCatalogCache';
-import { CodeLightPeerCatalogDelta, reconcileCodeLightCatalogSessions } from './codeLightPeerCatalogDelta';
+import { loadCodelyncPeerCatalog, loadCodelyncPeerCatalogState, saveCodelyncPeerCatalog } from './codelyncPeerCatalogCache';
+import { CodelyncPeerCatalogDelta, reconcileCodelyncCatalogSessions } from './codelyncPeerCatalogDelta';
 import { log } from '@/log';
 import { gitStatusSync } from './gitStatusSync';
 import { AsyncLock } from '@/utils/lock';
@@ -159,23 +159,23 @@ class Sync {
     private credentials!: AuthCredentials;
     public encryptionCache = new EncryptionCache();
     private sessionsSync: InvalidateSync;
-    private codeLightActivity = new Map<string, { seq: number; updatedAt: number; thinking?: boolean }>();
-    private codeLightActivityTimer: ReturnType<typeof setTimeout> | null = null;
+    private codelyncActivity = new Map<string, { seq: number; updatedAt: number; thinking?: boolean }>();
+    private codelyncActivityTimer: ReturnType<typeof setTimeout> | null = null;
     private projectsSync: InvalidateSync;
     private messagesSync = new Map<string, InvalidateSync>();
     private messagePreloader = new SessionMessagePreloader((sessionId, signal) => this.preloadLatestPage(sessionId, signal));
     private historyPrefetchSessions = new Set<string>();
-    private codeLightCacheHydrated = false;
-    private codeLightDiscoveryAbort: AbortController | null = null;
-    private codeLightCachedMessages = new Set<string>();
-    private codeLightEntryFlights = new Map<string, { credentials: AuthCredentials; selected: boolean; promise: Promise<void> }>();
-    private codeLightPeerReadFlights = new Map<string, { credentials: AuthCredentials; promise: Promise<void> }>();
-    private codeLightPeerRevalidations = new Map<string, { credentials: AuthCredentials; promise: Promise<void> }>();
+    private codelyncCacheHydrated = false;
+    private codelyncDiscoveryAbort: AbortController | null = null;
+    private codelyncCachedMessages = new Set<string>();
+    private codelyncEntryFlights = new Map<string, { credentials: AuthCredentials; selected: boolean; promise: Promise<void> }>();
+    private codelyncPeerReadFlights = new Map<string, { credentials: AuthCredentials; promise: Promise<void> }>();
+    private codelyncPeerRevalidations = new Map<string, { credentials: AuthCredentials; promise: Promise<void> }>();
     private releaseReconnectSubscription: (() => void) | null = null;
     private releasePeerLiveSubscription: (() => void) | null = null;
-    private codeLightPeerLiveMetadata = new Map<string, { credentials: AuthCredentials; signature: string; version: number }>();
-    private codeLightHistoryCursors = new Map<string, string | null>();
-    private codeLightHistoryOwners = new Map<string, string | null>();
+    private codelyncPeerLiveMetadata = new Map<string, { credentials: AuthCredentials; signature: string; version: number }>();
+    private codelyncHistoryCursors = new Map<string, string | null>();
+    private codelyncHistoryOwners = new Map<string, string | null>();
     private olderMessagesPrefetching = new Set<string>();
     private olderMessagesPrefetchAttempts = new Map<string, number>();
     private preloadedPlanModes = new Map<string, Session['permissionMode']>();
@@ -250,6 +250,9 @@ class Sync {
             await this.registerPushToken();
         }
         this.pushTokenSync = new InvalidateSync(registerPushToken);
+        if (config.noninvasiveLocal && Platform.OS === 'ios' && typeof Notifications.addPushTokenListener === 'function') {
+            Notifications.addPushTokenListener(() => { if (AppState.currentState === 'active') this.pushTokenSync.invalidate(); });
+        }
         this.activityAccumulator = new ActivityUpdateAccumulator(this.flushActivityUpdates.bind(this), 2000);
 
         // Listen for app state changes to refresh purchases
@@ -354,22 +357,22 @@ class Sync {
     }
 
     async #init() {
-        this.codeLightPeerLiveMetadata.clear();
-        if (this.codeLightActivityTimer) clearTimeout(this.codeLightActivityTimer);
-        this.codeLightActivityTimer = null; this.codeLightActivity.clear();
+        this.codelyncPeerLiveMetadata.clear();
+        if (this.codelyncActivityTimer) clearTimeout(this.codelyncActivityTimer);
+        this.codelyncActivityTimer = null; this.codelyncActivity.clear();
 
         if (config.noninvasiveLocal) {
-            codeLightLoadingProgress.queueDiscovery();
-            if (this.hasCodeLightPeer() && this.credentials) {
-                const credentials = this.credentials, cached = await loadCodeLightPeerCatalog(credentials);
+            codelyncLoadingProgress.queueDiscovery();
+            if (this.hasCodelyncPeer() && this.credentials) {
+                const credentials = this.credentials, cached = await loadCodelyncPeerCatalog(credentials);
                 // 同账户的目录先恢复成可浏览行；不用等待标题网络请求，也不据缓存恢复 runtime 活跃事实。
                 if (this.credentials === credentials) {
                     this.applySessions(cached.map(value => peerDescriptorSession(value, storage.getState().sessions[value.id], true)), { nativeCatalog: 'cached' });
                     storage.getState().applyReady();
                 }
             }
-            void registerCodeLightBackgroundTask().catch(() => {});
-            startCodeLightPresence(this.credentials, () => storage.getState().currentViewingSessionId, callback => storage.subscribe(callback));
+            void registerCodelyncBackgroundTask().catch(() => {});
+            startCodelyncPresence(this.credentials, () => storage.getState().currentViewingSessionId, callback => storage.subscribe(callback));
         }
 
         // Subscribe to updates
@@ -415,20 +418,20 @@ class Sync {
 
     onSessionSelected = (sessionId: string) => {
         // 点击即发出原桌面导航；已连接也需要切换，不能等 screen mount 或历史加载才派发。
-        if (config.noninvasiveLocal) { void this.enterCodeLightSession(sessionId, true).catch(() => {}); return; }
-        void selectCodeLightSession(storage.getState().sessions[sessionId] ?? null).then(() => this.refreshSessionData(sessionId)).catch(() => {});
+        if (config.noninvasiveLocal) { void this.enterCodelyncSession(sessionId, true).catch(() => {}); return; }
+        void selectCodelyncSession(storage.getState().sessions[sessionId] ?? null).then(() => this.refreshSessionData(sessionId)).catch(() => {});
     }
 
     /** Explicit read retry for an unavailable native route; never selects Desktop. */
-    retryCodeLightSession = (sessionId: string): Promise<void> => {
+    retryCodelyncSession = (sessionId: string): Promise<void> => {
         if (!config.noninvasiveLocal) return Promise.resolve();
-        return this.enterCodeLightSession(sessionId, false);
+        return this.enterCodelyncSession(sessionId, false);
     }
 
     onSessionVisible = (sessionId: string) => {
         // 可见性/恢复只确保观察订阅，不产生桌面切换；真正点击由 onSessionSelected 唯一派发。
-        if (config.noninvasiveLocal) void this.enterCodeLightSession(sessionId, false).catch(() => {});
-        if (config.noninvasiveLocal && this.credentials) void rememberCodeLightSession(this.credentials, sessionId);
+        if (config.noninvasiveLocal) void this.enterCodelyncSession(sessionId, false).catch(() => {});
+        if (config.noninvasiveLocal && this.credentials) void rememberCodelyncSession(this.credentials, sessionId);
         releaseSpawnedSession(sessionId);
         this.historyPrefetchSessions.add(sessionId);
         if (!config.noninvasiveLocal) this.refreshSessionData(sessionId);
@@ -440,15 +443,15 @@ class Sync {
         this.notifyVoiceSessionFocus(sessionId);
     }
 
-    private hasCodeLightPeer = () => config.noninvasiveLocal && !!(this.credentials as AuthCredentials & { peer?: unknown })?.peer;
+    private hasCodelyncPeer = () => config.noninvasiveLocal && !!(this.credentials as AuthCredentials & { peer?: unknown })?.peer;
 
     private requestAccount = async (path: string, options: RequestInit = {}, owner = this.credentials): Promise<Response> => {
         if (!owner || this.credentials !== owner) throw Error('The connected account changed');
         const headers = new Headers(options.headers);
-        headers.set('X-Happy-Client', getHappyClientId());
+        headers.set('X-Codelync-Client', getCodelyncClientId());
         if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
         let response: Response;
-        if (this.hasCodeLightPeer()) {
+        if (this.hasCodelyncPeer()) {
             // LAN 也必须经过 pinned peer 的密封鉴权；共享同步代码不能自行发送可复用 Bearer。
             headers.delete('Authorization');
             response = await apiSocket.request(path, { ...options, headers: Object.fromEntries(headers.entries()) });
@@ -460,42 +463,42 @@ class Sync {
         return response;
     }
 
-    private enterCodeLightSession = (sessionId: string, selected: boolean): Promise<void> => {
-        renewCodeLightPresence();
-        const credentials = this.credentials, pending = this.codeLightEntryFlights.get(sessionId);
+    private enterCodelyncSession = (sessionId: string, selected: boolean): Promise<void> => {
+        renewCodelyncPresence();
+        const credentials = this.credentials, pending = this.codelyncEntryFlights.get(sessionId);
         if (pending && pending.credentials === credentials) {
             if (selected && !pending.selected) {
                 pending.selected = true;
-                const navigation = selectCodeLightSession(storage.getState().sessions[sessionId] ?? null);
-                if (this.hasCodeLightPeer()) { void navigation.catch(() => {}); return pending.promise; }
+                const navigation = selectCodelyncSession(storage.getState().sessions[sessionId] ?? null);
+                if (this.hasCodelyncPeer()) { void navigation.catch(() => {}); return pending.promise; }
                 return Promise.all([pending.promise, navigation]).then(() => {});
             }
             return pending.promise;
         }
         // Tap and focus share one fresh read; cached/hover history cannot satisfy it.
-        const navigation = selected ? selectCodeLightSession(storage.getState().sessions[sessionId] ?? null) : null;
+        const navigation = selected ? selectCodelyncSession(storage.getState().sessions[sessionId] ?? null) : null;
         // Authenticated peer recent owns exact-source observation preparation.
         // A separate WS observation receipt must not block the HTTP read.
         const authority = credentials?.peer ? 'peer:' + credentials.peer.id : getServerUrl();
-        const observation = () => activateCodeLightSource(storage.getState().sessions[sessionId] ?? null, { force: true, authority });
-        const ready = this.hasCodeLightPeer() ? Promise.resolve() : navigation ?? observation();
-        if (this.hasCodeLightPeer() && navigation) void navigation.catch(() => {});
+        const observation = () => activateCodelyncSource(storage.getState().sessions[sessionId] ?? null, { force: true, authority });
+        const ready = this.hasCodelyncPeer() ? Promise.resolve() : navigation ?? observation();
+        if (this.hasCodelyncPeer() && navigation) void navigation.catch(() => {});
         const entry = { credentials, selected, promise: Promise.resolve() as Promise<void> };
         // 新入口先拥有同步状态，不能在异步 fetch 开始前显示上次缓存的断连错误。
-        const revalidation = this.codeLightPeerRevalidations.get(sessionId);
-        const queuedProgress = revalidation?.credentials === credentials ? codeLightLoadingProgress.getSession(sessionId).generation : codeLightLoadingProgress.queueSession(sessionId);
+        const revalidation = this.codelyncPeerRevalidations.get(sessionId);
+        const queuedProgress = revalidation?.credentials === credentials ? codelyncLoadingProgress.getSession(sessionId).generation : codelyncLoadingProgress.queueSession(sessionId);
         entry.promise = ready.then(async () => {
             if (this.credentials !== credentials) return;
             // Foreground peer reads have one bounded attempt. InvalidateSync's
             // background backoff must not keep an explicit Retry busy forever.
-            if (this.hasCodeLightPeer()) await this.fetchMessages(sessionId);
+            if (this.hasCodelyncPeer()) await this.fetchMessages(sessionId);
             else await this.getMessagesSync(sessionId).invalidateAndAwait();
         }).catch(error => {
-            const progress = codeLightLoadingProgress.getSession(sessionId);
-            if (progress.generation === queuedProgress && progress.queued) codeLightLoadingProgress.endSession(sessionId, queuedProgress, true);
+            const progress = codelyncLoadingProgress.getSession(sessionId);
+            if (progress.generation === queuedProgress && progress.queued) codelyncLoadingProgress.endSession(sessionId, queuedProgress, true);
             throw error;
-        }).finally(() => { if (this.codeLightEntryFlights.get(sessionId) === entry) this.codeLightEntryFlights.delete(sessionId); });
-        this.codeLightEntryFlights.set(sessionId, entry); return entry.promise;
+        }).finally(() => { if (this.codelyncEntryFlights.get(sessionId) === entry) this.codelyncEntryFlights.delete(sessionId); });
+        this.codelyncEntryFlights.set(sessionId, entry); return entry.promise;
     }
 
     private notifyVoiceSessionFocus = (sessionId: string) => {
@@ -508,19 +511,19 @@ class Sync {
     private refreshSessionData = (sessionId: string) => {
         this.getMessagesSync(sessionId).invalidate();
 
-        // CodeLight 不提供 Git RPC；每条原生事件触发该请求只会增加无线电活动与无用失败。
+        // Codelync 不提供 Git RPC；每条原生事件触发该请求只会增加无线电活动与无用失败。
         if (!config.noninvasiveLocal) gitStatusSync.getSync(sessionId).invalidate();
     }
 
-    private queueCodeLightActivity = (sessionId: string, patch: { seq: number; updatedAt: number; thinking?: boolean }) => {
-        const previous = this.codeLightActivity.get(sessionId);
-        if (!previous || patch.seq >= previous.seq) this.codeLightActivity.set(sessionId, { ...previous, ...patch });
-        if (this.codeLightActivityTimer) return;
+    private queueCodelyncActivity = (sessionId: string, patch: { seq: number; updatedAt: number; thinking?: boolean }) => {
+        const previous = this.codelyncActivity.get(sessionId);
+        if (!previous || patch.seq >= previous.seq) this.codelyncActivity.set(sessionId, { ...previous, ...patch });
+        if (this.codelyncActivityTimer) return;
         const credentials = this.credentials;
         // 实时批次只合并列表活动字段，不能反复排序全部会话，也不能用旧 metadata 覆盖桌面设置更新。
-        this.codeLightActivityTimer = setTimeout(() => {
-            this.codeLightActivityTimer = null;
-            const pending = [...this.codeLightActivity]; this.codeLightActivity.clear();
+        this.codelyncActivityTimer = setTimeout(() => {
+            this.codelyncActivityTimer = null;
+            const pending = [...this.codelyncActivity]; this.codelyncActivity.clear();
             if (this.credentials !== credentials) return;
             const current = storage.getState().sessions, sessions: Session[] = [];
             for (const [id, value] of pending) {
@@ -820,7 +823,7 @@ class Sync {
                 if (diagnostic) {
                     console.error('[attachments] Failed to upload image attachment:', formatAttachmentDiagnosticForLog(diagnostic, {
                         platform: Platform.OS,
-                        client: getHappyClientId(),
+                        client: getCodelyncClientId(),
                     }));
                 } else {
                     const message = errorMessageFromUnknown(err);
@@ -828,7 +831,7 @@ class Sync {
                         leg: 'blob-upload',
                         message,
                         platform: Platform.OS,
-                        client: getHappyClientId(),
+                        client: getCodelyncClientId(),
                     });
                 }
                 failed++;
@@ -1407,63 +1410,63 @@ class Sync {
 
     private fetchSessions = async () => {
         if (!this.credentials) return;
-        if (this.hasCodeLightPeer()) { await this.fetchPeerCatalog(); return; }
+        if (this.hasCodelyncPeer()) { await this.fetchPeerCatalog(); return; }
         const API_ENDPOINT = getServerUrl();
         const credentials = this.credentials, avatarsBeforeFetch = storage.getState().sessions;
-        const headers = { Authorization: `Bearer ${credentials.token}`, 'Content-Type': 'application/json', 'X-Happy-Client': getHappyClientId() };
+        const headers = { Authorization: `Bearer ${credentials.token}`, 'Content-Type': 'application/json', 'X-Codelync-Client': getCodelyncClientId() };
         if (!config.noninvasiveLocal) {
             const response = await this.requestAccount('/v1/sessions', { headers });
             if (!response.ok) throw new Error(`Failed to fetch sessions: ${response.status}`);
             await this.hydrateSessionDescriptors((await response.json()).sessions, avatarsBeforeFetch); return;
         }
-        this.codeLightDiscoveryAbort?.abort();
-        const abort = new AbortController(); this.codeLightDiscoveryAbort = abort;
-        const generation = codeLightLoadingProgress.beginDiscovery();
-        const scope = await codeLightAccountScope(credentials);
-        const isCurrent = () => this.credentials === credentials && codeLightLoadingProgress.isCurrent(generation);
+        this.codelyncDiscoveryAbort?.abort();
+        const abort = new AbortController(); this.codelyncDiscoveryAbort = abort;
+        const generation = codelyncLoadingProgress.beginDiscovery();
+        const scope = await codelyncAccountScope(credentials);
+        const isCurrent = () => this.credentials === credentials && codelyncLoadingProgress.isCurrent(generation);
         const publish = async (rows: unknown[], page: number, before: number) => {
             for (let offset = 0; offset < rows.length; offset += 50) {
-                if (!codeLightLoadingProgress.isCurrent(generation)) return;
+                if (!codelyncLoadingProgress.isCurrent(generation)) return;
                 const batch = rows.slice(offset, offset + 50);
                 await this.hydrateSessionDescriptors(batch, avatarsBeforeFetch, isCurrent);
-                if (!codeLightLoadingProgress.isCurrent(generation)) return;
+                if (!codelyncLoadingProgress.isCurrent(generation)) return;
                 storage.getState().applyReady();
-                codeLightLoadingProgress.updateDiscovery(generation, { found: Math.max(before + offset + batch.length, Object.keys(storage.getState().sessions).length), pages: page });
+                codelyncLoadingProgress.updateDiscovery(generation, { found: Math.max(before + offset + batch.length, Object.keys(storage.getState().sessions).length), pages: page });
                 // 给已发布的首批列表一次绘制机会；数据正确性由 generation 和分页游标控制。
                 await delay(0);
             }
         };
         try {
-            if (!this.codeLightCacheHydrated) {
-                this.codeLightCacheHydrated = true;
-                await publish(loadCodeLightBackgroundCache(scope).sessions, 0, 0);
+            if (!this.codelyncCacheHydrated) {
+                this.codelyncCacheHydrated = true;
+                await publish(loadCodelyncBackgroundCache(scope).sessions, 0, 0);
             }
-            const previousCatalog = loadCodeLightBackgroundCache(scope).sessions;
-            const data = await fetchCodeLightSessionPages(API_ENDPOINT, headers, fetch, abort.signal, async (rows, progress) => {
+            const previousCatalog = loadCodelyncBackgroundCache(scope).sessions;
+            const data = await fetchCodelyncSessionPages(API_ENDPOINT, headers, fetch, abort.signal, async (rows, progress) => {
                 await publish(rows, progress.page, progress.found - rows.length);
-            }, { changedSince: loadCodeLightBackgroundCache(scope).catalogWatermark });
-            if (!codeLightLoadingProgress.isCurrent(generation)) return;
-            const cache = loadCodeLightBackgroundCache(scope);
-            const catalog = mergeCodeLightCatalog(previousCatalog, data.sessions);
-            saveCodeLightBackgroundCache({ ...cache, sessions: catalog, catalogWatermark: data.watermark, updatedAt: Date.now() });
-            codeLightLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: catalog.length });
+            }, { changedSince: loadCodelyncBackgroundCache(scope).catalogWatermark });
+            if (!codelyncLoadingProgress.isCurrent(generation)) return;
+            const cache = loadCodelyncBackgroundCache(scope);
+            const catalog = mergeCodelyncCatalog(previousCatalog, data.sessions);
+            saveCodelyncBackgroundCache({ ...cache, sessions: catalog, catalogWatermark: data.watermark, updatedAt: Date.now() });
+            codelyncLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: catalog.length });
             storage.getState().applyReady();
         } catch (error) {
-            if (!codeLightLoadingProgress.isCurrent(generation)) return;
-            codeLightLoadingProgress.updateDiscovery(generation, { phase: 'error' });
+            if (!codelyncLoadingProgress.isCurrent(generation)) return;
+            codelyncLoadingProgress.updateDiscovery(generation, { phase: 'error' });
             throw error;
         }
     }
 
     private fetchPeerCatalog = async () => {
-        const credentials = this.credentials, generation = codeLightLoadingProgress.beginDiscovery();
+        const credentials = this.credentials, generation = codelyncLoadingProgress.beginDiscovery();
         if (!credentials) return;
-        const cached = await loadCodeLightPeerCatalogState(credentials);
+        const cached = await loadCodelyncPeerCatalogState(credentials);
         let since = cached.watermark, version2 = true, found = cached.sessions.length;
-        const current = () => this.credentials === credentials && codeLightLoadingProgress.isCurrent(generation);
+        const current = () => this.credentials === credentials && codelyncLoadingProgress.isCurrent(generation);
         try {
             for (let attempt = 0; attempt < 3; attempt++) {
-                const scan = new CodeLightPeerCatalogDelta(cached.sessions, since), seen = new Set<string>();
+                const scan = new CodelyncPeerCatalogDelta(cached.sessions, since), seen = new Set<string>();
                 let cursor: string | null = null, page = 0, restart = false;
                 do {
                     if (!current()) return;
@@ -1487,7 +1490,7 @@ class Sync {
                         storage.getState().applyReady(); await delay(0);
                     }
                     found = scan.catalog.size;
-                    codeLightLoadingProgress.updateDiscovery(generation, { found, pages: page + 1 });
+                    codelyncLoadingProgress.updateDiscovery(generation, { found, pages: page + 1 });
                     cursor = data.hasMore ? data.nextCursor : null;
                     if (data.hasMore && (!cursor || seen.has(cursor))) throw Error('Invalid native directory cursor'); if (cursor) seen.add(cursor);
                     page++;
@@ -1495,15 +1498,15 @@ class Sync {
                 if (restart) continue;
                 const result = scan.finish();
                 if (!current()) return;
-                const hidden = reconcileCodeLightCatalogSessions(storage.getState().sessions, result);
+                const hidden = reconcileCodelyncCatalogSessions(storage.getState().sessions, result);
                 if (hidden.length) { this.applySessions(hidden, { nativeCatalog: true }); storage.getState().applyReady(); }
-                if (!result.unchanged) await saveCodeLightPeerCatalog(credentials, result.sessions, current, result.watermark);
-                if (current()) codeLightLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: result.sessions.length });
+                if (!result.unchanged) await saveCodelyncPeerCatalog(credentials, result.sessions, current, result.watermark);
+                if (current()) codelyncLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: result.sessions.length });
                 return;
             }
             throw Error('Native directory could not establish a current snapshot');
         } catch (error) {
-            if (current()) codeLightLoadingProgress.updateDiscovery(generation, { phase: 'error', found });
+            if (current()) codelyncLoadingProgress.updateDiscovery(generation, { phase: 'error', found });
             throw error;
         }
     }
@@ -1625,22 +1628,22 @@ class Sync {
     }
 
     public refreshSessions = async () => {
-        if (config.noninvasiveLocal) codeLightLoadingProgress.queueDiscovery();
+        if (config.noninvasiveLocal) codelyncLoadingProgress.queueDiscovery();
         return this.sessionsSync.invalidateAndAwait();
     }
 
-    public onCodeLightCatalogConnecting() {
-        if (config.noninvasiveLocal && codeLightLoadingProgress.getDiscovery().phase !== 'loading') codeLightLoadingProgress.queueDiscovery();
+    public onCodelyncCatalogConnecting() {
+        if (config.noninvasiveLocal && codelyncLoadingProgress.getDiscovery().phase !== 'loading') codelyncLoadingProgress.queueDiscovery();
     }
 
-    public onCodeLightConnectionRestored() {
+    public onCodelyncConnectionRestored() {
         if (!config.noninvasiveLocal) return;
         // 先撤销旧失败的显示资格，再广播 connected；fetch 排队的间隙不能闪回 Retry。
-        codeLightLoadingProgress.queueDiscovery();
+        codelyncLoadingProgress.queueDiscovery();
         const visible = storage.getState().currentViewingSessionId;
         if (visible) {
-            codeLightLoadingProgress.queueSession(visible);
-            if (this.credentials) void this.enterCodeLightSession(visible, false).catch(() => {});
+            codelyncLoadingProgress.queueSession(visible);
+            if (this.credentials) void this.enterCodelyncSession(visible, false).catch(() => {});
         }
     }
 
@@ -1935,7 +1938,7 @@ class Sync {
         const response = await this.requestAccount('/v1/machines', {
             headers: {
                 'Content-Type': 'application/json',
-                'X-Happy-Client': getHappyClientId(),
+                'X-Codelync-Client': getCodelyncClientId(),
             }
         });
 
@@ -2189,7 +2192,7 @@ class Sync {
                     }),
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Happy-Client': getHappyClientId(),
+                        'X-Codelync-Client': getCodelyncClientId(),
                     }
                 }, owner);
                 const data = await response.json() as {
@@ -2253,7 +2256,7 @@ class Sync {
         const response = await this.requestAccount('/v1/account/settings', {
             headers: {
                 'Content-Type': 'application/json',
-                'X-Happy-Client': getHappyClientId(),
+                'X-Codelync-Client': getCodelyncClientId(),
             }
         }, owner);
         if (!response.ok) {
@@ -2297,7 +2300,7 @@ class Sync {
         const response = await this.requestAccount('/v1/account/profile', {
             headers: {
                 'Content-Type': 'application/json',
-                'X-Happy-Client': getHappyClientId(),
+                'X-Codelync-Client': getCodelyncClientId(),
             }
         });
 
@@ -2346,7 +2349,7 @@ class Sync {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Happy-Client': getHappyClientId(),
+                    'X-Codelync-Client': getCodelyncClientId(),
                 },
                 body: JSON.stringify({
                     platform,
@@ -2505,8 +2508,8 @@ class Sync {
     }
 
     private fetchMessages = async (sessionId: string) => {
-        if (this.hasCodeLightPeer()) return this.fetchPeerMessages(sessionId);
-        const progress = codeLightLoadingProgress.beginSession(sessionId);
+        if (this.hasCodelyncPeer()) return this.fetchPeerMessages(sessionId);
+        const progress = codelyncLoadingProgress.beginSession(sessionId);
         try {
         // Take ownership before waiting. A touch on a different row must not
         // abort the first page once ordinary sync needs it. No duplicate GET
@@ -2514,14 +2517,14 @@ class Sync {
         const preload = config.noninvasiveLocal ? undefined : this.messagePreloader.take(sessionId);
         if (preload && await preload) {
             void this.prefetchOlderMessagesInBackground(sessionId);
-            codeLightLoadingProgress.endSession(sessionId, progress); return;
+            codelyncLoadingProgress.endSession(sessionId, progress); return;
         }
         // Deletion during a handed-off preload is not a transient fetch error.
-        if (!storage.getState().sessions[sessionId]) { codeLightLoadingProgress.endSession(sessionId, progress); return; }
+        if (!storage.getState().sessions[sessionId]) { codelyncLoadingProgress.endSession(sessionId, progress); return; }
         log.log(`💬 fetchMessages starting for session ${sessionId} - acquiring lock`);
         const lock = this.getSessionMessageLock(sessionId);
         await lock.inLock(async () => {
-            if (!storage.getState().sessions[sessionId]) { codeLightLoadingProgress.endSession(sessionId, progress); return; }
+            if (!storage.getState().sessions[sessionId]) { codelyncLoadingProgress.endSession(sessionId, progress); return; }
             const encryption = this.encryption.getSessionEncryption(sessionId);
             if (!encryption) {
                 log.log(`💬 fetchMessages: Session encryption not ready for ${sessionId}, will retry`);
@@ -2531,9 +2534,9 @@ class Sync {
             const knownLastSeq = this.sessionLastSeq.get(sessionId);
             const isInitialLoad = config.noninvasiveLocal || knownLastSeq === undefined;
             if (isInitialLoad) {
-                if (config.noninvasiveLocal && !this.codeLightCachedMessages.has(sessionId)) {
-                    this.codeLightCachedMessages.add(sessionId);
-                    const cached = loadCodeLightBackgroundCache(await codeLightAccountScope(this.credentials)).messages[sessionId];
+                if (config.noninvasiveLocal && !this.codelyncCachedMessages.has(sessionId)) {
+                    this.codelyncCachedMessages.add(sessionId);
+                    const cached = loadCodelyncBackgroundCache(await codelyncAccountScope(this.credentials)).messages[sessionId];
                     if (cached?.records.length) await this.applyFetchedMessages(sessionId, encryption, cached.records as unknown as ApiMessage[]);
                 }
                 // Initial load. Pull only the most recent page so the user can
@@ -2562,42 +2565,42 @@ class Sync {
             // after an actual visit, regardless of who fetched that first page.
             void this.prefetchOlderMessagesInBackground(sessionId);
         });
-        codeLightLoadingProgress.endSession(sessionId, progress);
+        codelyncLoadingProgress.endSession(sessionId, progress);
         } catch (error) {
-            codeLightLoadingProgress.endSession(sessionId, progress, true); throw error;
+            codelyncLoadingProgress.endSession(sessionId, progress, true); throw error;
         }
     }
 
     private fetchPeerMessages = (sessionId: string): Promise<void> => {
         const credentials = this.credentials;
-        const pending = this.codeLightPeerReadFlights.get(sessionId);
+        const pending = this.codelyncPeerReadFlights.get(sessionId);
         if (pending?.credentials === credentials) return pending.promise;
-        if (this.codeLightPeerRevalidations.get(sessionId)?.credentials === credentials) return Promise.resolve();
-        const progress = codeLightLoadingProgress.beginSession(sessionId);
+        if (this.codelyncPeerRevalidations.get(sessionId)?.credentials === credentials) return Promise.resolve();
+        const progress = codelyncLoadingProgress.beginSession(sessionId);
         let cached = false;
         const entry = { credentials, promise: Promise.resolve() as Promise<void> };
         entry.promise = this.getSessionMessageLock(sessionId).inLock(() => this.fetchPeerRecentWindow(sessionId, true)).then(value => {
-            cached = value; codeLightLoadingProgress.endSession(sessionId, progress);
-        }).catch(error => { codeLightLoadingProgress.endSession(sessionId, progress, true); throw error; }).finally(() => {
-            if (this.codeLightPeerReadFlights.get(sessionId) === entry) this.codeLightPeerReadFlights.delete(sessionId);
+            cached = value; codelyncLoadingProgress.endSession(sessionId, progress);
+        }).catch(error => { codelyncLoadingProgress.endSession(sessionId, progress, true); throw error; }).finally(() => {
+            if (this.codelyncPeerReadFlights.get(sessionId) === entry) this.codelyncPeerReadFlights.delete(sessionId);
             if (cached && this.credentials === credentials) this.revalidatePeerMessages(sessionId, credentials, progress);
         });
-        this.codeLightPeerReadFlights.set(sessionId, entry); return entry.promise;
+        this.codelyncPeerReadFlights.set(sessionId, entry); return entry.promise;
     }
 
     private revalidatePeerMessages = (sessionId: string, credentials: AuthCredentials, progress: number) => {
-        if (this.codeLightPeerRevalidations.get(sessionId)?.credentials === credentials) return;
-        codeLightLoadingProgress.revalidateSession(sessionId, progress, true);
+        if (this.codelyncPeerRevalidations.get(sessionId)?.credentials === credentials) return;
+        codelyncLoadingProgress.revalidateSession(sessionId, progress, true);
         const entry = { credentials, promise: Promise.resolve() as Promise<void> };
         entry.promise = Promise.resolve().then(async () => {
             if (this.credentials !== credentials) return;
-            if (storage.getState().currentViewingSessionId !== sessionId) { codeLightLoadingProgress.revalidateSession(sessionId, progress, false); return; }
+            if (storage.getState().currentViewingSessionId !== sessionId) { codelyncLoadingProgress.revalidateSession(sessionId, progress, false); return; }
             await this.getSessionMessageLock(sessionId).inLock(() => this.fetchPeerRecentWindow(sessionId));
-            if (this.credentials === credentials) codeLightLoadingProgress.revalidateSession(sessionId, progress, false);
+            if (this.credentials === credentials) codelyncLoadingProgress.revalidateSession(sessionId, progress, false);
         }).catch(() => {
-            if (this.credentials === credentials) codeLightLoadingProgress.revalidateSession(sessionId, progress, false, true);
-        }).finally(() => { if (this.codeLightPeerRevalidations.get(sessionId) === entry) this.codeLightPeerRevalidations.delete(sessionId); });
-        this.codeLightPeerRevalidations.set(sessionId, entry);
+            if (this.credentials === credentials) codelyncLoadingProgress.revalidateSession(sessionId, progress, false, true);
+        }).finally(() => { if (this.codelyncPeerRevalidations.get(sessionId) === entry) this.codelyncPeerRevalidations.delete(sessionId); });
+        this.codelyncPeerRevalidations.set(sessionId, entry);
     }
 
     private fetchPeerRecentWindow = async (sessionId: string, cacheFirst = false): Promise<boolean> => {
@@ -2616,7 +2619,7 @@ class Sync {
         // the current foreground route and a verified original-source identity.
         if (!previous && (current.currentViewingSessionId !== sessionId || data.session.basicOnly || !isNoninvasiveBridge(incoming.metadata)
             || incoming.metadata?.nativeSession?.archived === true || incoming.metadata?.nativeSession?.catalogueAvailable === false
-            || !isCodeLightSessionIdentity(incoming.metadata?.bridge?.source, incoming.metadata?.bridge?.controlMode)
+            || !isCodelyncSessionIdentity(incoming.metadata?.bridge?.source, incoming.metadata?.bridge?.controlMode)
             || typeof incoming.metadata?.machineId !== 'string' || !incoming.metadata.machineId.trim()
             || !data.historicalRead && (typeof data.ownerGeneration !== 'string' || data.ownerGeneration !== incoming.metadata?.bridge?.source.runtimeGeneration))) {
             throw Error('Uncached native source could not be confirmed');
@@ -2629,7 +2632,7 @@ class Sync {
         if (this.credentials !== credentials || afterKey.currentViewingSessionId && afterKey.currentViewingSessionId !== sessionId
             || !afterKey.sessions[sessionId] && afterKey.currentViewingSessionId !== sessionId
             || !isCurrentNativeRecent(data, afterKey.sessions[sessionId] ?? incoming)) return false;
-        const live = afterKey.sessions[sessionId], provenance = this.codeLightPeerLiveMetadata.get(sessionId);
+        const live = afterKey.sessions[sessionId], provenance = this.codelyncPeerLiveMetadata.get(sessionId);
         const previousIsLive = !!live && provenance?.credentials === credentials && provenance.version === live.metadataVersion
             && provenance.signature === this.peerLiveMetadataSignature(live) && live.metadata?.bridge?.sourceStatus === 'connected';
         this.applySessions([cached ? cachedPeerDescriptorSession(data.session, live, previousIsLive) : peerDescriptorSession(data.session, live)]);
@@ -2637,8 +2640,8 @@ class Sync {
         this.applyMessages(sessionId, messages);
         this.sessionLastSeq.set(sessionId, Math.max(data.seq, this.sessionLastSeq.get(sessionId) ?? 0));
         if (!cached) {
-            this.codeLightHistoryCursors.set(sessionId, data.nextCursor);
-            this.codeLightHistoryOwners.set(sessionId, data.ownerGeneration);
+            this.codelyncHistoryCursors.set(sessionId, data.nextCursor);
+            this.codelyncHistoryOwners.set(sessionId, data.ownerGeneration);
         }
         storage.getState().applyMessagesLoaded(sessionId);
         if (!cached) storage.getState().applyOlderMessagesPagination(sessionId, { hasMore: data.hasMore && !!data.nextCursor });
@@ -2650,42 +2653,42 @@ class Sync {
     private peerLiveMetadataSignature = (session: Session): string | null => {
         const metadata = session.metadata, source = metadata?.bridge?.source;
         return source && typeof source.runtimeGeneration === 'string' && !!source.runtimeGeneration.trim()
-            && isNoninvasiveBridge(metadata) && isCodeLightSessionIdentity(source, metadata?.bridge?.controlMode)
+            && isNoninvasiveBridge(metadata) && isCodelyncSessionIdentity(source, metadata?.bridge?.controlMode)
             ? JSON.stringify([session.id, metadata?.machineId, source.app, source.id, source.hostId, source.kind, source.protocol,
                 source.appMode, source.nativeCollection, source.runtimeGeneration, metadata?.nativeDesktopRuntimeGeneration ?? session.agentState?.nativeDesktopRuntimeGeneration ?? null]) : null;
     }
 
     private rememberPeerLiveMetadata = (sessionId: string, receivedVersion: number) => {
         const session = storage.getState().sessions[sessionId];
-        if (!this.hasCodeLightPeer() || !session || session.metadata?.bridge?.sourceStatus !== 'connected') { this.codeLightPeerLiveMetadata.delete(sessionId); return; }
+        if (!this.hasCodelyncPeer() || !session || session.metadata?.bridge?.sourceStatus !== 'connected') { this.codelyncPeerLiveMetadata.delete(sessionId); return; }
         const signature = this.peerLiveMetadataSignature(session);
-        if (signature && receivedVersion >= session.metadataVersion) this.codeLightPeerLiveMetadata.set(sessionId, { credentials: this.credentials, signature, version: session.metadataVersion });
+        if (signature && receivedVersion >= session.metadataVersion) this.codelyncPeerLiveMetadata.set(sessionId, { credentials: this.credentials, signature, version: session.metadataVersion });
     }
 
     private fetchPeerOlderWindow = async (sessionId: string, count = 8): Promise<boolean> => {
-        const progress = codeLightLoadingProgress.getSession(sessionId);
+        const progress = codelyncLoadingProgress.getSession(sessionId);
         if (progress.revalidating || progress.revalidationFailed) return false;
-        const state = storage.getState().sessionMessages[sessionId], cursor = this.codeLightHistoryCursors.get(sessionId), owner = this.codeLightHistoryOwners.get(sessionId);
+        const state = storage.getState().sessionMessages[sessionId], cursor = this.codelyncHistoryCursors.get(sessionId), owner = this.codelyncHistoryOwners.get(sessionId);
         if (!cursor || !state?.hasMoreOlder || state.isLoadingOlder) return false;
         if (!Number.isSafeInteger(count) || count < 1 || count > 8) throw Error('A bounded native viewport history batch is required');
         storage.getState().applyOlderMessagesLoading(sessionId, true);
         const credentials = this.credentials;
         try {
             return await this.getSessionMessageLock(sessionId).inLock(async () => {
-                if (this.codeLightHistoryCursors.get(sessionId) !== cursor || this.codeLightHistoryOwners.get(sessionId) !== owner) return false;
+                if (this.codelyncHistoryCursors.get(sessionId) !== cursor || this.codelyncHistoryOwners.get(sessionId) !== owner) return false;
                 const query = new URLSearchParams({ cursor, limit: String(count) });
                 const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/history?${query}`);
                 if (!response.ok) throw Error(`Earlier native messages unavailable: ${response.status}`);
                 const data = await response.json() as PeerRecentWindow;
-                if (this.credentials !== credentials || data.session?.id !== sessionId || this.codeLightHistoryCursors.get(sessionId) !== cursor
-                    || this.codeLightHistoryOwners.get(sessionId) !== owner || owner && data.ownerGeneration !== owner
+                if (this.credentials !== credentials || data.session?.id !== sessionId || this.codelyncHistoryCursors.get(sessionId) !== cursor
+                    || this.codelyncHistoryOwners.get(sessionId) !== owner || owner && data.ownerGeneration !== owner
                     || storage.getState().currentViewingSessionId && storage.getState().currentViewingSessionId !== sessionId) return false;
                 const currentSession = storage.getState().sessions[sessionId];
                 const currentOwner = currentSession?.metadata?.bridge?.source.runtimeGeneration;
                 if (!currentSession || !isCurrentNativeRecent(data, currentSession) || owner && currentOwner && owner !== currentOwner) return false;
                 this.applyMessages(sessionId, nativeRecentMessages(data));
                 const advanced = data.nextCursor !== cursor;
-                this.codeLightHistoryCursors.set(sessionId, advanced ? data.nextCursor : null);
+                this.codelyncHistoryCursors.set(sessionId, advanced ? data.nextCursor : null);
                 storage.getState().applyOlderMessagesPagination(sessionId, { hasMore: advanced && data.hasMore && !!data.nextCursor });
                 return advanced;
             });
@@ -2863,7 +2866,7 @@ class Sync {
      * automatically continue on true and rest on false.
      */
     loadOlderMessages = async (sessionId: string, options: { limit?: number } = {}): Promise<boolean> => {
-        if (this.hasCodeLightPeer()) return this.fetchPeerOlderWindow(sessionId, options.limit ?? 8);
+        if (this.hasCodelyncPeer()) return this.fetchPeerOlderWindow(sessionId, options.limit ?? 8);
         const oldestSeq = this.sessionOldestSeq.get(sessionId);
         if (oldestSeq === undefined || oldestSeq <= 1) {
             return false;
@@ -2951,7 +2954,7 @@ class Sync {
         this.releasePeerLiveSubscription = apiSocket.onStatusChange(status => {
             const next = apiSocket.peerReadChannelRevision();
             if (next !== channelRevision) { channelRevision = next; return; }
-            if (status === 'disconnected' || status === 'error') this.codeLightPeerLiveMetadata.clear();
+            if (status === 'disconnected' || status === 'error') this.codelyncPeerLiveMetadata.clear();
         });
         this.releaseReconnectSubscription = apiSocket.onReconnected(() => {
             log.log('🔌 Socket reconnected');
@@ -3058,7 +3061,7 @@ class Sync {
                     if (session) {
                         const activity = { updatedAt: updateData.createdAt, seq: updateData.seq,
                             ...(isTaskComplete ? { thinking: false } : {}), ...(isTaskStarted ? { thinking: true } : {}) };
-                        if (config.noninvasiveLocal) this.queueCodeLightActivity(session.id, activity);
+                        if (config.noninvasiveLocal) this.queueCodelyncActivity(session.id, activity);
                         else this.applySessions([{ ...session, ...activity }]);
                     } else {
                         // Fetch sessions again if we don't have this session
@@ -3134,7 +3137,7 @@ class Sync {
             }
             if (session) {
                 if (!sessionEncryption) {
-                    if (this.hasCodeLightPeer() && storage.getState().currentViewingSessionId !== session.id) return;
+                    if (this.hasCodelyncPeer() && storage.getState().currentViewingSessionId !== session.id) return;
                     console.error(`Session encryption not found for ${updateData.body.id} after sync`);
                     this.fetchSessions();
                     return;
@@ -3146,7 +3149,7 @@ class Sync {
                 const metadata = updateData.body.metadata && sessionEncryption
                     ? await sessionEncryption.decryptMetadata(updateData.body.metadata.version, updateData.body.metadata.value)
                     : session.metadata;
-                if (this.hasCodeLightPeer() && this.credentials !== updateCredentials) return;
+                if (this.hasCodelyncPeer() && this.credentials !== updateCredentials) return;
 
                 const nextProjectId = updateData.body.projectId !== undefined
                     ? updateData.body.projectId
@@ -3730,10 +3733,10 @@ async function syncInit(credentials: AuthCredentials, restore: boolean, serverUr
     if (serverUrl !== getServerUrl()) throw Error('The selected server changed during account initialization.');
     const API_ENDPOINT = serverUrl;
     if (config.noninvasiveLocal) {
-        const { initializeCodeLightConnection, suspendCodeLightAutomaticRecovery } = await import('./codeLightConnection');
-        const resumeAutomatic = suspendCodeLightAutomaticRecovery(credentials);
+        const { initializeCodelyncConnection, suspendCodelyncAutomaticRecovery } = await import('./codelyncConnection');
+        const resumeAutomatic = suspendCodelyncAutomaticRecovery(credentials);
         try {
-            initializeCodeLightConnection(credentials);
+            initializeCodelyncConnection(credentials);
             apiSocket.initialize({ endpoint: API_ENDPOINT, token: credentials.token, peer: credentials.peer }, encryption);
             const { consumeNativeStartupMacLocator } = await import('./startupMacLocator.native');
             if (await consumeNativeStartupMacLocator()) {
@@ -3747,8 +3750,8 @@ async function syncInit(credentials: AuthCredentials, restore: boolean, serverUr
 
     // Wire socket status to storage
     releaseInitializationStatus = apiSocket.onStatusChange((status) => {
-        if (status === 'connected') sync.onCodeLightConnectionRestored();
-        else sync.onCodeLightCatalogConnecting();
+        if (status === 'connected') sync.onCodelyncConnectionRestored();
+        else sync.onCodelyncCatalogConnecting();
         storage.getState().setSocketStatus(status);
     });
 

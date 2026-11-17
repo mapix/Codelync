@@ -3,7 +3,7 @@ import nacl from 'tweetnacl';
 import { gzipSync } from 'node:zlib';
 import sodium from '@/encryption/libsodium.lib';
 import { encodeBase64 } from '@/encryption/base64';
-import { encodeCompactPeerPlaintext } from '@slopus/happy-wire/peer-codec';
+import { encodeCompactPeerPlaintext } from '@codelync/wire/peer-codec';
 
 vi.mock('@/encryption/libsodium.lib', () => ({ default: require('libsodium-wrappers') }));
 vi.mock('@/encryption/openPeerBox', () => import('./openPeerBox.native'));

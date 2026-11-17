@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DesktopSourceSubscriptions, DESKTOP_SOURCE_APPS } from '../src/happy/source-subscriptions.mjs';
-import { LocalSourceDiscovery } from '../src/happy/discovery.mjs';
+import { DesktopSourceSubscriptions, DESKTOP_SOURCE_APPS } from '../src/codelync/source-subscriptions.mjs';
+import { LocalSourceDiscovery } from '../src/codelync/discovery.mjs';
 /** @typedef {Record<string,any>} Value */
 const ag = { app: 'antigravity', kind: 'session', id: 'fixture-ag', hostId: 'local:antigravity:' + 'a'.repeat(64), protocol: 'antigravity-connect', runtimeGeneration: 'fixture-owner' };
 const claude = { app: 'claude-desktop', kind: 'session', id: 'fixture-claude', hostId: 'local:claude-desktop:' + 'b'.repeat(64), protocol: 'claude-desktop-native', runtimeGeneration: 'fixture-owner', appMode: 'code', nativeCollection: 'claude-code-sessions' };
@@ -27,7 +27,7 @@ test('disabled sources have no provider construction or reads, and empty choices
   assert.equal(f.calls.codex, 1); assert.equal(f.calls.created, 1); assert.equal(f.calls.disposed, 1);
 });
 
-test('re-enable creates new CodeLight providers instead of reviving disposed clients', async t => {
+test('re-enable creates new Codelync providers instead of reviving disposed clients', async t => {
   const f = await fixture(); t.after(() => f.discovery.close());
   const first = await f.discovery.discover(); assert.deepEqual(first.inventoryApps, DESKTOP_SOURCE_APPS);
   const oldCodex = f.discovery.codex, oldAG = f.discovery.antigravity, oldClaude = f.discovery.claude[0];

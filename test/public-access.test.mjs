@@ -15,7 +15,7 @@ class Transport extends EventEmitter {
   close() { this.closed = true; }
 }
 test('failed validation preserves the working entry and saved credentials never cross server addresses', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-access-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-access-'));
   const transports = /** @type {Transport[]} */ ([]), probes = new EntryProbes();
   probes.verify = async origin => { if (origin.includes('wrong.example')) throw Error('bad-public-probe'); };
   const manager = new PublicAccessManager({ state: directory, upstream: 'http://127.0.0.1:1', cloudflared: 'unused', probes,

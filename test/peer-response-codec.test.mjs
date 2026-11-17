@@ -7,10 +7,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import nacl from 'tweetnacl';
-import { compactPeerBody, encodeCompactPeerPlaintext, decodeCompactPeerPlaintext, PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_MAX_BYTES } from '@slopus/happy-wire/peer-codec';
-import { sealPeerResponse } from '../src/happy/peer-response-codec.mjs';
-import { createPairingGateway, PairingInvitations } from '../src/happy/pairing-gateway.mjs';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
+import { compactPeerBody, encodeCompactPeerPlaintext, decodeCompactPeerPlaintext, PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_MAX_BYTES } from '@codelync/wire/peer-codec';
+import { sealPeerResponse } from '../src/codelync/peer-response-codec.mjs';
+import { createPairingGateway, PairingInvitations } from '../src/codelync/pairing-gateway.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
 import { gatewayProof } from './fixtures/gateway-proof.mjs';
 
 /** @typedef {Record<string,any>} Value */
@@ -66,7 +66,7 @@ test('authenticated decoder rejects wrong peer, bad flags, malformed compact pay
 });
 
 test('real gateway negotiates only after approved proof and preserves v2 for an older request', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-peer-codec-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-peer-codec-'));
   const devices = new DeviceRegistry(join(directory, 'devices.json')), invitations = new PairingInvitations({ key: randomBytes(32), credentials: {} });
   const device = gatewayProof(invitations, { devices, token: 'synthetic-codec-token' }); await devices.approve(device.publicKey, 'Synthetic codec phone', 'synthetic-codec-token');
   let reads = 0;
@@ -94,7 +94,7 @@ test('packet benchmark measures UTF8 encrypted bodies, estimated HTTP/proof over
       children: [{ id: 'child-1', sourceKey: 'a'.repeat(64), title: 'Synthetic child', status: 'running', nativeUpdatedAt: 1794575000000 }] },
   };
   const nonce = randomBytes(24), requestBody = { version: 2, token: 'synthetic-proof-token-' + 'x'.repeat(64), origin: 'http://192.168.50.2:8800', method: 'GET', path: '/api/peer/catalog', at: 1794575000000 };
-  const authorization = 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
+  const authorization = 'Codelync ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
     ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(requestBody)), nonce, mac.publicKey, phone.secretKey)).toString('base64url') })).toString('base64url');
   const requestBytes = Buffer.byteLength(`GET /api/peer/catalog HTTP/1.1\r\nHost: 192.168.50.2:8800\r\nAuthorization: ${authorization}\r\n\r\n`);
   const results = /** @type {Value[]} */ ([]);

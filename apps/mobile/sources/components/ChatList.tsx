@@ -24,10 +24,10 @@ import { handleInvertedChatWheel } from '@/utils/invertedChatWheel';
 import { DiffSyntaxCell, SyntaxViewport, SYNTAX_VIEWABILITY } from './diff/syntax/viewport';
 import { RoundButton } from './RoundButton';
 import { getCurrentLanguage, t } from '@/text';
-import { codeLightLatestViewportLabels } from '@/text/codeLightViewportLabels';
-import { CodeLightViewportFill, codeLightNativeWindowEnd, codeLightViewportBatch, type NativeViewportMeasurement } from '@/utils/codeLightViewport';
-import { useCodeLightMessageProgress } from '@/sync/codeLightLoadingProgress';
-import { subscribeCodeLightLatestViewport } from '@/utils/codeLightSubagentActivityIntent';
+import { codelyncLatestViewportLabels } from '@/text/codelyncViewportLabels';
+import { CodelyncViewportFill, codelyncNativeWindowEnd, codelyncViewportBatch, type NativeViewportMeasurement } from '@/utils/codelyncViewport';
+import { useCodelyncMessageProgress } from '@/sync/codelyncLoadingProgress';
+import { subscribeCodelyncLatestViewport } from '@/utils/codelyncSubagentActivityIntent';
 import { useNativeReadingWindow } from '@/hooks/useNativeReadingWindow';
 
 const SCROLL_THRESHOLD = 300;
@@ -280,10 +280,10 @@ const ChatListInternal = React.memo((props: {
     // Perf reporting only; history paging keys off measured layout instead.
     const listReadyRef = React.useRef(false);
     const session = useSession(props.sessionId);
-    const nativeProgress = useCodeLightMessageProgress(props.sessionId);
+    const nativeProgress = useCodelyncMessageProgress(props.sessionId);
     const nativeProgressRef = React.useRef(nativeProgress); nativeProgressRef.current = nativeProgress;
     const nativeReadingScope = useNativeReadingWindow(props.sessionId, props.metadata);
-    const nativeFill = React.useMemo(() => new CodeLightViewportFill(), [props.sessionId, nativeReadingScope]);
+    const nativeFill = React.useMemo(() => new CodelyncViewportFill(), [props.sessionId, nativeReadingScope]);
     const nativeAnchorScopeRef = React.useRef(nativeFill);
     const contentMeasureVersionRef = React.useRef(0);
     const nativePageReadyRef = React.useRef(false);
@@ -340,7 +340,7 @@ const ChatListInternal = React.memo((props: {
             if (index >= 0) desiredEnd = index + 1;
         }
         // 已选择的手机边界不再追加 turn allowance，否则锚点提交会从 120 行无意增长到 180 行。
-        const end = config.noninvasiveLocal ? ordinaryToolRunWindowEnd(messages, codeLightNativeWindowEnd(messages.length, desiredEnd)) : messageWindowEnd(messages, desiredEnd, false);
+        const end = config.noninvasiveLocal ? ordinaryToolRunWindowEnd(messages, codelyncNativeWindowEnd(messages.length, desiredEnd)) : messageWindowEnd(messages, desiredEnd, false);
         const next = messages.slice(0, end);
         const prev = windowRef.current;
         if (prev.length === next.length && prev.every((msg, i) => msg === next[i])) {
@@ -695,7 +695,7 @@ const ChatListInternal = React.memo((props: {
     const scrollToBottom = useCallback(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
     }, []);
-    React.useEffect(() => subscribeCodeLightLatestViewport(props.sessionId, () => {
+    React.useEffect(() => subscribeCodelyncLatestViewport(props.sessionId, () => {
         if (!props.active) return;
         // Messages/Logs navigation is UI-only and cannot advance a history cursor.
         nativeFill.stop(); nativePageReadyRef.current = false; olderGesturePermitRef.current = false;
@@ -761,7 +761,7 @@ const ChatListInternal = React.memo((props: {
                 ready: nativeProgressRef.current.phase === 'complete' };
             if (nativePageReadyRef.current && !loading && measurement.ready) {
                 nativePageReadyRef.current = false;
-                if (all.length > currentEnd) { const next = codeLightNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
+                if (all.length > currentEnd) { const next = codelyncNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
                 nativeFill.stop('no-progress'); setOlderBlocked('limit'); return;
             }
             if (currentEnd < requestedWindowEndRef.current || loading || pendingOlderRef.current || blocked) return;
@@ -769,7 +769,7 @@ const ChatListInternal = React.memo((props: {
             if (decision === 'no-progress') { setOlderBlocked('limit'); return; }
             if (decision !== 'advance') return;
             nativeFill.requested(measurement);
-            if (all.length > currentEnd) { const next = codeLightNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
+            if (all.length > currentEnd) { const next = codelyncNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
             if (!more) { nativeFill.stop(); return; }
             const oldest = listItemsRef.current[listItemsRef.current.length - 1];
             // A collapsed summary cannot fill a viewport by downloading more
@@ -782,7 +782,7 @@ const ChatListInternal = React.memo((props: {
             }, () => { if (pendingOlderRef.current === request) { pendingOlderRef.current = null; nativeFill.stop(); setOlderBlocked('error'); } });
             return;
         }
-        // 布局/新消息也会进入短列表的阈值；CodeLight 必须有新的用户向旧历史滚动意图，不能首屏自动翻页。
+        // 布局/新消息也会进入短列表的阈值；Codelync 必须有新的用户向旧历史滚动意图，不能首屏自动翻页。
         if (native && !olderGesturePermitRef.current) return;
         if (native) nativeFill.stop(nativeFill.reason === 'no-progress' ? 'no-progress' : 'covered');
         // Measured layout only, not onLoad: FlashList never reports a first
@@ -793,8 +793,8 @@ const ChatListInternal = React.memo((props: {
         if ((all.length === 0 || currentEnd <= 0) && !config.noninvasiveLocal) return;
         // A growth already requested but not yet rendered.
         if (currentEnd < requestedWindowEndRef.current) return;
-        const pageSize = native ? codeLightViewportBatch(viewportHeight, contentHeight, listItemsRef.current.length) : WINDOW_PAGE;
-        const nextEnd = native ? codeLightNativeWindowEnd(all.length, currentEnd + pageSize) : messageWindowEnd(all, currentEnd + WINDOW_PAGE, false);
+        const pageSize = native ? codelyncViewportBatch(viewportHeight, contentHeight, listItemsRef.current.length) : WINDOW_PAGE;
+        const nextEnd = native ? codelyncNativeWindowEnd(all.length, currentEnd + pageSize) : messageWindowEnd(all, currentEnd + WINDOW_PAGE, false);
         if (nextEnd > currentEnd) {
             if (config.noninvasiveLocal) olderGesturePermitRef.current = false;
             requestedWindowEndRef.current = nextEnd;
@@ -953,7 +953,7 @@ const ChatListInternal = React.memo((props: {
                         ]}
                         onPress={scrollToBottom}
                         accessibilityRole="button"
-                        accessibilityLabel={codeLightLatestViewportLabels[getCurrentLanguage()]}
+                        accessibilityLabel={codelyncLatestViewportLabels[getCurrentLanguage()]}
                     >
                         <Octicons name="arrow-down" size={14} color={theme.colors.text} />
                     </Pressable>

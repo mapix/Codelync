@@ -28,7 +28,7 @@ export async function readSettings(directory = root) {
   if (new Set([settings.MEDIA_DOMAIN, settings.RELAY_DOMAIN, settings.TURN_DOMAIN].filter(Boolean)).size
     !== [settings.MEDIA_DOMAIN, settings.RELAY_DOMAIN, settings.TURN_DOMAIN].filter(Boolean).length) throw Error('Use different hostnames for the services.');
   if (settings.TURN_DOMAIN && !settings.MEDIA_DOMAIN) throw Error('TURN_DOMAIN requires MEDIA_DOMAIN.');
-  settings.LIVEKIT_API_KEY ||= 'codelight_key';
+  settings.LIVEKIT_API_KEY ||= 'codelync_key';
   if (!/^[A-Za-z0-9_-]{4,128}$/u.test(settings.LIVEKIT_API_KEY)) throw Error('LIVEKIT_API_KEY has an invalid format.');
   for (const name of ['LIVEKIT_API_SECRET', 'REGISTRATION_TOKEN']) {
     if (settings[name] && !/^[A-Za-z0-9_-]{32,256}$/u.test(settings[name])) throw Error(`${name} must have 32–256 letters, digits, underscores or hyphens.`);

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { nativeTaskDigestText } from '@slopus/happy-wire/native-tasks';
+import { nativeTaskDigestText } from '@codelync/wire/native-tasks';
 
 /** @typedef {Record<string,any>} Value */
 const COLLECTIONS = new Set(['claude-code-sessions', 'local-agent-mode-sessions']);

@@ -3,7 +3,7 @@ import * as React from 'react';
 import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Metadata } from '@/sync/storageTypes';
-import { CodeLightViewportFill, codeLightNativeWindowEnd } from '@/utils/codeLightViewport';
+import { CodelyncViewportFill, codelyncNativeWindowEnd } from '@/utils/codelyncViewport';
 import { nativeReadingControlsUnavailable } from '@/utils/nativeReadingWindow';
 import { canSendToNoninvasiveSource } from '@/sync/noninvasiveBridge';
 const peer = vi.hoisted(() => ({ id: 'peer:one', listeners: new Set<() => void>() }));
@@ -18,15 +18,15 @@ function metadata(owner: string | null = 'owner-a'): Metadata {
             protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions', runtimeGeneration: owner, windowGeneration: null },
             controlMode: 'session', sourceStatus: owner ? 'connected' : 'owner-unavailable', currentTurnId: null } } as Metadata;
 }
-let state: { key: string; fill: CodeLightViewportFill; windowEnd: number; expanded: boolean; bodyVisible: boolean; open(): void };
+let state: { key: string; fill: CodelyncViewportFill; windowEnd: number; expanded: boolean; bodyVisible: boolean; open(): void };
 // Exercise the real reading key + viewport object used by ChatList; the retained
 // window contains one legacy row, three native tools and the confirmed reply.
 function Probe({ value }: { value: Metadata }) {
     const key = useNativeReadingWindow('relay', value);
-    const fill = React.useMemo(() => new CodeLightViewportFill(), [key]);
+    const fill = React.useMemo(() => new CodelyncViewportFill(), [key]);
     const [windowEnd, setEnd] = React.useState(1), [expanded, setExpanded] = React.useState(false);
     React.useEffect(() => { setEnd(1); setExpanded(false); }, [fill]);
-    state = { key, fill, windowEnd, expanded, bodyVisible: codeLightNativeWindowEnd(5, windowEnd) === 5,
+    state = { key, fill, windowEnd, expanded, bodyVisible: codelyncNativeWindowEnd(5, windowEnd) === 5,
         open() { setEnd(5); setExpanded(true); } };
     return null;
 }

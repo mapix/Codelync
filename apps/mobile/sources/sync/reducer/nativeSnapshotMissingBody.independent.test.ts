@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { nativeRecentMessages, type PeerRecentWindow } from '../codeLightRecent';
+import { nativeRecentMessages, type PeerRecentWindow } from '../codelyncRecent';
 import { createReducer, reducer } from './reducer';
 
 // Synthetic protocol identities exercise the same retained-watermark boundary

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
+import nacl from 'tweetnacl';
 import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HappySessionTransport, encryptRecord, decryptRecord, deriveContentKeyPair, sealDataKey, unsealDataKey, deriveBlobKey, encryptBlob, decryptBlob } from '../src/happy/session-transport.mjs';
+import { CodelyncSessionTransport, encryptRecord, decryptRecord, deriveContentKeyPair, sealDataKey, unsealDataKey, deriveBlobKey, encryptBlob, decryptBlob } from '../src/codelync/session-transport.mjs';
 
 /** @typedef {Record<string, any>} Value */
 
@@ -46,14 +48,18 @@ async function fixture() {
     dispose: async () => { server.closeAllConnections(); await new Promise(resolveClose => server.close(() => resolveClose(undefined))); await rm(directory, { recursive: true, force: true }); } };
 }
 
-test('Happy JSON, key wrapping, content key derivation and blobs interoperate with original Happy crypto', async () => {
+test('Codelync derivation domains are isolated while record and key wrapping formats retain upstream compatibility', async () => {
   const original = await import(new URL('./fixtures/happy-encryption.ts', import.meta.url).href);
   const key = new Uint8Array(32).fill(11), account = new Uint8Array(32).fill(3), value = { unicode: '完整中文😀', lines: ['first', 'second'], answer: false };
   assert.deepEqual(decryptRecord(Buffer.from(original.encryptWithDataKey(value, key)).toString('base64'), key), value);
   assert.deepEqual(original.decryptWithDataKey(Buffer.from(encryptRecord(value, key), 'base64'), key), value);
   assert.deepEqual(decryptRecord(Buffer.from(original.encryptLegacy(value, key)).toString('base64'), key, 'legacy'), value);
   assert.deepEqual(original.decryptLegacy(Buffer.from(encryptRecord(value, key, 'legacy'), 'base64'), key), value);
-  const ours = deriveContentKeyPair(account), reference = original.deriveContentKeyPair(account);
+  const ours = deriveContentKeyPair(account);
+  const referenceSeed = original.deriveKey(account, 'Codelync EnCoder', ['content']);
+  const reference = nacl.box.keyPair.fromSecretKey(new Uint8Array(createHash('sha512').update(referenceSeed).digest().subarray(0, 32)));
+  const upstream = original.deriveContentKeyPair(account);
+  assert.equal(Buffer.from(ours.publicKey).equals(Buffer.from(upstream.publicKey)), false);
   assert.ok(Buffer.from(ours.publicKey).equals(Buffer.from(reference.publicKey)));
   assert.ok(Buffer.from(ours.secretKey).equals(Buffer.from(reference.secretKey)));
   const wrapped = sealDataKey(key, ours.publicKey);
@@ -62,7 +68,7 @@ test('Happy JSON, key wrapping, content key derivation and blobs interoperate wi
   const theirWrapped = Buffer.concat([Buffer.from([0]), Buffer.from(original.libsodiumEncryptForPublicKey(key, reference.publicKey))]);
   const decodedKey = unsealDataKey(theirWrapped, ours.secretKey); assert.ok(decodedKey);
   assert.ok(Buffer.from(decodedKey).equals(Buffer.from(key)));
-  assert.ok(Buffer.from(deriveBlobKey(key)).equals(Buffer.from(original.deriveKey(key, 'Happy Blobs', ['session']))));
+  assert.ok(Buffer.from(deriveBlobKey(key)).equals(Buffer.from(original.deriveKey(key, 'Codelync Blobs', ['session']))));
   const blob = new Uint8Array([0, 255, 12, 87]);
   assert.deepEqual(decryptBlob(encryptBlob(blob, deriveBlobKey(key)), deriveBlobKey(key)), blob);
   assert.equal(decryptRecord(encryptRecord(value, key), new Uint8Array(32)), null);
@@ -72,16 +78,16 @@ test('Happy JSON, key wrapping, content key derivation and blobs interoperate wi
   assert.equal(decryptBlob(new Uint8Array(39), key), null);
   // 公开固定fixture：显式nonce的Happy box/GCM/secretbox格式，避免随未来实现一同漂移。
   const fixedWrapped = Buffer.from('AFfbSzWfI65eFG5OJRIFZwRyJQY0jBUMFHU9DJM9BNQhBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE+5MgHHQXD2M2vDoovZMbWsgeVrFF+lEQ9eRJpSegJiLu2R1HOx9wwH17aE4sqmMI', 'base64');
-  const fixedDecoded = unsealDataKey(fixedWrapped, ours.secretKey); assert.ok(fixedDecoded);
+  const fixedDecoded = unsealDataKey(fixedWrapped, upstream.secretKey); assert.ok(fixedDecoded);
   assert.ok(Buffer.from(fixedDecoded).equals(Buffer.from(key)));
-  assert.ok(Buffer.from(original.decryptBoxBundle(fixedWrapped.subarray(1), reference.secretKey)).equals(Buffer.from(key)));
+  assert.ok(Buffer.from(original.decryptBoxBundle(fixedWrapped.subarray(1), upstream.secretKey)).equals(Buffer.from(key)));
   assert.deepEqual(decryptRecord('AAQEBAQEBAQEBAQEBLBwiCC3t0dcIBuvg73iyZ7gdVgJ7KlMrgrarhDfybR/pw/9y/BJGohmDYBQZPM=', key), { fixture: 'Happy 中文😀' });
   assert.deepEqual(decryptBlob(Buffer.from('BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEKjbRgaxOdWDpsafKujBaT+GMNks=', 'base64'), key), blob);
-  assert.equal(Buffer.from(deriveBlobKey(key)).toString('hex'), 'e3929404162377f05f4811e895f9c1beb56f4b22c0a7ec75b1306672c7586acc');
+  assert.equal(Buffer.from(original.deriveKey(key, 'Happy Blobs', ['session'])).toString('hex'), 'e3929404162377f05f4811e895f9c1beb56f4b22c0a7ec75b1306672c7586acc');
 });
 
 test('ordered batch delivery amortizes requests and keeps exact IDs through lost ACKs', async () => {
-  const f = await fixture(); let transport = new HappySessionTransport(f.options);
+  const f = await fixture(); let transport = new CodelyncSessionTransport(f.options);
   const records = Array.from({ length: 120 }, (_, index) => ({ localId: `batch-${index}`, record: { value: index } }));
   try {
     await transport.start({ connectSocket: false }); f.loseAck();
@@ -89,7 +95,7 @@ test('ordered batch delivery amortizes requests and keeps exact IDs through lost
     const checkpoint = JSON.parse(await readFile(f.options.statePath, 'utf8'));
     assert.equal(checkpoint.outbox.length, 120);
     const ciphertext = checkpoint.outbox.map((/** @type {Value} */ item) => item.content);
-    await transport.close(); transport = new HappySessionTransport(f.options);
+    await transport.close(); transport = new CodelyncSessionTransport(f.options);
     await transport.start({ connectSocket: false });
     const acks = await transport.publishBatch(records);
     assert.equal(acks.length, 120); assert.equal(f.messages.length, 120);
@@ -103,7 +109,7 @@ test('ordered batch delivery amortizes requests and keeps exact IDs through lost
 });
 
 test('constructor is inert and options/key checkpoint identity are explicit', async () => {
-  const f = await fixture(); const transport = new HappySessionTransport(f.options);
+  const f = await fixture(); const transport = new CodelyncSessionTransport(f.options);
   try {
     assert.equal(f.gets(), 0); await assert.rejects(readFile(f.options.statePath), { code: 'ENOENT' });
     assert.equal(transport.status().started, false); assert.deepEqual(transport.status().registeredRpcMethods, []);
@@ -111,15 +117,15 @@ test('constructor is inert and options/key checkpoint identity are explicit', as
     await transport.start({ connectSocket: false });
     assert.equal((await stat(f.options.statePath)).mode & 0o777, 0o600);
     await transport.close();
-    const wrongKey = new HappySessionTransport({ ...f.options, encryptionKey: new Uint8Array(32).fill(8) });
+    const wrongKey = new CodelyncSessionTransport({ ...f.options, encryptionKey: new Uint8Array(32).fill(8) });
     await assert.rejects(wrongKey.start({ connectSocket: false }), { code: 'checkpoint-identity-mismatch' }); await wrongKey.close();
-    assert.throws(() => new HappySessionTransport({ ...f.options, serverOrigin: 'https://user:password@example.test' }), { code: 'invalid-transport-options' });
-    assert.throws(() => new HappySessionTransport({ ...f.options, encryptionKey: new Uint8Array(31) }), { code: 'invalid-encryption-key' });
+    assert.throws(() => new CodelyncSessionTransport({ ...f.options, serverOrigin: 'https://user:password@example.test' }), { code: 'invalid-transport-options' });
+    assert.throws(() => new CodelyncSessionTransport({ ...f.options, encryptionKey: new Uint8Array(31) }), { code: 'invalid-encryption-key' });
   } finally { await transport.close(); await f.dispose(); }
 });
 
 test('lost Happy ACK reload resends exactly the persisted ciphertext/localId and creates one log record', async () => {
-  const f = await fixture(); let transport = new HappySessionTransport(f.options);
+  const f = await fixture(); let transport = new CodelyncSessionTransport(f.options);
   try {
     await transport.start({ connectSocket: false }); f.loseAck();
     const record = { role: 'user', content: { type: 'text', text: 'UNIQUE_PRIVATE_TRANSPORT_FIXTURE_中文😀' } };
@@ -127,7 +133,7 @@ test('lost Happy ACK reload resends exactly the persisted ciphertext/localId and
     const checkpoint = await readFile(f.options.statePath, 'utf8'), pending = JSON.parse(checkpoint).outbox[0];
     assert.equal(transport.status().receiveCursor, 0); assert.equal(f.messages.length, 1);
     assert.ok(!checkpoint.includes(record.content.text)); assert.ok(!checkpoint.includes(f.token)); assert.ok(!checkpoint.includes(Buffer.from(f.key).toString('base64')));
-    await transport.close(); transport = new HappySessionTransport(f.options);
+    await transport.close(); transport = new CodelyncSessionTransport(f.options);
     await transport.start({ connectSocket: false });
     const ack = await transport.publish('stable-ack-loss', record);
     assert.equal(ack.id, f.messages[0].id); assert.equal(f.messages.length, 1);
@@ -138,14 +144,14 @@ test('lost Happy ACK reload resends exactly the persisted ciphertext/localId and
 });
 
 test('durable outbox retries FIFO and POST acknowledgments never skip an earlier peer input', async () => {
-  const f = await fixture(); let transport = new HappySessionTransport(f.options);
+  const f = await fixture(); let transport = new CodelyncSessionTransport(f.options);
   try {
     await transport.start({ connectSocket: false }); f.rejectPosts();
     await assert.rejects(transport.publish('first', { value: 1 }), { code: 'sync-http-error' });
     await assert.rejects(transport.publish('second', { value: 2 }), { code: 'sync-http-error' });
     f.addPeer({ role: 'user', content: { type: 'text', text: 'peer before producer ack' } }, 'phone-id');
     assert.equal(transport.status().receiveCursor, 0); await transport.close(); f.allowPosts();
-    transport = new HappySessionTransport(f.options); await transport.start({ connectSocket: false }); await transport.catchUp();
+    transport = new CodelyncSessionTransport(f.options); await transport.start({ connectSocket: false }); await transport.catchUp();
     const lastPost = f.posts.at(-1); assert.ok(lastPost);
     assert.deepEqual(lastPost.messages.map((/** @type {Value} */ item) => item.localId), ['first', 'second']);
     const inbox = transport.listInbox(); assert.equal(inbox[0].localId, 'phone-id'); assert.equal(inbox[0].seq, 1); assert.equal(inbox[0].publishedByThisTransport, false);
@@ -155,12 +161,12 @@ test('durable outbox retries FIFO and POST acknowledgments never skip an earlier
 });
 
 test('persisted inbox retains full outer identity and is not automatically replayed on restart', async () => {
-  const f = await fixture(); let transport = new HappySessionTransport(f.options);
+  const f = await fixture(); let transport = new CodelyncSessionTransport(f.options);
   try {
     f.addPeer({ role: 'user', content: { type: 'text', text: 'only a transport fixture' } }, null);
     /** @type {Value[]} */ const events = []; transport.on('record', record => events.push(record)); await transport.start({ connectSocket: false });
     assert.equal(events.length, 1); assert.equal(events[0].id, 'fixture-1'); assert.equal(events[0].localId, null); assert.equal(events[0].seq, 1); assert.equal(events[0].createdAt, 1000);
-    await transport.close(); transport = new HappySessionTransport(f.options);
+    await transport.close(); transport = new CodelyncSessionTransport(f.options);
     let replay = 0, recoverable = 0; transport.on('record', () => { replay++; }); transport.on('recoverable-inbox', event => { recoverable += event.count; });
     await transport.start({ connectSocket: false }); assert.equal(replay, 0); assert.equal(recoverable, 1); assert.equal(transport.listInbox().length, 1);
     assert.equal(await transport.ackInbox('fixture-1'), true); assert.equal(await transport.ackInbox('fixture-1'), false);
@@ -169,19 +175,19 @@ test('persisted inbox retains full outer identity and is not automatically repla
 });
 
 test('parallel publish operations persist stable IDs once and checkpoint conflicts fail before network dispatch', async () => {
-  const f = await fixture(), transport = new HappySessionTransport(f.options);
+  const f = await fixture(), transport = new CodelyncSessionTransport(f.options);
   try {
     await transport.start({ connectSocket: false });
     const [a, b] = await Promise.all([transport.publish('parallel', { value: 'same' }), transport.publish('parallel', { value: 'same' })]);
     assert.equal(a.id, b.id); assert.equal(f.messages.length, 1);
-    const secondOwner = new HappySessionTransport(f.options); await assert.rejects(secondOwner.start({ connectSocket: false }), { code: 'transport-in-use' }); await secondOwner.close();
+    const secondOwner = new CodelyncSessionTransport(f.options); await assert.rejects(secondOwner.start({ connectSocket: false }), { code: 'transport-in-use' }); await secondOwner.close();
     const checkpoint = await readFile(f.options.statePath, 'utf8'); await writeFile(f.options.statePath, checkpoint + '\n'); const before = f.posts.length;
     await assert.rejects(transport.publish('external-change', { value: 'not sent' }), { code: 'checkpoint-conflict' }); assert.equal(f.posts.length, before);
   } finally { await transport.close(); await f.dispose(); }
 });
 
 test('RPC registration is explicit, scoped and absent by default; disconnected calls cannot buffer side effects', async () => {
-  const f = await fixture(), transport = new HappySessionTransport(f.options);
+  const f = await fixture(), transport = new CodelyncSessionTransport(f.options);
   try {
     assert.deepEqual(transport.status().registeredRpcMethods, []);
     assert.throws(() => transport.registerRpc('other:abort', () => {}), { code: 'invalid-rpc-method' });
@@ -194,7 +200,7 @@ test('RPC registration is explicit, scoped and absent by default; disconnected c
 });
 
 test('an ACK returned to a caller is isolated and repeated publication does not rewrite its durable state', async () => {
-  const f = await fixture(), transport = new HappySessionTransport(f.options);
+  const f = await fixture(), transport = new CodelyncSessionTransport(f.options);
   try {
     await transport.start({ connectSocket: false });
     const ack = await transport.publish('immutable-ack', { value: 'original' });
@@ -207,7 +213,7 @@ test('an ACK returned to a caller is isolated and repeated publication does not 
 });
 
 test('a malformed outer sequence cannot advance cursor and unreadable ciphertext remains an explicit captured inbox item', async () => {
-  const f = await fixture(); let transport = new HappySessionTransport(f.options);
+  const f = await fixture(); let transport = new CodelyncSessionTransport(f.options);
   try {
     f.addPeer({ value: 'gap' }); f.messages[0].seq = 2;
     await transport.start({ connectSocket: false });
@@ -221,11 +227,11 @@ test('a malformed outer sequence cannot advance cursor and unreadable ciphertext
 });
 
 test('close during startup releases the state owner without creating a late socket or record callback', async () => {
-  const f = await fixture(), first = new HappySessionTransport(f.options);
+  const f = await fixture(), first = new CodelyncSessionTransport(f.options);
   try {
     let records = 0; first.on('record', () => { records++; });
     const starting = first.start({ connectSocket: false }); const rejected = assert.rejects(starting, { code: 'transport-closed' });
     await first.close(); await rejected; assert.equal(records, 0); assert.equal(first.status().connected, false);
-    const next = new HappySessionTransport(f.options); await next.start({ connectSocket: false }); await next.close();
+    const next = new CodelyncSessionTransport(f.options); await next.start({ connectSocket: false }); await next.close();
   } finally { await first.close(); await f.dispose(); }
 });

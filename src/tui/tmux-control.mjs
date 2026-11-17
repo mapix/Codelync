@@ -141,7 +141,7 @@ export class TmuxControlClient extends EventEmitter {
     await this.connect();
     if (this.closed || this.queue.length >= TMUX_CONTROL_LIMITS.queuedCommands) throw commandError('tui-command-unavailable', false);
     return new Promise((resolve, reject) => {
-      this.queue.push({ command, marker: `CODELIGHT_TMUX_DONE_${randomBytes(16).toString('hex')}`, blocks: [], bytes: 0, emitted: false, resolve, reject, onBlock: options.onBlock });
+      this.queue.push({ command, marker: `CODELYNC_TMUX_DONE_${randomBytes(16).toString('hex')}`, blocks: [], bytes: 0, emitted: false, resolve, reject, onBlock: options.onBlock });
       this.pump();
     });
   }

@@ -10,17 +10,17 @@ import { TuiTmuxBackend } from '../src/tui/tmux-backend.mjs';
 import { TmuxControlClient } from '../src/tui/tmux-control.mjs';
 
 /** @typedef {Record<string,any>} Value */
-const execute = promisify(execFile), binaryPath = process.env.CODELIGHT_TMUX_TEST_BINARY;
+const execute = promisify(execFile), binaryPath = process.env.CODELYNC_TMUX_TEST_BINARY;
 const env = { PATH: '/usr/bin:/bin', TERM: 'xterm-256color', LANG: 'en_US.UTF-8' };
 /** @param {string} value */
 function shellQuote(value) { return `'${value.replaceAll("'", "'\\''")}'`; }
 
 /** @param {any} t @param {Value} [options] */
 async function fixture(t, options = {}) {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-native-tui-')), socketPath = join(directory, 'tmux.sock'), file = join(directory, 'fixture.txt');
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-native-tui-')), socketPath = join(directory, 'tmux.sock'), file = join(directory, 'fixture.txt');
   await writeFile(file, 'BEGIN\nSECOND\n', { mode: 0o600 });
   const run = async (/** @type {string[]} */ args) => (await execute(/** @type {string} */ (binaryPath), ['-S', socketPath, ...args], { env, timeout: 5000, maxBuffer: 1024 * 1024 })).stdout;
-  await run(['-f', '/dev/null', 'new-session', '-d', '-s', 'codelight-native-proof', '-x', '80', '-y', '24', `/usr/bin/vim -Nu NONE -n ${shellQuote(file)}`]);
+  await run(['-f', '/dev/null', 'new-session', '-d', '-s', 'codelync-native-proof', '-x', '80', '-y', '24', `/usr/bin/vim -Nu NONE -n ${shellQuote(file)}`]);
   const backend = new TuiTmuxBackend({ binaryPath: /** @type {string} */ (binaryPath), socketPath, stateDirectory: join(directory, 'receipts'), ...options });
   t.after(async () => { await backend.dispose(); await run(['kill-server']).catch(() => {}); await rm(directory, { recursive: true, force: true }); });
   const pane = (await backend.list())[0]; assert.ok(pane); return { directory, socketPath, file, run, backend, pane };
@@ -80,7 +80,7 @@ test('actual native write with a dropped trailing receipt stays unknown; re-entr
       pending += chunk.toString('utf8'); let index;
       while ((index = pending.indexOf('\n')) >= 0) {
         const line = pending.slice(0, index); pending = pending.slice(index + 1);
-        if (fault.dropNextMarker && line.startsWith('CODELIGHT_TMUX_DONE_')) { fault.dropNextMarker = false; fault.dropped = true; continue; }
+        if (fault.dropNextMarker && line.startsWith('CODELYNC_TMUX_DONE_')) { fault.dropNextMarker = false; fault.dropped = true; continue; }
         this.push(`${line}\n`);
       }
       callback();

@@ -3,7 +3,7 @@ import { CryptoDigestAlgorithm, digestStringAsync } from 'expo-crypto';
 import { Platform } from 'react-native';
 import type { PendingAnonymousAccount } from './anonymousAccount';
 
-async function key(origin: string) { return `codelight_pending_${await digestStringAsync(CryptoDigestAlgorithm.SHA256, origin)}`; }
+async function key(origin: string) { return `codelync_pending_${await digestStringAsync(CryptoDigestAlgorithm.SHA256, origin)}`; }
 export const pendingAnonymousStorage = {
     async load(origin: string): Promise<PendingAnonymousAccount | null> {
         const name = await key(origin);

@@ -20,7 +20,7 @@ it('loads the owned encrypted ref once and deletes the local video when closed',
     const signal = new AbortController().signal;
     const file = await loadAttachmentFile('owned-session', 'owned-ref', { name: '../../clip.mp4', mimeType: 'video/mp4' }, signal);
     expect(mock.download).toHaveBeenCalledOnce(); expect(mock.download.mock.calls[0].slice(1, 3)).toEqual(['owned-session', 'owned-ref']);
-    expect(file.uri).toBe('file:///fixture-cache/codelight-file-synthetic-uuid-clip.mp4');
+    expect(file.uri).toBe('file:///fixture-cache/codelync-file-synthetic-uuid-clip.mp4');
     expect(mock.write).toHaveBeenCalledOnce();
     await file.dispose(); expect(mock.remove.mock.calls.map(call => call[0])).toEqual([file.uri]);
 });

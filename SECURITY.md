@@ -2,18 +2,18 @@
 
 ## Report a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/mapix/CodeLight/security/advisories/new).
+Use [GitHub private vulnerability reporting](https://github.com/mapix/Codelync/security/advisories/new).
 Do not post pairing URLs, credentials, conversation bodies, private screenshots
-or provisioning profiles in public issues. Include the CodeLight version,
+or provisioning profiles in public issues. Include the Codelync version,
 affected boundary and a minimal synthetic reproduction.
 
-CodeLight is an independent preview project, not an OpenAI product. A review,
+Codelync is an independent preview project, not an OpenAI product. A review,
 signature or notarization is evidence for a particular release; none proves
 that every future configuration is risk-free.
 
 ## What you authorize when pairing
 
-- A paired phone is a trusted controller of the Mac's CodeLight account and its
+- A paired phone is a trusted controller of the Mac's Codelync account and its
   exposed Codex sessions. There is currently no separate per-project or
   per-session ACL. Pair only phones you control and trust.
 - QR invitations contain a random 256-bit invitation and a pinned Mac public
@@ -23,7 +23,7 @@ that every future configuration is risk-free.
 - Revoke a lost phone from the Mac App. Revocation is persisted before its
   owned gateway sockets are closed. Previously downloaded history on that
   phone is not remotely erased.
-- Original Codex owns the session, runtime and command admission. CodeLight
+- Original Codex owns the session, runtime and command admission. Codelync
   does not launch a replacement model runner or modify/restart Codex.
   Unknown outcomes retain command identity and are not automatically replayed.
 
@@ -31,17 +31,17 @@ that every future configuration is risk-free.
 
 Conversation records and control RPC use the Happy-derived encrypted transport.
 The paired Mac and phone hold the account key. The desktop owner already has
-access to the original conversation; CodeLight is not a protection against a
+access to the original conversation; Codelync is not a protection against a
 compromised Mac, malicious local software or an authorized phone.
 
 The Mac stores its local account/key files with private file permissions in its
 application-support directory. These files are not encrypted by an additional
-CodeLight disk-encryption layer; protect your macOS account and backups. Phone
+Codelync disk-encryption layer; protect your macOS account and backups. Phone
 credentials use native secure storage. Relay databases store encrypted message
 content, while routing identities, timing, sizes and operational metadata remain
 observable. TLS is additionally used for the public tunnel.
 
-CodeLight's normal build disables upstream analytics, public Happy fallback and
+Codelync's normal build disables upstream analytics, public Happy fallback and
 the upstream OTA publisher. The distribution website uses no third-party
 scripts, fonts or analytics. Its web server still produces ordinary access logs.
 The website hosts only public release bytes and metadata, never sessions,
@@ -54,7 +54,7 @@ server. Registration uses an access key and an independent Mac signing identity;
 no account encryption key is sent to it. TLS validation and independent HTTP/WS
 probes are required before switching a working entry. A saved access key is not
 reused for another server. Prefix-aware phone transports keep other Macs on the
-same hostname outside the credential boundary. See `spec/codelight-network-relay.md`.
+same hostname outside the credential boundary. See `spec/codelync-network-relay.md`.
 
 Local LAN, Cloudflare and configured Relay can run concurrently around the same
 Mac/account identity. A v2 QR contains the pinned Mac key and enabled candidates;

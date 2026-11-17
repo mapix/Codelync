@@ -7,7 +7,7 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { RelayTunnelClient, normalizeRelayAddress } from './relay-client.mjs';
-import { readOptionalPrivateJson, writeDurablePrivateJson } from '../happy/discovery-persistence.mjs';
+import { readOptionalPrivateJson, writeDurablePrivateJson } from '../codelync/discovery-persistence.mjs';
 
 /** @typedef {Record<string,any>} Value */
 export class EntryProbes {
@@ -15,7 +15,7 @@ export class EntryProbes {
   create() {
     const challenge = randomBytes(32).toString('base64url'), response = randomBytes(32).toString('base64url');
     this.probes.set(challenge, { response, expires: Date.now() + 20000 });
-    return { path: '/codelight/entry-probe?challenge=' + challenge, response, release: () => this.probes.delete(challenge) };
+    return { path: '/codelync/entry-probe?challenge=' + challenge, response, release: () => this.probes.delete(challenge) };
   }
   /** @param {unknown} challenge */
   response(challenge) { const value = typeof challenge === 'string' ? this.probes.get(challenge) : null; return value && value.expires > Date.now() ? value.response : null; }
@@ -52,7 +52,30 @@ export class EntryProbes {
 
 export class CloudflareAccess extends EventEmitter {
   /** @param {{binary:string,upstream:string,state:string}} options */
-  constructor(options) { super(); this.options = options; this.closed = false; this.child = /** @type {import('node:child_process').ChildProcess|null} */ (null); this.reject = /** @type {((error:Error)=>void)|null} */ (null); this.closing = /** @type {Promise<void>|null} */ (null); }
+  constructor(options) {
+    super(); this.options = options; this.closed = false; this.child = /** @type {import('node:child_process').ChildProcess|null} */ (null);
+    this.reject = /** @type {((error:Error)=>void)|null} */ (null); this.closing = /** @type {Promise<void>|null} */ (null);
+    this.edgeConnections = new Set(); this.stderrTail = ''; this.edgeEverConnected = false;
+  }
+  /** Observe only the owned tunnel's slot lifecycle; URLs, requests and log bodies are not emitted.
+   * @param {string} text */
+  observeStderr(text) {
+    this.stderrTail = (this.stderrTail + text).slice(-16384);
+    const lines = this.stderrTail.split('\n'); this.stderrTail = lines.pop() ?? '';
+    for (const line of lines) {
+      if (this.closed) return;
+      const slot = line.match(/\bconnIndex=([0-3])\b/u)?.[1];
+      if (!slot) continue;
+      if (/Registered tunnel connection/iu.test(line)) {
+        const first = this.edgeConnections.size === 0;
+        this.edgeConnections.add(slot); this.edgeEverConnected = true;
+        if (first) this.emit('connected');
+      } else if (/failed to serve tunnel connection|Tunnel connection error|Connection terminated/iu.test(line)) {
+        const known = this.edgeConnections.delete(slot);
+        if (known && this.edgeConnections.size === 0 && this.edgeEverConnected) this.emit('reconnecting');
+      }
+    }
+  }
   async start() {
     const log = await open(join(this.options.state, 'tunnel.log'), 'a', 0o600);
     if (this.closed) { await log.close(); throw Error('public-access-cancelled'); }
@@ -63,6 +86,7 @@ export class CloudflareAccess extends EventEmitter {
       child.stderr?.on('data', chunk => {
         void log.write(chunk).catch(() => {}); buffer = (buffer + chunk.toString()).slice(-16384);
         const url = buffer.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/u)?.[0]; if (url) { clearTimeout(timer); this.reject = null; resolve(url); }
+        this.observeStderr(chunk.toString());
       });
       child.once('error', () => { clearTimeout(timer); reject(Error('cloudflare-start-failed')); });
       child.once('exit', () => { clearTimeout(timer); void log.close(); reject(Error('cloudflare-exited')); if (!this.closed) this.emit('disconnected'); });

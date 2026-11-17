@@ -1,0 +1,267 @@
+import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { createInterface } from 'node:readline';
+import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
+import { mkdir, open } from 'node:fs/promises';
+import { dirname, join, resolve, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
+import nacl from 'tweetnacl';
+import { PairingInvitations } from './pairing-gateway.mjs';
+import { readOptionalPrivateJson, writeDurablePrivateJson } from './discovery-persistence.mjs';
+import { CodelyncMacDaemon } from './mac-daemon.mjs';
+import { LocalSourceDiscovery } from './discovery.mjs';
+import { tunnelHealth } from './tunnel-health.mjs';
+import { BundledCodexStorage } from './bundled-codex-storage.mjs';
+import { DeviceRegistry } from './device-registry.mjs';
+import { APNsConfiguration } from './apns-configuration.mjs';
+import { NotificationDispatcher } from './notification-dispatcher.mjs';
+import { GatewayMetrics } from './gateway-metrics.mjs';
+import { MacConnectionService } from './mac-connection-service.mjs';
+import { RemoteDesktop } from './remote-desktop.mjs';
+import { closeOwnedResources, stopOwnedChildren } from './owned-shutdown.mjs';
+import { DesktopSourceSubscriptions } from './source-subscriptions.mjs';
+import { SourceSubscriptionCommands } from './source-subscription-commands.mjs';
+import { MacSettingsService } from './mac-settings-service.mjs';
+
+/** @typedef {Record<string,any>} Value */
+const runtime = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const flags = new Map(process.argv.slice(2).map(value => { const i = value.indexOf('='); return [value.slice(0, i), value.slice(i + 1)]; }));
+const state = resolve(flags.get('--state') ?? join(homedir(), 'Library/Application Support/Codelync'));
+const backendPort = Number(process.env.CODELYNC_BACKEND_PORT ?? 57670);
+if (!Number.isSafeInteger(backendPort) || backendPort < 1 || backendPort > 65535) throw Error('invalid-backend-port');
+const backendOrigin = `http://127.0.0.1:${backendPort}`;
+const node = flags.get('--node') ?? join(runtime, 'node');
+const backend = flags.get('--backend') ?? join(runtime, 'server/standalone.mjs');
+const cloudflared = flags.get('--cloudflared') ?? join(runtime, 'cloudflared');
+const lockfile = createRequire(import.meta.url)('proper-lockfile');
+/** @type {Set<import('node:child_process').ChildProcess>} */ const children = new Set();
+/** @type {CodelyncMacDaemon|null} */ let daemon = null;
+/** @type {MacConnectionService|null} */ let connections = null;
+/** @type {RemoteDesktop|null} */ let desktop = null;
+/** @type {NotificationDispatcher|null} */ let notifications = null;
+/** @type {APNsConfiguration|null} */ let pushConfiguration = null;
+/** @type {PairingInvitations|null} */ let invitations = null;
+/** @type {(()=>Promise<void>)|null} */ let releaseLease = null;
+/** @type {Promise<()=>Promise<void>>|null} */ let leaseAcquisition = null;
+let qaPairingWrite = Promise.resolve();
+/** @type {ReturnType<typeof setInterval>|null} */ let renewal = null;
+let publicOrigin = '', closing = false;
+/** @type {Promise<void>|null} */ let closeFlight = null;
+/** @type {GatewayMetrics|null} */ let metrics = null;
+/** @type {ReturnType<typeof setInterval>|null} */ let metricsTimer = null;
+/** @type {SourceSubscriptionCommands|null} */ let sourceCommands = null;
+/** @type {MacSettingsService|null} */ let settingsService = null;
+/** Local UI pipe only; invitations/tokens never enter a public status API or ordinary logs. @param {Value} value */
+function notify(value) { if (!closing && !process.stdout.destroyed) process.stdout.write(JSON.stringify(value) + '\n'); }
+
+function close() {
+  if (closeFlight) return closeFlight; closing = true;
+  if (renewal) clearInterval(renewal);
+  if (metricsTimer) clearInterval(metricsTimer);
+  // 任一资源清理失败仍要关闭本地数据库进程；不能留下孤儿 writer 后先释放服务 lease。
+  closeFlight = closeOwnedResources([() => settingsService?.close(), () => sourceCommands?.idle(), () => pushConfiguration?.idle(), () => desktop?.close(), () => notifications?.close(), () => connections?.close(), () => daemon?.close(),
+    () => invitations?.close(), () => metrics?.close()], async () => {
+    await stopOwnedChildren([...children]);
+  }, async () => {
+    const release = releaseLease ?? await leaseAcquisition?.catch(() => null);
+    await release?.();
+  });
+  return closeFlight;
+}
+process.once('SIGTERM', () => { close().finally(() => process.exit(0)); });
+process.once('SIGINT', () => { close().finally(() => process.exit(0)); });
+process.once('uncaughtException', () => { notify({ type: 'error', code: 'service-failed' }); close().finally(() => process.exit(1)); });
+process.stdout.on('error', error => { if (/** @type {NodeJS.ErrnoException} */ (error).code === 'EPIPE') close().finally(() => process.exit(0)); });
+
+/** @param {string} command @param {string[]} args @param {NodeJS.ProcessEnv} env @param {string} logName */
+async function child(command, args, env, logName) {
+  const log = await open(join(state, logName), 'a', 0o600);
+  if (closing) { await log.close(); throw Error('service-stopped'); }
+  const p = spawn(command, args, { cwd: join(runtime, 'server'), env, stdio: ['ignore', log.fd, log.fd] });
+  children.add(p); p.once('exit', () => { children.delete(p); log.close().catch(() => {}); if (!closing) notify({ type: 'error', code: 'owned-process-exited' }); });
+  p.once('error', () => { if (!closing) notify({ type: 'error', code: 'owned-process-failed' }); });
+  return p;
+}
+/** @param {string} origin @param {number} timeout */
+async function health(origin, timeout) {
+  const deadline = Date.now() + timeout;
+  do {
+    try { if (await tunnelHealth(origin)) return; } catch { /* startup/reconnect remains explicitly pending */ }
+    await new Promise(r => setTimeout(r, 300));
+  } while (!closing && Date.now() < deadline);
+  throw Error('service-health-unavailable');
+}
+async function owner() {
+  const path = join(state, 'connector/account.json');
+  let saved = await readOptionalPrivateJson(path);
+  if (!saved) { saved = { version: 1, serverUrl: backendOrigin, secret: randomBytes(32).toString('base64url') }; await writeDurablePrivateJson(path, saved); }
+  if (saved.serverUrl !== backendOrigin) throw Error('owner-origin-mismatch');
+  const seed = Buffer.from(saved.secret, 'base64url'); if (seed.length !== 32) throw Error('owner-key-invalid');
+  const pair = nacl.sign.keyPair.fromSeed(seed), challenge = randomBytes(32);
+  const response = await fetch(backendOrigin + '/v1/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ publicKey: Buffer.from(pair.publicKey).toString('base64'), challenge: challenge.toString('base64'), signature: Buffer.from(nacl.sign.detached(challenge, pair.secretKey)).toString('base64') }) });
+  const reply = /** @type {Value} */ (await response.json());
+  if (!response.ok || reply.success !== true || typeof reply.token !== 'string') throw Error('owner-authentication-failed');
+  pair.secretKey.fill(0); saved.token = reply.token; await writeDurablePrivateJson(path, saved); return saved;
+}
+/** @param {boolean} [force] */
+function issue(force = false) {
+  if (!connections || closing) return;
+  publicOrigin = connections.primaryOrigin();
+  try {
+    const pairing = connections.pairing(force);
+    if (pairing) {
+      notify({ type: 'ready', ...pairing });
+      // Explicit isolated native QA only. Invitations remain on this Mac and
+      // never enter the public status API, ordinary logs or source repository.
+      if (process.env.CODELYNC_PAIRING_EXPORT === '1' && process.env.CODELYNC_STATE_DIR &&
+          state === resolve(process.env.CODELYNC_STATE_DIR)) {
+        qaPairingWrite = qaPairingWrite.catch(() => {}).then(() => writeDurablePrivateJson(join(state, 'qa-pairing.json'), pairing));
+      }
+    }
+  }
+  catch { notify({ type: 'diagnostic', code: 'pairing-invitation-pending' }); }
+}
+async function main() {
+  await mkdir(state, { recursive: true, mode: 0o700 });
+  if (closing) return;
+  const marker = join(state, 'service.source'); const file = await open(marker, 'a', 0o600); await file.close();
+  if (closing) return;
+  leaseAcquisition = lockfile.lock(marker, { realpath: false, stale: 10000, update: 2000, retries: 0 });
+  releaseLease = await leaseAcquisition;
+  if (closing) return;
+  if (flags.get('--settings-only') === '1') {
+    settingsService = new MacSettingsService({ state, notify });
+    await settingsService.start();
+    createInterface({ input: process.stdin }).on('line', value => {
+      try { settingsService?.handle(JSON.parse(value)); } catch { /* Local pipe commands remain explicit. */ }
+    }).once('close', () => { close().finally(() => process.exit(0)); });
+    return;
+  }
+  await mkdir(join(state, 'connector'), { recursive: true, mode: 0o700 });
+  let relay = await readOptionalPrivateJson(join(state, 'relay-key.json'));
+  if (!relay) { relay = { secret: randomBytes(32).toString('hex') }; await writeDurablePrivateJson(join(state, 'relay-key.json'), relay); }
+  const env = /** @type {NodeJS.ProcessEnv} */ ({ ...process.env, CODELYNC_MASTER_SECRET: relay.secret, PORT: String(backendPort), HOST: '127.0.0.1',
+    DATA_DIR: join(state, 'relay'), PGLITE_DIR: join(state, 'relay/pglite'), DB_PROVIDER: 'pglite', NODE_ENV: 'production', CODELYNC_DISABLE_ANALYTICS: '1' });
+  for (const key of ['DATABASE_URL', 'REDIS_URL', 'S3_HOST', 'S3_ACCESS_KEY', 'S3_SECRET_KEY']) delete env[key];
+  // 固定 loopback identity 属于同一份本地数据库；公网临时地址变化不能改写原 command/receipt 的身份。
+  notify({ type: 'starting', phase: 'local-service' });
+  const migrationLog = await open(join(state, 'migration.log'), 'a', 0o600);
+  if (closing) { await migrationLog.close(); return; }
+  const migration = spawn(node, [backend, 'migrate'], { cwd: join(runtime, 'server'), env, stdio: ['ignore', 'ignore', migrationLog.fd] });
+  children.add(migration); const [code] = await once(migration, 'exit'); children.delete(migration); await migrationLog.close();
+  if (code !== 0) throw Error('local-migration-failed');
+  if (closing) return;
+  await child(node, [backend, 'serve'], env, 'relay.log'); await health(backendOrigin, 30000);
+  if (closing) return;
+  const account = await owner();
+  const devices = await DeviceRegistry.load(join(state, 'devices.json'));
+  devices.on('changed', rows => notify({ type: 'devices', devices: rows }));
+  notify({ type: 'devices', devices: devices.list() });
+  let key = await readOptionalPrivateJson(join(state, 'mac-box-key.json'));
+  if (!key) { key = { secret: randomBytes(32).toString('base64url') }; await writeDurablePrivateJson(join(state, 'mac-box-key.json'), key); }
+  invitations = new PairingInvitations({ key: new Uint8Array(Buffer.from(key.secret, 'base64url')), credentials: account,
+    issueCredentials: async (publicKey, name, issuedAt) => {
+      const encodedKey = Buffer.from(publicKey, 'base64url').toString('base64');
+      const post = async (/** @type {string} */ path, /** @type {Value} */ body, authenticated = false) => {
+        const response = await fetch(backendOrigin + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(authenticated ? { Authorization: 'Bearer ' + account.token } : {}) }, body: JSON.stringify(body) });
+        if (!response.ok) throw Error('device-token-issuance-failed'); return /** @type {Value} */ (await response.json());
+      };
+      await post('/v1/auth/request', { publicKey: encodedKey, supportsV2: false });
+      const ephemeral = nacl.box.keyPair(), nonce = randomBytes(24), cipher = nacl.box(Buffer.from(account.secret, 'base64url'), nonce, Buffer.from(publicKey, 'base64url'), ephemeral.secretKey);
+      const sealed = Buffer.concat([Buffer.from(ephemeral.publicKey), nonce, Buffer.from(cipher)]).toString('base64'); ephemeral.secretKey.fill(0);
+      await post('/v1/auth/response', { publicKey: encodedKey, response: sealed }, true);
+      const reply = await post('/v1/auth/request', { publicKey: encodedKey, supportsV2: false });
+      if (reply.state !== 'authorized' || typeof reply.token !== 'string') throw Error('device-token-issuance-failed');
+      const deviceId = await devices.approve(publicKey, name, reply.token, issuedAt);
+      return { token: reply.token, secret: account.secret, deviceId };
+    } });
+  let sender = null;
+  pushConfiguration = new APNsConfiguration({ state, devices, peerId: () => connections?.peerId() ?? '', origin: () => publicOrigin, notify,
+    changed: async next => {
+      await notifications?.setSender(next);
+      if (daemon) { daemon.options.observeBackground = !!next; daemon.scan().catch(() => notify({ type: 'diagnostic', code: 'source-observation-pending' })); }
+    } });
+  try { sender = await pushConfiguration.load(); } catch { notify({ type: 'notifications', available: false }); notify({ type: 'diagnostic', code: 'apns-configuration-unavailable' }); }
+  notifications = new NotificationDispatcher({ path: join(state, 'notifications.json'), devices, sender, origin: () => publicOrigin, peerId: () => connections?.peerId() ?? '', onDiagnostic: code => notify({ type: 'diagnostic', code }) });
+  await notifications.start();
+  try { metrics = await GatewayMetrics.load(join(state, 'gateway-metrics.json')); }
+  // 累计文件读取失败时只继续统计本次流量；旧累计值未知，不能伪装成零或覆盖原文件。
+  catch { notify({ type: 'diagnostic', code: 'gateway-metrics-unavailable' }); metrics = new GatewayMetrics({ cumulativeKnown: false }); }
+  const publishMetrics = () => { if (!closing && metrics) notify({ type: 'metrics', metrics: metrics.snapshot({ connectedDevices: devices.list().filter(device => !device.revoked && device.connected).length }) }); };
+  publishMetrics(); metricsTimer = setInterval(publishMetrics, 1000);
+  let configuredClaudeRuntime;
+  try {
+    const configured = await readOptionalPrivateJson(join(state, 'native-desktops.json'));
+    if (configured !== null) {
+      if (!configured || configured.version !== 1 || typeof configured.claudeRuntimePath !== 'string' || !isAbsolute(configured.claudeRuntimePath)
+        || Object.keys(configured).some(key => !['version', 'claudeRuntimePath'].includes(key))) throw Error('invalid-native-desktop-configuration');
+      configuredClaudeRuntime = configured.claudeRuntimePath;
+    }
+  } catch { notify({ type: 'diagnostic', code: 'native-desktop-configuration-unavailable' }); }
+  // BEGIN DESKTOP SOURCE SUBSCRIPTIONS
+  const sourceSubscriptions = new DesktopSourceSubscriptions({ path: join(state, 'source-subscriptions.json') });
+  await sourceSubscriptions.reload();
+  sourceCommands = new SourceSubscriptionCommands({ settings: sourceSubscriptions, daemon: () => daemon, notify,
+    changed: () => connections?.recent.refreshCatalog(), isClosing: () => closing });
+  sourceCommands.publish();
+  // END DESKTOP SOURCE SUBSCRIPTIONS
+  daemon = new CodelyncMacDaemon({ directory: join(state, 'connector'), leaseDirectory: process.env.CODELYNC_LEASE_DIR ?? join(homedir(), '.codelync/leases'), account,
+    observeBackground: !!sender, sourceSubscriptions,
+    onRpc: () => metrics?.rpc(), viewedSessions: () => devices.viewedSessions(), discovery: new LocalSourceDiscovery({ storage: new BundledCodexStorage(), claudeRuntimePath: configuredClaudeRuntime, sourceSubscriptions }) });
+  daemon.on('diagnostic', value => notify({ type: 'diagnostic', code: value.code }));
+  daemon.on('notification-observation', value => notifications?.observe(value.sourceKey, value.sessionId, value.summary).catch(() => notify({ type: 'diagnostic', code: 'notification-observation-pending' })));
+  await daemon.start();
+  desktop = new RemoteDesktop({ state: join(state, 'desktop'), devices, macSecretKey: invitations.pair.secretKey,
+    hostBinary: join(runtime, 'native/bin/CodelyncDesktopHost'), relayBinary: join(runtime, 'native/bin/livekit-server') });
+  desktop.on('status', value => notify({ type: 'desktop-status', status: value }));
+  try { notify({ type: 'desktop-status', status: await desktop.load() }); }
+  catch { notify({ type: 'desktop-status', status: desktop.status(), error: 'desktop-settings-unavailable' }); }
+  notify({ type: 'starting', phase: 'connection-channels' });
+  connections = new MacConnectionService({ state, cloudflared, upstream: backendOrigin, account, devices, invitations, daemon,
+    metrics, notificationsAvailable: () => !!pushConfiguration?.sender, remoteDesktop: desktop });
+  connections.on('configuration', (/** @type {Value} */ value) => notify({ type: 'access-configuration', configuration: value }));
+  connections.on('channels', (/** @type {Value} */ value) => { notify({ type: 'access-channels', ...value }); issue(); });
+  connections.on('diagnostic', (/** @type {Value} */ value) => notify({ type: 'diagnostic', ...value }));
+  renewal = setInterval(() => issue(true), 90000);
+  createInterface({ input: process.stdin }).on('line', value => {
+    try {
+      const command = JSON.parse(value);
+      if (pushConfiguration?.handle(command)) return;
+      if (sourceCommands?.handle(command)) return;
+      if (command.type === 'refresh-invite') issue(true);
+      else if (['configure-desktop', 'desktop-permission'].includes(command.type) && typeof command.requestId === 'string' && command.requestId.length <= 128) {
+        const requestId = command.requestId;
+        Promise.resolve().then(() => {
+          if (!desktop) throw Error('desktop-service-unavailable');
+          return command.type === 'configure-desktop' ? desktop.configure(command.configuration) : desktop.requestPermission(command.permission);
+        }).then(() => notify({ type: 'desktop-result', requestId, ok: true }))
+          .catch(() => notify({ type: 'desktop-result', requestId, ok: false, code: 'desktop-configuration-failed' }));
+      }
+      else if (command.type === 'rename-device' && typeof command.id === 'string' && typeof command.name === 'string') devices.rename(command.id, command.name).catch(() => notify({ type: 'diagnostic', code: 'device-operation-failed' }));
+      else if (command.type === 'revoke-device' && typeof command.id === 'string') devices.revoke(command.id).then(() => issue(true)).catch(() => notify({ type: 'diagnostic', code: 'device-operation-failed' }));
+      else if (command.type === 'set-enabled-channels' && typeof command.requestId === 'string' && command.requestId.length <= 128) {
+        const requestId = command.requestId;
+        Promise.resolve().then(() => {
+          if (!connections) throw Error('connection-service-unavailable');
+          return connections.manager.setEnabled(command.channels);
+        }).then(() => notify({ type: 'access-result', requestId, ok: true }))
+          .catch(() => notify({ type: 'access-result', requestId, ok: false, code: 'connection-channel-update-failed' }));
+      }
+      else if (command.type === 'configure-relay' && typeof command.requestId === 'string' && command.requestId.length <= 128) {
+        const requestId = command.requestId;
+        Promise.resolve().then(() => {
+          if (!connections) throw Error('connection-service-unavailable');
+          return connections.manager.configureRelay({ serverUrl: command.serverUrl, ...(typeof command.token === 'string' ? { token: command.token } : {}) });
+        })
+          .then(() => notify({ type: 'access-result', requestId, ok: true }))
+          .catch(() => notify({ type: 'access-result', requestId, ok: false, code: 'relay-validation-failed' }));
+      }
+    } catch { /* The local UI pipe accepts only the explicit operations above. */ }
+  }).once('close', () => { close().finally(() => process.exit(0)); });
+  // 通道启动由同一配置 owner 独立完成；公网失败不能阻断本地连接，也不能新建第二份会话运行时。
+  connections.start().catch(() => { notify({ type: 'access-channels', channels: [], overallState: 'unavailable' }); issue(); });
+}
+main().catch(async error => { notify({ type: 'error', code: error instanceof Error ? error.message : 'service-start-failed' }); await close(); process.exit(1); });

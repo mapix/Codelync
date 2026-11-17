@@ -6,12 +6,12 @@ import { Purchases, purchasesDefaults, purchasesParse } from './purchases';
 import { Profile, profileDefaults, profileParse } from './profile';
 import type { PermissionModeKey } from '@/components/PermissionModeSelector';
 
-const mmkv = new MMKV();
-const NEW_SESSION_DRAFT_KEY = 'new-session-draft-v1';
-const REGISTERED_PUSH_TOKEN_KEY = 'registered-push-token-v1';
-const VOICE_SOFT_PAYWALL_SHOWN_KEY = 'voice-soft-paywall-shown';
-const VOICE_ONBOARDING_PROMPT_LOAD_COUNT_KEY = 'voice-onboarding-prompt-load-count';
-const VOICE_MESSAGE_COUNT_KEY = 'voice-message-count';
+const mmkv = new MMKV({ id: 'codelync-app-state-v1' });
+const NEW_SESSION_DRAFT_KEY = 'codelync-new-session-draft-v1';
+const REGISTERED_PUSH_TOKEN_KEY = 'codelync-registered-push-token-v1';
+const VOICE_SOFT_PAYWALL_SHOWN_KEY = 'codelync-voice-soft-paywall-shown';
+const VOICE_ONBOARDING_PROMPT_LOAD_COUNT_KEY = 'codelync-voice-onboarding-prompt-load-count';
+const VOICE_MESSAGE_COUNT_KEY = 'codelync-voice-message-count';
 
 export type NewSessionAgentType = 'claude' | 'codex' | 'gemini' | 'openclaw' | 'agy' | 'rig';
 export type NewSessionSessionType = 'simple' | 'worktree';
@@ -42,7 +42,7 @@ export interface NewSessionDraft {
 }
 
 export function loadSettings(): { settings: Settings, version: number | null } {
-    const settings = mmkv.getString('settings');
+    const settings = mmkv.getString('codelync-settings');
     if (settings) {
         try {
             const parsed = JSON.parse(settings);
@@ -56,11 +56,11 @@ export function loadSettings(): { settings: Settings, version: number | null } {
 }
 
 export function saveSettings(settings: Settings, version: number) {
-    mmkv.set('settings', JSON.stringify({ settings: settingsToSyncPayload(settings), version }));
+    mmkv.set('codelync-settings', JSON.stringify({ settings: settingsToSyncPayload(settings), version }));
 }
 
 export function loadPendingSettings(): Partial<Settings> {
-    const pending = mmkv.getString('pending-settings');
+    const pending = mmkv.getString('codelync-pending-settings');
     if (pending) {
         try {
             const raw = JSON.parse(pending);
@@ -90,11 +90,11 @@ export function loadPendingSettings(): Partial<Settings> {
 }
 
 export function savePendingSettings(settings: Partial<Settings>) {
-    mmkv.set('pending-settings', JSON.stringify(settings));
+    mmkv.set('codelync-pending-settings', JSON.stringify(settings));
 }
 
 export function loadLocalSettings(): LocalSettings {
-    const localSettings = mmkv.getString('local-settings');
+    const localSettings = mmkv.getString('codelync-local-settings');
     if (localSettings) {
         try {
             const parsed = JSON.parse(localSettings);
@@ -108,11 +108,11 @@ export function loadLocalSettings(): LocalSettings {
 }
 
 export function saveLocalSettings(settings: LocalSettings) {
-    mmkv.set('local-settings', JSON.stringify(settings));
+    mmkv.set('codelync-local-settings', JSON.stringify(settings));
 }
 
 export function loadThemePreference(): 'light' | 'dark' | 'adaptive' {
-    const localSettings = mmkv.getString('local-settings');
+    const localSettings = mmkv.getString('codelync-local-settings');
     if (localSettings) {
         try {
             const parsed = JSON.parse(localSettings);
@@ -127,7 +127,7 @@ export function loadThemePreference(): 'light' | 'dark' | 'adaptive' {
 }
 
 export function loadPurchases(): Purchases {
-    const purchases = mmkv.getString('purchases');
+    const purchases = mmkv.getString('codelync-purchases');
     if (purchases) {
         try {
             const parsed = JSON.parse(purchases);
@@ -141,11 +141,11 @@ export function loadPurchases(): Purchases {
 }
 
 export function savePurchases(purchases: Purchases) {
-    mmkv.set('purchases', JSON.stringify(purchases));
+    mmkv.set('codelync-purchases', JSON.stringify(purchases));
 }
 
 export function loadSessionDrafts(): Record<string, string> {
-    const drafts = mmkv.getString('session-drafts');
+    const drafts = mmkv.getString('codelync-session-drafts');
     if (drafts) {
         try {
             return JSON.parse(drafts);
@@ -158,10 +158,10 @@ export function loadSessionDrafts(): Record<string, string> {
 }
 
 export function saveSessionDrafts(drafts: Record<string, string>) {
-    mmkv.set('session-drafts', JSON.stringify(drafts));
+    mmkv.set('codelync-session-drafts', JSON.stringify(drafts));
 }
 
-const RIG_COMPOSER_DRAFT_KEY = 'session-rig-composer-draft:';
+const RIG_COMPOSER_DRAFT_KEY = 'codelync-session-rig-composer-draft:';
 
 /** Pending Happy Agent composer, persisted so an offline edit survives restart. Never includes lastMode. */
 const RigComposerDraftSnapshotSchema = z.object({
@@ -264,7 +264,7 @@ export function clearRegisteredPushToken() {
 }
 
 export function loadSessionLastMessageSentAt(): Record<string, number> {
-    const timestamps = mmkv.getString('session-last-message-sent-at');
+    const timestamps = mmkv.getString('codelync-session-last-message-sent-at');
     if (timestamps) {
         try {
             return JSON.parse(timestamps);
@@ -277,11 +277,11 @@ export function loadSessionLastMessageSentAt(): Record<string, number> {
 }
 
 export function saveSessionLastMessageSentAt(timestamps: Record<string, number>) {
-    mmkv.set('session-last-message-sent-at', JSON.stringify(timestamps));
+    mmkv.set('codelync-session-last-message-sent-at', JSON.stringify(timestamps));
 }
 
 export function loadProfile(): Profile {
-    const profile = mmkv.getString('profile');
+    const profile = mmkv.getString('codelync-profile');
     if (profile) {
         try {
             const parsed = JSON.parse(profile);
@@ -295,7 +295,7 @@ export function loadProfile(): Profile {
 }
 
 export function saveProfile(profile: Profile) {
-    mmkv.set('profile', JSON.stringify(profile));
+    mmkv.set('codelync-profile', JSON.stringify(profile));
 }
 
 // Simple temporary text storage for passing large strings between screens

@@ -1,4 +1,4 @@
-export const PEER_RESPONSE_CODEC_HEADER: 'x-codelight-peer-codec';
+export const PEER_RESPONSE_CODEC_HEADER: 'x-codelync-peer-codec';
 export const PEER_RESPONSE_CODEC_VALUE: '3';
 export const PEER_RESPONSE_MAX_BYTES: number;
 export const PEER_COMPACT_PREFIX_BYTES: number;

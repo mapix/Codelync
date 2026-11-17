@@ -7,7 +7,7 @@ import { t } from '@/text';
 import { HappyEngineeringWordmark } from './HappyEngineeringWordmark';
 import { config } from '@/config';
 import { getServerUrl } from '@/sync/serverConfig';
-import { codeLightMacCommand } from '@/utils/serverOrigin';
+import { codelyncMacCommand } from '@/utils/serverOrigin';
 
 const DESKTOP_URL = 'https://happy.engineering';
 const WORDMARK_HEIGHT = 84;
@@ -73,7 +73,7 @@ export const LinkComputerContent = React.memo(function LinkComputerContent({
                     onToggle={onToggle ? () => onToggle('install') : undefined}
                     disabled={disabled}
                 >
-                    {config.noninvasiveLocal ? <Text style={styles.body}>{t('codeLightSetup.macHelp')}<Text style={Typography.mono()}>{'\n' + codeLightMacCommand(getServerUrl())}</Text></Text> : (
+                    {config.noninvasiveLocal ? <Text style={styles.body}>{t('codelyncSetup.macHelp')}<Text style={Typography.mono()}>{'\n' + codelyncMacCommand(getServerUrl())}</Text></Text> : (
                     <Text style={styles.body}>
                         {t('onboarding.installBodyPrefix')}
                         <Text

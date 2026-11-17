@@ -17,7 +17,7 @@ import { trackConnectAttempt } from '@/track';
 import { t } from '@/text';
 import { getServerInfo, getServerUrl } from '@/sync/serverConfig';
 import { config } from '@/config';
-import { codeLightMacCommand } from '@/utils/serverOrigin';
+import { codelyncMacCommand } from '@/utils/serverOrigin';
 
 /**
  * How long to keep the button busy after a successful scan while the linked
@@ -40,7 +40,7 @@ function useScanActions(options: { onSuccess: () => void; onError?: () => void }
             t('onboarding.pasteLinkTitle'),
             t('onboarding.pasteLinkMessage'),
             {
-                placeholder: config.noninvasiveLocal ? 'codelight://terminal?...' : 'happy://terminal?...',
+                placeholder: config.noninvasiveLocal ? 'codelync://terminal?...' : 'happy://terminal?...',
                 cancelText: t('common.cancel'),
                 confirmText: t('onboarding.pasteLinkConfirm'),
             },
@@ -104,7 +104,7 @@ export const LinkComputerChecklist = React.memo(function LinkComputerChecklist({
                     <Text style={styles.body}>{t('onboarding.offlineOpenBody')}</Text>
                     <TerminalBlock
                         style={styles.terminal}
-                        lines={[{ kind: 'command', text: config.noninvasiveLocal ? codeLightMacCommand(getServerUrl()) : t('onboarding.terminalRun') }]}
+                        lines={[{ kind: 'command', text: config.noninvasiveLocal ? codelyncMacCommand(getServerUrl()) : t('onboarding.terminalRun') }]}
                     />
                 </ChecklistRow>
                 <View style={styles.actions}>

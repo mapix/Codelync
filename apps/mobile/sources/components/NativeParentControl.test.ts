@@ -28,7 +28,7 @@ it('rechecks the current child owner before staging', () => {
     let screen!: ReturnType<typeof create>;
     act(() => { screen = create(React.createElement(NativeParentControl, { sessionId: 'child' })); });
     mock.sessions.child.agentState.nativeInput.ownerGeneration = 'stale-owner';
-    act(() => screen.root.findByProps({ testID: 'codelight-continue-in-parent' }).props.onPress());
+    act(() => screen.root.findByProps({ testID: 'codelync-continue-in-parent' }).props.onPress());
     expect(mock.flush).not.toHaveBeenCalled();
     expect(mock.update).not.toHaveBeenCalled(); expect(mock.navigate).not.toHaveBeenCalled(); act(() => screen.unmount());
 });
@@ -36,7 +36,7 @@ it('stages identity only without reading or flushing the child draft and keeps t
     setup(); Object.defineProperty(mock.sessions.child, 'draft', { get: () => { throw Error('Child draft must not be read'); } });
     let screen!: ReturnType<typeof create>;
     act(() => { screen = create(React.createElement(NativeParentControl, { sessionId: 'child' })); });
-    act(() => screen.root.findByProps({ testID: 'codelight-continue-in-parent' }).props.onPress());
+    act(() => screen.root.findByProps({ testID: 'codelync-continue-in-parent' }).props.onPress());
     expect(mock.update).toHaveBeenCalledWith('parent', expect.stringContaining('native-child'));
     const draft = mock.update.mock.calls[0][1];
     expect(draft).toMatch(/^PARENT PREFIX\n\n---/); expect(draft).not.toContain('Old stored instruction');
@@ -47,9 +47,9 @@ it('an unavailable parent offers one directory read with no navigation or draft 
     setup(); delete mock.sessions.parent; let finish!: () => void;
     mock.refresh.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
     let screen!: ReturnType<typeof create>; act(() => { screen = create(React.createElement(NativeParentControl, { sessionId: 'child' })); });
-    const retry = screen.root.findByProps({ testID: 'codelight-parent-read-retry' }).props.onPress;
+    const retry = screen.root.findByProps({ testID: 'codelync-parent-read-retry' }).props.onPress;
     await act(async () => { retry(); retry(); }); expect(mock.refresh).toHaveBeenCalledOnce();
     expect(mock.update).not.toHaveBeenCalled(); expect(mock.navigate).not.toHaveBeenCalled(); expect(mock.flush).not.toHaveBeenCalled();
-    expect(screen.root.findByProps({ testID: 'codelight-parent-read-retry' }).props.disabled).toBe(true);
+    expect(screen.root.findByProps({ testID: 'codelync-parent-read-retry' }).props.disabled).toBe(true);
     await act(async () => finish()); act(() => screen.unmount());
 });

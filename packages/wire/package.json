@@ -1,5 +1,5 @@
 {
-  "name": "@slopus/happy-wire",
+  "name": "@codelync/wire",
   "version": "0.1.0",
   "description": "Shared message wire types and Zod schemas for Happy clients and services",
   "author": "Kirill Dubovitskiy",
@@ -22,10 +22,10 @@
       "import": "./peer-codec.js",
       "default": "./peer-codec.js"
     },
-    "./codelight": {
-      "types": "./codelight.d.ts",
-      "import": "./codelight.js",
-      "default": "./codelight.js"
+    "./codelync": {
+      "types": "./codelync.d.ts",
+      "import": "./codelync.js",
+      "default": "./codelync.js"
     },
     ".": {
       "require": {
@@ -43,8 +43,8 @@
     "native-tasks.d.ts",
     "peer-codec.js",
     "peer-codec.d.ts",
-    "codelight.js",
-    "codelight.d.ts",
+    "codelync.js",
+    "codelync.d.ts",
     "dist",
     "package.json",
     "README.md"

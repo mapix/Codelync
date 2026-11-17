@@ -1,6 +1,6 @@
 # Happy Native Connector（单source）
 
-> **当前发行范围（2026-10-31）**：本共享 connector 合同用于 Codex 原生 session。下文保留的 window/其他 source 分支属于延期研究，不表示当前 CodeLight 已启用其他 harness；原生会话能力以 [当前产品合同](codelight-product.md) 为准。
+> **当前发行范围（2026-10-31）**：本共享 connector 合同用于 Codex 原生 session。下文保留的 window/其他 source 分支属于延期研究，不表示当前 Codelync 已启用其他 harness；原生会话能力以 [当前产品合同](codelync-product.md) 为准。
 
 ## 所有者
 
@@ -18,7 +18,7 @@ Native acknowledged不能单独当admission：explicit admitted/admissionConfirm
 
 Happy accepted使用role=session、content.id/time/role=agent/turn与ev.user-message-accepted `{id,ref:Happy server message id,runId:真实nativeTurnId}`；failed发布user-message-rejected；unknown独立bridge-receipt状态，不伪装rejected。精确own echo关联只对Happy message-origin send/steer suppress native user投影；其余同text的native user仍保留。
 
-### CodeLight 未确认结果与窗口接口（2026-10-29）
+### Codelync 未确认结果与窗口接口（2026-10-29）
 
 未知 native 效果发布非终态 `user-message-delivery-unknown {ref,commandId}`，`ref` 精确指向 Happy 原 server message id。它只令原生消息显示“结果未确认”，仍保持 pending，不能称失败/接受或自动重发。晚到原 native row 的 commandId/messageId 证明可发布 accepted；终态接受/拒绝优先于后来或重放的 unknown。事件 id/time/body 在检查点先保存，重启继续同一事件。
 
@@ -32,7 +32,7 @@ RPC 去重摘要必须包含 method 和 params；同 commandId 不得将另一�
 
 ## RPC
 
-2026-10-29 CodeLight：既有 idle 会话可能暂时没有 Desktop renderer owner；此状态不得使整个 Connector 崩溃。启动仍保留加密历史与 owner-unavailable 状态，后台只重试原 owner 发现/订阅；不会创建 Agent。重新发现成功后恢复实时订阅与 capability。缺 source 时所有业务动作保持不可用。
+2026-10-29 Codelync：既有 idle 会话可能暂时没有 Desktop renderer owner；此状态不得使整个 Connector 崩溃。启动仍保留加密历史与 owner-unavailable 状态，后台只重试原 owner 发现/订阅；不会创建 Agent。重新发现成功后恢复实时订阅与 capability。缺 source 时所有业务动作保持不可用。
 
 仅abort、permission、communication、bridge-receipt。RPC需stable commandId。abort必须所见turnId，fresh view currentTurnId必须相同，不能以后台runtime running或新turn替换；之后original interrupt。
 
@@ -87,15 +87,15 @@ fixtureAdapter+隔离实际Happy records：native called-once、重复ID冲突�
 
 ## 当前交付与校验（2026-10-29）
 
-CodeLight live 验证发现 metadata 的 connected/capability 不会更新 Happy session.active。Controller 必须在原 source 真实 connected 时定期调用 transport.keepAlive，由 session-alive 更新在线投影；source 不可用时停止发送该心跳。机器在线和原会话在线分别由各自事实驱动。
+Codelync live 验证发现 metadata 的 connected/capability 不会更新 Happy session.active。Controller 必须在原 source 真实 connected 时定期调用 transport.keepAlive，由 session-alive 更新在线投影；source 不可用时停止发送该心跳。机器在线和原会话在线分别由各自事实驱动。
 
-实现 `src/happy/native-connector.mjs`；未改原adapter、Happy UI、transport、Root runtime/binding。Parent须在`start`前持自己的proper-lockfile source lease，并提供assertLease/getGeneration；scope receipt地址公开为connector.receiptScope，read-only bridge-receipt只能查这个scope。
+实现 `src/codelync/native-connector.mjs`；未改原adapter、Happy UI、transport、Root runtime/binding。Parent须在`start`前持自己的proper-lockfile source lease，并提供assertLease/getGeneration；scope receipt地址公开为connector.receiptScope，read-only bridge-receipt只能查这个scope。
 
 17项fixture regression通过：bootstrap exact identity/prefix与晚到source、Unicode后缀/非prefix、native called-once、unknown/restart无replay、相同文字不能代替身份、sourceepoch读取间变化、foreground stop、真实typed request/question映射和scope、固定event ACK-loss恢复、tool运行与终态顺序、Root receipt repair/摘要冲突、startup/close和单owner保护。Node24.15.0 typecheck/lint通过。
 
 实际57070 Happy test records通过：全新RAM身份（没有读任何credentials）、fixture adapter 3次调用（两条test输入，其中一条unknown；一次fixture foreground stop）、unknown重启后redispatch0、accepted.ref与Happy server id匹配、prefix delta、原SDK/model/GUI调用均0。自己的test session已删除；不访问原source账号/SDK或Mac。
 
-可重跑：`HAPPY_CONNECTOR_INTEGRATION=1 HAPPY_CONNECTOR_CREATE_TEST_ACCOUNT=1 node --test test/happy-native-connector.integration.test.mjs`，仅允许本地57070 fresh RAM test identity。也可由Root通过env传isolated TEST_ORIGIN/TOKEN/SESSION_ID/SESSION_KEY。普通test不读任何凭据或自启服务。
+可重跑：`CODELYNC_CONNECTOR_INTEGRATION=1 CODELYNC_CONNECTOR_CREATE_TEST_ACCOUNT=1 node --test test/happy-native-connector.integration.test.mjs`，仅允许本地57070 fresh RAM test identity。也可由Root通过env传isolated TEST_ORIGIN/TOKEN/SESSION_ID/SESSION_KEY。普通test不读任何凭据或自启服务。
 
 Nonprefix/native tool running update协议仍需Coder实现`native-row-upsert`：替换replaceIds片段组，按sourceRowId/revision更新；工具以原call id/status/output更新而非伪completed。支持未贯通前projectionStatus=resync-required是明确限制，不把完整快照反复append。
 

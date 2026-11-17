@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DesktopSourceSubscriptions, DESKTOP_SOURCE_APPS } from '../src/happy/source-subscriptions.mjs';
+import { DesktopSourceSubscriptions, DESKTOP_SOURCE_APPS } from '../src/codelync/source-subscriptions.mjs';
 
 /** @param {import('node:test').TestContext} t */
 async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-source-choices-')), path = join(directory, 'sources.json');
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-source-choices-')), path = join(directory, 'sources.json');
   t.after(() => rm(directory, { recursive: true, force: true })); return { path, settings: new DesktopSourceSubscriptions({ path }) };
 }
 

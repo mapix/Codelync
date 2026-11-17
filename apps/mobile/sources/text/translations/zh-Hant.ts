@@ -1,5 +1,5 @@
 /**
- * Chinese (Traditional) translations for the CodeLight app
+ * Chinese (Traditional) translations for the Codelync app
  * Values can be:
  * - String constants for static text
  * - Functions with typed object parameters for dynamic text
@@ -17,32 +17,32 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
 }
 
 export const zhHant: TranslationStructure = {
-    codeLightHandoff: {
+    codelyncHandoff: {
         action: "交給…",
         noTargets: "此 Mac 上沒有其他已連線的桌面對話。",
         unavailable: "來源或目標對話已無法使用。",
     },
 
-    codeLightSetup: {
+    codelyncSetup: {
         createFailed: "無法建立連線，請檢查 Mac 連線後重試。",
         storageFailed: "無法安全儲存連線，請檢查裝置儲存空間後重試。",
-        reloadFailed: "請關閉並重新開啟 CodeLight，以使用已儲存的設定重新連線。",
-        pairFailed: "此配對連結無法使用，請掃描 Mac CodeLight 目前顯示的新 QR Code。",
-        macHelp: "請在 Mac 開啟 CodeLight，並保持現有 Codex / Antigravity / Claude Desktop 會話執行。",
-        helpBody: "請在 Mac 開啟並保持 CodeLight 執行，用此手機掃描它的 QR Code。如果連線位址變更，請重新整理並掃描新 QR Code。無需註冊或 VPN。",
+        reloadFailed: "請關閉並重新開啟 Codelync，以使用已儲存的設定重新連線。",
+        pairFailed: "此配對連結無法使用，請掃描 Mac Codelync 目前顯示的新 QR Code。",
+        macHelp: "請在 Mac 開啟 Codelync，並保持現有 Codex / Antigravity / Claude Desktop 會話執行。",
+        helpBody: "請在 Mac 開啟並保持 Codelync 執行，用此手機掃描它的 QR Code。如果連線位址變更，請重新整理並掃描新 QR Code。無需註冊或 VPN。",
     },
 
     windowControl: en.windowControl,
 
-    codeLightPairing: {
+    codelyncPairing: {
         refresh: "請在 Mac 上重新整理 QR Code，然後重新掃描。",
         storage: "無法安全儲存連線，請檢查手機儲存空間後重試。",
-        invalid: "無法驗證此 QR Code，請掃描 Mac CodeLight 目前顯示的 QR Code。",
-        network: "暫時無法連線到 Mac，請保持 CodeLight 執行後重試。",
+        invalid: "無法驗證此 QR Code，請掃描 Mac Codelync 目前顯示的 QR Code。",
+        network: "暫時無法連線到 Mac，請保持 Codelync 執行後重試。",
     },
 
-    codeLightCommands: { modelMenu: '請使用輸入框旁的模型按鈕選擇本會話的模型。', unsupported: "CodeLight 暫不支援此應用程式的這個命令，已保留草稿。", busy: "此會話正在忙碌，已保留草稿。", unconfirmed: "命令結果尚未確認，請檢查執行結果。" },
-    codeLightModels: {
+    codelyncCommands: { modelMenu: '請使用輸入框旁的模型按鈕選擇本會話的模型。', unsupported: "Codelync 暫不支援此應用程式的這個命令，已保留草稿。", busy: "此會話正在忙碌，已保留草稿。", unconfirmed: "命令結果尚未確認，請檢查執行結果。" },
+    codelyncModels: {
         nextMessage: '下一則訊息',
         default: "預設",
         check: "核對設定",
@@ -52,7 +52,7 @@ export const zhHant: TranslationStructure = {
         unconfirmed: "修改結果尚未確認，請檢查結果，不要重複修改。",
     },
 
-    codeLightChannels: {
+    codelyncChannels: {
         title: "連線通道",
         automatic: "自動選擇",
         automaticDetail: "檢查已儲存的連接並連接到這台 Mac。",
@@ -71,14 +71,14 @@ export const zhHant: TranslationStructure = {
         switchFailed: "連接未完成，已保留先前的選擇。",
         connectingTitle: "正在連接 Mac…",
         failedTitle: "暫時無法連接 Mac",
-        failedHelp: "請在 Mac 開啟 CodeLight，檢查網路後重試，或選擇其他連接。",
+        failedHelp: "請在 Mac 開啟 Codelync，檢查網路後重試，或選擇其他連接。",
         accessEndedTitle: "目前 Mac 連接未通過驗證",
-        accessEndedHelp: "請掃描這台 Mac 上 CodeLight 目前顯示的 QR Code。已儲存的訊息和草稿會保留。",
+        accessEndedHelp: "請掃描這台 Mac 上 Codelync 目前顯示的 QR Code。已儲存的訊息和草稿會保留。",
         retryConnection: "重試連接",
         scanMac: "掃描 Mac QR Code",
     },
 
-    codeLightLoading: {
+    codelyncLoading: {
         titles: "正在讀取 Codex、Antigravity 和 Claude Desktop 會話…",
         discovered: ({ count }: { count: number }) => "已讀取 {count} 個項目，繼續載入中…".replace("{count}", String(count)),
         messages: "正在讀取此會話…",
@@ -88,7 +88,7 @@ export const zhHant: TranslationStructure = {
         empty: "此 Mac 上暫未找到可用的 Codex、Antigravity 或 Claude Desktop 會話。",
     },
 
-    codeLightProjects: {
+    codelyncProjects: {
         active: ({ count }: { count: number }) => "活躍：{count}".replace("{count}", String(count)),
         waiting: ({ count }: { count: number }) => "待操作：{count}".replace("{count}", String(count)),
         unknown: ({ count }: { count: number }) => "未確認：{count}".replace("{count}", String(count)),
@@ -100,7 +100,7 @@ export const zhHant: TranslationStructure = {
         updated: ({ time }: { time: string }) => "更新於 {time}".replace("{time}", String(time)),
     },
 
-    codeLightSessionStatus: {
+    codelyncSessionStatus: {
         active: "活躍",
         waiting: "待操作",
         idle: "空閒",
@@ -228,7 +228,7 @@ export const zhHant: TranslationStructure = {
         developer: '開發者',
         developerTools: '開發者工具',
         about: '關於',
-        aboutFooter: "CodeLight 可連接 Mac 上的 Codex、Antigravity 和 Claude Desktop 會話。Claude Desktop 使用 Gateway；可用操作取決於每個會話。",
+        aboutFooter: "Codelync 可連接 Mac 上的 Codex、Antigravity 和 Claude Desktop 會話。Claude Desktop 使用 Gateway；可用操作取決於每個會話。",
         whatsNew: '更新日誌',
         whatsNewSubtitle: '查看最新更新和改進',
         reportIssue: '回報問題',
@@ -445,7 +445,7 @@ export const zhHant: TranslationStructure = {
         // Used by Server Configuration screen (app/(app)/server.tsx)
         serverConfiguration: '伺服器設定',
         enterServerUrl: '請輸入伺服器 URL',
-        notValidHappyServer: '不是有效的 CodeLight 伺服器',
+        notValidHappyServer: '不是有效的 Codelync 伺服器',
         changeServer: '更改伺服器',
         continueWithServer: '繼續使用此伺服器？',
         resetToDefault: '重設為預設',
@@ -460,8 +460,8 @@ export const zhHant: TranslationStructure = {
         services: '服務',
         useCustomServerForVoice: '使用自訂伺服器處理語音',
         customServerVoiceEnabled: '語音憑證和用量由您的自訂伺服器處理',
-        customServerVoiceDisabled: '語音使用 CodeLight Cloud 和您的 CodeLight 訂閱',
-        customServerVoiceFooter: '關閉時，啟動語音會連線至 CodeLight Cloud 和 ElevenLabs。僅當您的自訂伺服器已設定語音功能時才啟用。',
+        customServerVoiceDisabled: '語音使用 Codelync Cloud 和您的 Codelync 訂閱',
+        customServerVoiceFooter: '關閉時，啟動語音會連線至 Codelync Cloud 和 ElevenLabs。僅當您的自訂伺服器已設定語音功能時才啟用。',
     },
 
     sessionInfo: {
@@ -470,9 +470,9 @@ export const zhHant: TranslationStructure = {
         killSessionConfirm: '您確定要終止此工作階段嗎？',
         archiveSession: '封存工作階段',
         archiveSessionConfirm: '您確定要封存此工作階段嗎？',
-        happySessionIdCopied: 'CodeLight 工作階段 ID 已複製到剪貼簿',
-        failedToCopySessionId: '複製 CodeLight 工作階段 ID 失敗',
-        happySessionId: 'CodeLight 工作階段 ID',
+        happySessionIdCopied: 'Codelync 工作階段 ID 已複製到剪貼簿',
+        failedToCopySessionId: '複製 Codelync 工作階段 ID 失敗',
+        happySessionId: 'Codelync 工作階段 ID',
         claudeCodeSessionId: 'Claude Code 工作階段 ID',
         claudeCodeSessionIdCopied: 'Claude Code 工作階段 ID 已複製到剪貼簿',
         codexThreadId: 'Codex 執行緒 ID',
@@ -507,7 +507,7 @@ export const zhHant: TranslationStructure = {
         path: '路徑',
         operatingSystem: '作業系統',
         processId: '處理程序 ID',
-        happyHome: 'CodeLight 主目錄',
+        happyHome: 'Codelync 主目錄',
         copyMetadata: '複製中繼資料',
         agentState: 'Agent 狀態',
         controlledByUser: '使用者控制',
@@ -538,7 +538,7 @@ export const zhHant: TranslationStructure = {
             ...en.components.emptyMainScreen,
             // Used by EmptyMainScreen component
             readyToCode: '準備開始寫程式？',
-            installCli: '安裝 CodeLight CLI',
+            installCli: '安裝 Codelync CLI',
             runIt: '執行它',
             scanQrCode: '掃描 QR Code',
             openCamera: '開啟相機',
@@ -650,13 +650,13 @@ export const zhHant: TranslationStructure = {
         submitFailed: "無法傳送你的回答",
         dismiss: "忽略",
         unsupportedTitle: "不支援的請求",
-        unsupportedDescription: ({ kind }: { kind: string }) => `此版本的 CodeLight 無法顯示「${kind}」請求。請更新應用程式後回覆。`,
+        unsupportedDescription: ({ kind }: { kind: string }) => `此版本的 Codelync 無法顯示「${kind}」請求。請更新應用程式後回覆。`,
         moreQuestions: ({ count }: { count: number }) =>
             count === 1 ? "還有 1 個問題" : `${count} 個問題`,
     },
 
     sidebar: {
-        sessionsTitle: 'CodeLight',
+        sessionsTitle: 'Codelync',
         showArchived: '顯示已封存',
         hideArchived: '隱藏已封存',
         newSession: '新建對話',
@@ -829,13 +829,13 @@ export const zhHant: TranslationStructure = {
         },
         // Bring your own agent
         byoTitle: '使用自己的代理',
-        byoDescription: '使用您自己的 ElevenLabs 代理取代 CodeLight 預設代理。無需訂閱 — 直接使用您自己的 ElevenLabs 帳戶連線。您的代理必須定義兩個用戶端工具：sendMessageToSession（向編碼代理傳送文字）和 processPermissionRequest（允許或拒絕工具使用）。透過 {{initialConversationContext}} 動態變數接收工作階段上下文。',
+        byoDescription: '使用您自己的 ElevenLabs 代理取代 Codelync 預設代理。無需訂閱 — 直接使用您自己的 ElevenLabs 帳戶連線。您的代理必須定義兩個用戶端工具：sendMessageToSession（向編碼代理傳送文字）和 processPermissionRequest（允許或拒絕工具使用）。透過 {{initialConversationContext}} 動態變數接收工作階段上下文。',
         customAgentId: 'ElevenLabs Agent ID',
         customAgentIdNotSet: '未設定',
-        customAgentIdDescription: '輸入您的 ElevenLabs Agent ID。留空則使用 CodeLight 預設代理。',
+        customAgentIdDescription: '輸入您的 ElevenLabs Agent ID。留空則使用 Codelync 預設代理。',
         customAgentIdPlaceholder: 'e.g. abc123def456',
         bypassToken: '直接連線',
-        bypassTokenSubtitle: '跳過 CodeLight 伺服器，直接連線到 ElevenLabs',
+        bypassTokenSubtitle: '跳過 Codelync 伺服器，直接連線到 ElevenLabs',
         promptGuideTitle: '代理提示詞指南',
         promptGuideDescription: '您的 ElevenLabs 代理需要：\n\n• 工具：sendMessageToSession — 參數：sessionId (string), message (string)。向指定的編碼工作階段傳送訊息。\n• 工具：processPermissionRequest — 參數：requestId (string), decision ("allow" 或 "deny")。核准或拒絕待處理的工具權限。\n• 動態變數：{{initialConversationContext}} — 啟動時接收工作階段歷史和上下文。\n\n代理充當使用者和編碼代理之間的語音橋梁。它應該簡潔，僅在被呼叫時回應，並在編碼代理完成工作時進行報告。',
         usageTitle: '使用量（過去 30 天）',
@@ -872,7 +872,7 @@ export const zhHant: TranslationStructure = {
         secretKeyCopied: '金鑰已複製到剪貼簿。請將其保存在安全的地方！',
         secretKeyCopyFailed: '複製金鑰失敗',
         privacy: '隱私',
-        privacyDescription: '分享使用資料（例如您使用的功能和裝置類型），協助我們改進 CodeLight。絕不包括您的訊息或程式碼。',
+        privacyDescription: '分享使用資料（例如您使用的功能和裝置類型），協助我們改進 Codelync。絕不包括您的訊息或程式碼。',
         analytics: '分析',
         analyticsDisabled: '不分享資料',
         analyticsEnabled: '分享使用資料',
@@ -924,7 +924,7 @@ export const zhHant: TranslationStructure = {
         invalidConnectionLink: '無效的連線連結',
         invalidConnectionLinkDescription: '連線連結缺失或無效。請檢查 URL 並重試。',
         connectTerminal: '連線終端',
-        terminalRequestDescription: '有終端正在請求連線到您的 CodeLight 帳戶。這將允許終端安全地傳送和接收訊息。',
+        terminalRequestDescription: '有終端正在請求連線到您的 Codelync 帳戶。這將允許終端安全地傳送和接收訊息。',
         connectionDetails: '連線詳情',
         publicKey: '公鑰',
         encryption: '加密',
@@ -974,24 +974,30 @@ export const zhHant: TranslationStructure = {
 
     onboarding: {
         ...en.onboarding,
+        createAccount: '建立帳號', restoreExisting: '還原已有帳號', installBodyPrefix: '請在 Mac 開啟 ', installBodySuffix: '。',
+        terminalComment: '# 開啟 Mac 原生 App', offlineTitleMany: '電腦均處於離線狀態', offlineTroubleshoot: '檢查連線', linkAnother: '連接另一台電腦',
+        helpMessage: '需要協助？請聯絡我們。', helpDiscord: '在 Discord 提問', helpBra1nDump: '在 X 聯絡 @bra1n_dump', helpEx3ndr: '在 X 聯絡 @Ex3NDR', helpIssues: '查看已知問題',
+        logoutStartOver: '登出並重新開始', logoutFooter: '這個帳號尚無資料。', logoutConfirmTitle: '登出並重新開始？', logoutConfirmBody: '將返回建立帳號頁面，電腦上的內容不會改變。',
+        restoreTitle: '還原帳號', restoreScan: '請用另一台手機掃描此碼。', restoreScanPath: 'Codelync › 設定 › 帳號 › 連接新裝置', restoreUseKey: '改為使用金鑰',
+        secretKeyTitle: '金鑰', secretKeyBody: '請貼上金鑰，可在另一台裝置的 Codelync › 設定 › 帳號中找到。', restoreButton: '還原',
         headline: "你的 Codex / Antigravity / Claude Desktop 會話，\n隨時隨地可用",
         propEncrypted: "端對端加密",
         propNoPassword: "無需註冊或 VPN",
         propOpenSource: "開源，MIT 授權",
         linkTitle: "連接你的 Mac",
-        installStep: "在 Mac 開啟 CodeLight",
+        installStep: "在 Mac 開啟 Codelync",
         openStep: "保持 Codex / Antigravity / Claude Desktop 會話執行",
-        openBody: "請在 Mac 開啟 CodeLight，並保持 Codex / Antigravity / Claude Desktop 執行。CodeLight 會顯示配對 QR Code。",
+        openBody: "請在 Mac 開啟 Codelync，並保持 Codex / Antigravity / Claude Desktop 執行。Codelync 會顯示配對 QR Code。",
         scanStep: "掃描 QR Code",
         scanButton: "掃描 QR Code",
         pasteLink: "無法掃描？改為貼上連結",
         pasteLinkTitle: "貼上配對連結",
-        pasteLinkMessage: "請在 Mac CodeLight 中選擇「複製配對連結」，然後貼到這裡。",
+        pasteLinkMessage: "請在 Mac Codelync 中選擇「複製配對連結」，然後貼到這裡。",
         pasteLinkConfirm: "連接",
         linking: "正在連接…",
         linkFailed: "連線暫未成功，請在 Mac 重新整理 QR Code 後再次掃描。",
-        offlineOpenStep: "在 Mac 開啟 CodeLight",
-        offlineOpenBody: "請保持 Mac 喚醒並連網，然後開啟 CodeLight。連線恢復後，此頁面會自動更新。",
+        offlineOpenStep: "在 Mac 開啟 Codelync",
+        offlineOpenBody: "請保持 Mac 喚醒並連網，然後開啟 Codelync。連線恢復後，此頁面會自動更新。",
         getHelp: "取得協助",
         settingsTitle: "設定",
         settingsServer: "伺服器",

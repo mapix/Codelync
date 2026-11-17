@@ -63,12 +63,12 @@ it('a late native question stays visible and answerable while the phone reads ea
     const props = { sessionId: 'original-source-session', showBottomDockDetails: false };
     act(() => { renderer = create(React.createElement(SessionInputFixture, props)); });
     const byId = (id: string) => renderer.root.findAll((node: any) => node.props.testID === id)[0];
-    expect(byId('codelight-question-open')).toBeUndefined();
+    expect(byId('codelync-question-open')).toBeUndefined();
     expect(renderer.root.findAllByType('ChannelControl')).toHaveLength(0);
     const composer = byId('unchanged-composer');
     state.pending = [{ id: 'latest-native-question', createdAt: 5, kind: 'form', questions: [{ id: 'answer', header: 'Latest question', question: 'Choose the original answer', options: [{ label: 'Alpha' }, { label: 'Beta' }] }] }];
     act(() => renderer.update(React.createElement(SessionInputFixture, props)));
-    const banner = byId('codelight-question-open');
+    const banner = byId('codelync-question-open');
     expect(banner).toBeDefined();
     for (let node = banner; node; node = node.parent) {
         expect(node.props.pointerEvents).not.toBe('none');
@@ -78,15 +78,15 @@ it('a late native question stays visible and answerable while the phone reads ea
     expect(renderer.root.findAllByType('Fade').some((node: any) => node.props.pointerEvents === 'none')).toBe(true);
     act(() => banner.props.onPress());
     expect(renderer.root.findByType('Modal').props.visible).toBe(true);
-    act(() => byId('codelight-question-option-answer-1').props.onPress());
+    act(() => byId('codelync-question-option-answer-1').props.onPress());
     expect(state.answer).not.toHaveBeenCalled();
-    expect(byId('codelight-question-submit').props.disabled).toBe(false);
-    await act(async () => { await byId('codelight-question-submit').props.onPress(); });
+    expect(byId('codelync-question-submit').props.disabled).toBe(false);
+    await act(async () => { await byId('codelync-question-submit').props.onPress(); });
     expect(state.answer).toHaveBeenCalledTimes(1);
     expect(state.answer).toHaveBeenCalledWith('original-source-session', 'latest-native-question', { answer: { options: ['Beta'] } }, 'form');
     state.pending = [];
     act(() => renderer.update(React.createElement(SessionInputFixture, props)));
-    expect(byId('codelight-question-open')).toBeUndefined();
+    expect(byId('codelync-question-open')).toBeUndefined();
     expect(byId('unchanged-composer')).toBe(composer);
     act(() => renderer.unmount());
 });

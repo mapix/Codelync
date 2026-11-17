@@ -1,5 +1,5 @@
 import type { AuthCredentials } from '@/auth/tokenStorage';
-import { channelOrigin } from '@slopus/happy-wire/codelight';
+import { channelOrigin } from '@codelync/wire/codelync';
 export const STARTUP_MAC_LOCATOR_MAX_BYTES = 8192;
 export const STARTUP_MAC_LOCATOR_MAX_AGE_MS = 5 * 60 * 1000;
 export type StartupMacLocatorOptions = { eligible: boolean; now(): number; read(): Promise<string | null>; remove(): Promise<void>;

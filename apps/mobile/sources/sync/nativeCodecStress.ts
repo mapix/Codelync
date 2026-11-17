@@ -1,7 +1,7 @@
 import nacl from 'tweetnacl';
 import { getRandomBytes } from 'expo-crypto';
-import type { PeerCredentials } from '@slopus/happy-wire/codelight';
-import { gzipSync, PEER_COMPACT_PREFIX_BYTES, PEER_RESPONSE_MAX_BYTES } from '@slopus/happy-wire/peer-codec';
+import type { PeerCredentials } from '@codelync/wire/codelync';
+import { gzipSync, PEER_COMPACT_PREFIX_BYTES, PEER_RESPONSE_MAX_BYTES } from '@codelync/wire/peer-codec';
 import { encodeBase64, decodeBase64 } from '@/encryption/base64';
 import { openPeerBox } from '@/encryption/openPeerBox';
 import { decodeNativePeerPayload, nativePeerPayloadAvailable } from '@/encryption/nativePeerPayload';
@@ -9,7 +9,7 @@ import type { NativePeerPayloadRequest } from '@/encryption/nativePeerPayload';
 import { decodePeerResponseAsync } from './peerNetwork';
 import { abortBudget } from './abortBudget';
 
-export const NATIVE_CODEC_STRESS_KEY = 'codelight-native-codec-stress-v1';
+export const NATIVE_CODEC_STRESS_KEY = 'codelync-native-codec-stress-v1';
 export type NativeCodecStressCase = { name: string; ok: boolean; ms: number; code?: string; counts?: Record<string, number>; stages?: Record<string, number>; native?: Record<string, number> };
 export type NativeCodecStressReport = { version: 1; synthetic: true; authenticatedSynthetic: true; nativeAvailable: boolean;
     status: 'passed' | 'failed' | 'cancelled' | 'unavailable'; cases: NativeCodecStressCase[]; elapsedMs: number;

@@ -1,5 +1,5 @@
 import { projectClaudeNativeTranscript, projectClaudeNativeMessage } from './claude-history.mjs';
-import { nativeSettingsScope, confirmedNativeSettingsEvidence } from '../happy/native-settings-scope.mjs';
+import { nativeSettingsScope, confirmedNativeSettingsEvidence } from '../codelync/native-settings-scope.mjs';
 /** @typedef {Record<string,any>} Value */
 /** @param {unknown} value @returns {Value} */
 function object(value) { return value && typeof value === 'object' && !Array.isArray(value) ? /** @type {Value} */ (value) : {}; }

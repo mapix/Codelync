@@ -1,6 +1,6 @@
 # 手机窗口镜像规则
 
-> **延期研究（2026-10-31）**：当前 CodeLight 发行是 Codex 原生会话专用。本文件保留此前的窗口/AX 研究与验证边界，不表示当前已启用窗口共享或其他 harness。窗口 ID、截图与 AX 控件不计为 Codex session 支持；是否启用留待后续决定。当前范围以 [产品合同](codelight-product.md) 为准。
+> **延期研究（2026-10-31）**：当前 Codelync 发行是 Codex 原生会话专用。本文件保留此前的窗口/AX 研究与验证边界，不表示当前已启用窗口共享或其他 harness。窗口 ID、截图与 AX 控件不计为 Codex session 支持；是否启用留待后续决定。当前范围以 [产品合同](codelync-product.md) 为准。
 
 ZCode 无外部 Host attachment API，用户已接受辅助功能控制。因此它在手机中以真实桌面窗口呈现，窗口选择、草稿与当前会话同桌面共用，不把窗口ID或标题冒充CLI session ID。Codex仍使用原native owner/follower会话接口。
 

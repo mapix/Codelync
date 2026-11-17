@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeServerOrigin, serverEndpoint, socketServerEndpoint, isSameServerEndpoint } from './serverOrigin';
-import { parseCodeLightPairingCode } from '../auth/codeLightPairing';
-import { fetchCodeLightSessionPages } from '../sync/codeLightSessionPages';
+import { parseCodelyncPairingCode } from '../auth/codelyncPairing';
+import { fetchCodelyncSessionPages } from '../sync/codelyncSessionPages';
 
 const base = 'https://relay.example/r/' + 'a'.repeat(24);
 describe('transparent network relay base', () => {
@@ -19,15 +19,15 @@ describe('transparent network relay base', () => {
         expect(isSameServerEndpoint('blob:https://relay.example/opaque', 'https://relay.example')).toBe(false);
     });
     it('uses the unchanged QR exchange while retaining the validated base path', () => {
-        const url = new URL('codelight://pair');
+        const url = new URL('codelync://pair');
         for (const [key, value] of Object.entries({ v: '1', origin: base, invite: 'a'.repeat(43), key: 'b'.repeat(43), expires: '2000' })) url.searchParams.set(key, value);
-        expect(parseCodeLightPairingCode(url.toString(), 1000).origin).toBe(base);
+        expect(parseCodelyncPairingCode(url.toString(), 1000).origin).toBe(base);
         expect(() => normalizeServerOrigin('https://relay.example/r/../../private')).toThrow();
     });
     it('catalog paging never drops the relay prefix', async () => {
         const urls: string[] = [];
         const request = (async (input: string | URL | Request) => { urls.push(String(input)); return new Response(JSON.stringify({ sessions: [], hasNext: false, nextCursor: null })); }) as typeof fetch;
-        await fetchCodeLightSessionPages(base, {}, request);
+        await fetchCodelyncSessionPages(base, {}, request);
         expect(urls[0]).toBe(base + '/v2/sessions?limit=200');
     });
 });

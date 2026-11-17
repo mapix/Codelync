@@ -26,7 +26,7 @@ function fixture() {
 it('shows native labels without a setter and renders every catalog option disabled', () => {
     const { scope, session } = fixture(), close = vi.fn(); let screen!: ReturnType<typeof create>;
     act(() => { screen = create(React.createElement(NativeReadonlyModelCatalog, { session, captured: scope, active: true, onClose: close })); });
-    const row = screen.root.findByProps({ testID: 'codelight-native-model-catalog:default' });
+    const row = screen.root.findByProps({ testID: 'codelync-native-model-catalog:default' });
     expect(row.props.disabled).toBe(true); expect(row.props.onPress).toBeUndefined(); expect(row.props.accessibilityLabel).toBe('Original default');
     act(() => screen.unmount());
 });
@@ -35,6 +35,6 @@ it('closes on native settings token change or inactive navigation without any se
     act(() => { screen = create(React.createElement(NativeReadonlyModelCatalog, { session, captured: { ...scope }, active: true, onClose: close })); });
     session.metadata!.nativeControls!.scope!.settingsToken = 'c'.repeat(64);
     act(() => screen.update(React.createElement(NativeReadonlyModelCatalog, { session, captured: { ...scope, settingsToken: 'b'.repeat(64) }, active: true, onClose: close })));
-    expect(close).toHaveBeenCalled(); expect(screen.root.findAllByProps({ testID: 'codelight-native-model-catalog' })).toHaveLength(0);
+    expect(close).toHaveBeenCalled(); expect(screen.root.findAllByProps({ testID: 'codelync-native-model-catalog' })).toHaveLength(0);
     act(() => screen.unmount());
 });

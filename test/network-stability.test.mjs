@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConnectionChannelsManager } from '../src/network/connection-channels.mjs';
-import { writeDurablePrivateJson } from '../src/happy/discovery-persistence.mjs';
+import { writeDurablePrivateJson } from '../src/codelync/discovery-persistence.mjs';
 import { EntryProbes } from '../src/network/public-access.mjs';
 import { WebSocketServer } from 'ws';
 
@@ -37,7 +37,7 @@ class Tunnel extends EventEmitter {
 /** This is an isolated transport-owner proof; it does not invoke a native app or model.
  * @param {import('node:test').TestContext} t @param {Value} [controls] */
 async function fixture(t, controls = {}) {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-network-stability-'));
+  const state = await mkdtemp(join(tmpdir(), 'codelync-network-stability-'));
   const transports = /** @type {Tunnel[]} */ ([]);
   await writeDurablePrivateJson(join(state, 'connection-channels.json'), controls.configuration ?? { version: 2, enabledChannels: ['cloudflare'], relay: null });
   const manager = new ConnectionChannelsManager({ state, cloudflared: 'unused', retryInitialMs: 10, retryMaxMs: 40,
@@ -67,7 +67,7 @@ test('[N01] failed enabled startup recovers autonomously and disabling cancels p
 });
 
 test('[N02] an exited owned synthetic Cloudflare process retires its URL and restarts without reopening runtime state', async t => {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-cloudflare-process-fault-'));
+  const state = await mkdtemp(join(tmpdir(), 'codelync-cloudflare-process-fault-'));
   const binary = join(state, 'synthetic-cloudflared.mjs');
   await writeFile(binary, `#!${process.execPath}\nprocess.stderr.write('https://synthetic.trycloudflare.com\\n');setInterval(()=>{},1000);\n`, { mode: 0o700 });
   await writeDurablePrivateJson(join(state, 'connection-channels.json'), { version: 2, enabledChannels: ['cloudflare'], relay: null });
@@ -167,7 +167,7 @@ test('[N04] superseded real local HTTP/WS probes release their sockets and indep
   assert.equal(f.manager.confirm('cloudflare', entry.channels[0].url), true);
   await assert.rejects(second, /cancelled/); await until(() => sockets.clients.size === 0);
   assert.equal(probes.probes.size, 0);
-  assert.deepEqual(reads, ['/codelight/entry-probe', '/codelight/entry-probe']);
+  assert.deepEqual(reads, ['/codelync/entry-probe', '/codelync/entry-probe']);
   assert.deepEqual(upgrades, reads);
 });
 

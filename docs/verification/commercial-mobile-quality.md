@@ -146,7 +146,7 @@ Fermat history-only surface still requires the coordinated build and producer.
 
 The coordinated Release build completed in 108.7 seconds, with no drift across
 1,760 mobile/wire/native inputs. The artifact included the React-exported
-CodeLightCodec native symbols and system zlib. Its signed identifier, bound
+CodelyncCodec native symbols and system zlib. Its signed identifier, bound
 Info.plist, Xcode simulated entitlements group and empty real signing entitlements
 passed the existing simulator identity checks. Signing preserved the JavaScript
 payload, SHA256 `55cd604552936652065912c93acf9817a6f41e08bca8ccaa307f6d49b2979a4f`.
@@ -288,14 +288,14 @@ improvements under slightly different data, not an identical-payload benchmark.
 
 ## Authorized physical iPhone installation — 2026-11-14
 
-The user connected the iPhone and authorized installing the current CodeLight
+The user connected the iPhone and authorized installing the current Codelync
 for real-device use. The coordinating owner reviewed build `2026111401`. A
 generic iPhoneOS Release build completed in 239.8 seconds with 1,769 source input
-hashes unchanged. The installed artifact is `com.learnings.codelight`, version
+hashes unchanged. The installed artifact is `com.learnings.codelync`, version
 `1.8.0`, build `2026111401`, arm64, JavaScript SHA256
 `5c8a08c498819f6140abdf7395d7900bf1f25f5c769448081f563de2f741ca57`.
 Its actual Apple Development signature, device-bound provisioning profile and
-strict signature verification passed. The React-exported `CodeLightCodec` and
+strict signature verification passed. The React-exported `CodelyncCodec` and
 system zlib linkage were present. No simulator entitlements were used.
 
 The iPhone 14 / iOS 26.5 was updated in place from build `2026111309`, with
@@ -359,7 +359,7 @@ one explicit read cannot freeze later native lifecycle updates.
 The preceding combined gate passed 80 tests in 11 suites, mobile typecheck and diff
 checks. This includes earlier coverage and is not added to prior test totals.
 Native readonly device inventory reconfirmed build `2026111401`. A passive
-physical accessibility read showed CodeLight in the foreground with Sessions
+physical accessibility read showed Codelync in the foreground with Sessions
 and its search field, and no pairing page. No phone navigation, input, Send,
 reinstall, pairing change or draft mutation followed. The changed task UI has
 not been installed on this phone; its actual native task/log interaction gate
@@ -420,11 +420,11 @@ that source round. The later physical installation is recorded below.
 
 The user authorized the connected phone's in-place update and readonly trial.
 Release build `2026111501` completed in 234.567 seconds, with all 1,793 recorded
-source inputs unchanged. The physical artifact is `com.learnings.codelight`,
+source inputs unchanged. The physical artifact is `com.learnings.codelync`,
 version `1.8.0`, arm64/iPhoneOS, JavaScript SHA256
 `4ef56d022df496f5c710c9c865fe7134b95e5da4bd6d0628e770613a4c404393`.
 Its actual Apple Development app identity/team, registered-device provisioning,
-strict signature, `CodeLightCodec` linked symbols and system zlib passed.
+strict signature, `CodelyncCodec` linked symbols and system zlib passed.
 Simulator entitlements were absent. Device inventory confirmed the update from
 `2026111401` to `2026111501`, and launch succeeded.
 
@@ -433,7 +433,7 @@ draft and session identity, profile ID and connection configuration. Only the
 profile timestamp and presence sequence changed logically. All 48 AsyncStorage
 keys remained; all 30 operation-journal values were exact. No re-pair, uninstall,
 key change or simulator-draft restoration occurred. Actual first launch showed
-CodeLight/Sessions without pairing, using the existing production peer.
+Codelync/Sessions without pairing, using the existing production peer.
 
 The simulator used an in-place JS/assets update with SHA256
 `372ec0a1cd5edfd737d8940bd5a1bd2b592d60701274ae2cc05eabf46e15654d`.

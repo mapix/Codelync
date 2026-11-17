@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { codeLightSavedHistory, NativeSavedHistorySchema } from './nativeSavedHistory';
+import { codelyncSavedHistory, NativeSavedHistorySchema } from './nativeSavedHistory';
 
 function value() {
     const saved = { app: 'codex' as const, version: 1 as const, available: true as const, readOnly: true as const, originator: 'Codex Desktop' as const,
@@ -9,15 +9,15 @@ function value() {
 }
 
 it('accepts only matching original Desktop saved data with no active controller or turn', () => {
-    const session = value(); expect(codeLightSavedHistory(session)?.sourceStamp).toBe('b'.repeat(64));
+    const session = value(); expect(codelyncSavedHistory(session)?.sourceStamp).toBe('b'.repeat(64));
     for (const change of [{ id: 'foreign' }, { hostId: 'other' }, { app: 'antigravity' }, { runtimeGeneration: 'active-owner' }]) {
-        expect(codeLightSavedHistory({ metadata: { ...session.metadata, bridge: { ...session.metadata.bridge, source: { ...session.metadata.bridge.source, ...change } } } } as any)).toBeNull();
+        expect(codelyncSavedHistory({ metadata: { ...session.metadata, bridge: { ...session.metadata.bridge, source: { ...session.metadata.bridge.source, ...change } } } } as any)).toBeNull();
     }
-    session.metadata.bridge.currentTurnId = 'active-turn'; expect(codeLightSavedHistory(session)).toBeNull();
+    session.metadata.bridge.currentTurnId = 'active-turn'; expect(codelyncSavedHistory(session)).toBeNull();
 });
 
 it('rejects malformed data boundaries and readonly claims without native provenance', () => {
     const session = value();
     expect(NativeSavedHistorySchema.safeParse({ ...session.metadata.nativeSavedHistory, byteBoundary: { start: 3, end: 2, total: 4 } }).success).toBe(false);
-    session.metadata.nativeSavedHistory.originator = 'CLI'; expect(codeLightSavedHistory(session)).toBeNull();
+    session.metadata.nativeSavedHistory.originator = 'CLI'; expect(codelyncSavedHistory(session)).toBeNull();
 });

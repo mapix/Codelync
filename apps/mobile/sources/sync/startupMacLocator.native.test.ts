@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({ os: 'ios', appId: 'com.learnings.codelight', directory: 'file:///fixture/Documents/',
+const state = vi.hoisted(() => ({ os: 'ios', appId: 'com.learnings.codelync', directory: 'file:///fixture/Documents/',
     info: vi.fn(), read: vi.fn(), remove: vi.fn(), bootstrap: vi.fn(), credentials: vi.fn() }));
 vi.mock('react-native', () => ({ Platform: { get OS() { return state.os; } } }));
 vi.mock('expo-application', () => ({ get applicationId() { return state.appId; } }));
@@ -8,19 +8,19 @@ vi.mock('@/auth/tokenStorage', () => ({ TokenStorage: { getCredentials: state.cr
 vi.mock('./bootstrapMacDiagnostics', () => ({ bootstrapMacDiagnostics: state.bootstrap }));
 import { consumeNativeStartupMacLocator } from './startupMacLocator.native';
 beforeEach(() => {
-    vi.clearAllMocks(); state.os = 'ios'; state.appId = 'com.learnings.codelight'; state.directory = 'file:///fixture/Documents/';
+    vi.clearAllMocks(); state.os = 'ios'; state.appId = 'com.learnings.codelync'; state.directory = 'file:///fixture/Documents/';
     state.credentials.mockResolvedValue({ token: 'fixture', secret: 'fixture', peer: { id: 'fixture-mac', key: 'fixture-key', channels: [], device: { publicKey: 'fixture-public', secretKey: 'fixture-private' } } });
     state.info.mockResolvedValue({ exists: true, isDirectory: false, size: 100 }); state.bootstrap.mockResolvedValue(undefined); state.remove.mockResolvedValue(undefined);
     state.read.mockResolvedValue(JSON.stringify({ version: 1, peerId: 'fixture-mac', origins: ['https://fixture.example'], expiresAt: Date.now() + 60_000 }));
 });
 it('reads and deletes only the fixed private Documents locator through one startup attempt', async () => {
     expect(await consumeNativeStartupMacLocator()).toBe(true);
-    const path = 'file:///fixture/Documents/codelight-mac-locator.json';
+    const path = 'file:///fixture/Documents/codelync-mac-locator.json';
     expect(state.info).toHaveBeenCalledExactlyOnceWith(path); expect(state.read).toHaveBeenCalledExactlyOnceWith(path);
     expect(state.remove).toHaveBeenCalledExactlyOnceWith(path, { idempotent: true });
     expect(state.bootstrap).toHaveBeenCalledExactlyOnceWith(['https://fixture.example'], { expectedPeerId: 'fixture-mac' });
 });
-it.each([{ os: 'android' }, { appId: 'com.learnings.codelight.preview' }, { directory: '' }])('does no file or credential work outside the shipping iOS sandbox', async change => {
+it.each([{ os: 'android' }, { appId: 'com.learnings.codelync.preview' }, { directory: '' }])('does no file or credential work outside the shipping iOS sandbox', async change => {
     Object.assign(state, change); expect(await consumeNativeStartupMacLocator()).toBe(false);
     expect(state.info).not.toHaveBeenCalled(); expect(state.read).not.toHaveBeenCalled(); expect(state.credentials).not.toHaveBeenCalled();
 });

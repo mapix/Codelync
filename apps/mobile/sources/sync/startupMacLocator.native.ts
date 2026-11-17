@@ -7,9 +7,9 @@ import { consumeStartupMacLocator, STARTUP_MAC_LOCATOR_MAX_BYTES } from './start
 
 /** A fixed sandbox file, consumed once by the existing startup owner. */
 export async function consumeNativeStartupMacLocator(): Promise<boolean> {
-    const eligible = Platform.OS === 'ios' && Application.applicationId === 'com.learnings.codelight';
+    const eligible = Platform.OS === 'ios' && Application.applicationId === 'com.learnings.codelync';
     if (!eligible || !FileSystem.documentDirectory) return false;
-    const path = FileSystem.documentDirectory + 'codelight-mac-locator.json';
+    const path = FileSystem.documentDirectory + 'codelync-mac-locator.json';
     return consumeStartupMacLocator({ eligible, now: Date.now, credentials: () => TokenStorage.getCredentials(),
         read: async () => {
             const file = await FileSystem.getInfoAsync(path);

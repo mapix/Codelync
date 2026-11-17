@@ -1,6 +1,6 @@
-# CodeLight internationalization
+# Codelync internationalization
 
-CodeLight uses typed translation objects and the `t(key, params)` API. Static
+Codelync uses typed translation objects and the `t(key, params)` API. Static
 values are strings; dynamic values are functions with typed object parameters.
 No external internationalization library is required.
 
@@ -27,8 +27,8 @@ Chinese (`zh-Hans`), Traditional Chinese (`zh-Hant`) and Japanese (`ja`).
 import { t, getCurrentLanguage } from '@/text';
 
 t('onboarding.scanButton');
-t('codeLightProjects.active', { count: 2 });
-t('codeLightProjects.updated', { time: '09:30' });
+t('codelyncProjects.active', { count: 2 });
+t('codelyncProjects.updated', { time: '09:30' });
 getCurrentLanguage();
 ```
 
@@ -36,9 +36,9 @@ Keys and parameter shapes are checked by TypeScript. If a local translation is
 missing, invalid, or its formatter fails, `t` uses the canonical English value.
 The internal key is returned only when no usable canonical value exists.
 
-The current CodeLight connection, model settings, session synchronization and
+The current Codelync connection, model settings, session synchronization and
 project status flows have explicit translations in all ten languages. Product
-descriptions identify CodeLight as a client for existing Codex desktop sessions.
+descriptions identify Codelync as a client for existing Codex desktop sessions.
 Generic inherited Happy UI text outside those flows remains separate.
 
 Project counts and their freshness come from the state owner. Translation
@@ -54,7 +54,7 @@ The caller supplies the localized short time string for `updated`.
 
 ```sh
 pnpm typecheck:mobile
-pnpm --filter @codelight/mobile test run sources/text/resolveLanguage.test.ts sources/text/codeLightTranslations.test.ts sources/text/translationFallback.test.ts
+pnpm --filter @codelync/mobile test run sources/text/resolveLanguage.test.ts sources/text/codelyncTranslations.test.ts sources/text/translationFallback.test.ts
 ```
 
 The tests cover language resolution, missing/invalid translation fallback,

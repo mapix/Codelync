@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeActivityTransport } from '../src/happy/activity-transport.mjs';
+import { NativeActivityTransport } from '../src/codelync/activity-transport.mjs';
 import { BridgeError } from '../src/errors.mjs';
 /** @typedef {Record<string,any>} Value */
 

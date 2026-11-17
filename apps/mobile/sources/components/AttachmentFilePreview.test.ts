@@ -41,15 +41,15 @@ async function changed() { await act(() => { for (const f of state.stores) f(); 
 
 it('renders initial unavailable video with zero loader IO and only retries after the same-source key is ready', async () => {
     await mount();
-    expect(screen!.root.findByProps({ testID: 'codelight-file-preview' })).toBeTruthy();
-    expect(screen!.root.findByProps({ testID: 'codelight-file-retry' })).toBeTruthy();
+    expect(screen!.root.findByProps({ testID: 'codelync-file-preview' })).toBeTruthy();
+    expect(screen!.root.findByProps({ testID: 'codelync-file-retry' })).toBeTruthy();
     expect(screen!.root.findAllByType('Spinner')).toHaveLength(0); expect(state.close).not.toHaveBeenCalled();
-    await act(() => screen!.root.findByProps({ testID: 'codelight-file-retry' }).props.onPress());
+    await act(() => screen!.root.findByProps({ testID: 'codelync-file-retry' }).props.onPress());
     expect(state.load).not.toHaveBeenCalled(); expect(state.savedRead).not.toHaveBeenCalled();
     state.key = new Uint8Array(32); await changed();
     expect(state.load).not.toHaveBeenCalled();
-    await act(() => screen!.root.findByProps({ testID: 'codelight-file-retry' }).props.onPress());
-    expect(state.load).toHaveBeenCalledOnce(); expect(screen!.root.findByProps({ testID: 'codelight-video-player' })).toBeTruthy();
+    await act(() => screen!.root.findByProps({ testID: 'codelync-file-retry' }).props.onPress());
+    expect(state.load).toHaveBeenCalledOnce(); expect(screen!.root.findByProps({ testID: 'codelync-video-player' })).toBeTruthy();
 });
 
 it.each(['key', 'peer'])('a loaded video %s replacement hides, disposes and fences its stale Save', async field => {
@@ -72,7 +72,7 @@ it('a result arriving after source replacement is disposed without a player or s
 });
 
 it('a pending unavailable Retry cannot load a different peer that reuses the same ref', async () => {
-    await mount(); const retry = screen!.root.findByProps({ testID: 'codelight-file-retry' }).props.onPress;
+    await mount(); const retry = screen!.root.findByProps({ testID: 'codelync-file-retry' }).props.onPress;
     state.credentials.peer.id = 'two'; state.peer = 'peer:two'; state.key = new Uint8Array(32);
     await act(() => retry());
     expect(state.load).not.toHaveBeenCalled(); expect(state.close).toHaveBeenCalledOnce();
@@ -81,8 +81,8 @@ it('a pending unavailable Retry cannot load a different peer that reuses the sam
 it('an explicitly opened known oversized video never loads bytes, exposes Retry or constructs a player', async () => {
     state.key = new Uint8Array(32); await mount({ name: 'large.mp4', mimeType: 'video/mp4', size: 1_000_001 });
     expect(state.load).not.toHaveBeenCalled(); expect(state.savedRead).not.toHaveBeenCalled();
-    expect(screen!.root.findAllByProps({ testID: 'codelight-file-retry' })).toHaveLength(0);
-    expect(screen!.root.findAllByProps({ testID: 'codelight-video-player' })).toHaveLength(0);
+    expect(screen!.root.findAllByProps({ testID: 'codelync-file-retry' })).toHaveLength(0);
+    expect(screen!.root.findAllByProps({ testID: 'codelync-video-player' })).toHaveLength(0);
     expect(screen!.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('Video exceeds the 1 MB limit.');
     expect(screen!.root.findAllByType('Button').find((node: any) => node.props.accessibilityLabel === 'Save')!.props.disabled).toBe(true);
 });
@@ -92,27 +92,27 @@ it('Save failure is separate from loading and retries the existing preview witho
     const save = () => screen!.root.findAllByType('Button').find((node: any) => node.props.accessibilityLabel === 'Save')!.props.onPress;
     await act(async () => { const press = save(); press(); press(); });
     expect(state.share).toHaveBeenCalledOnce(); expect(state.load).toHaveBeenCalledOnce();
-    expect(screen!.root.findByProps({ testID: 'codelight-file-save-error' }).props.children).toBe('Could not save this file. Try Save again.');
-    expect(screen!.root.findByProps({ testID: 'codelight-video-player' })).toBeTruthy(); expect(state.dispose).not.toHaveBeenCalled();
-    expect(screen!.root.findAllByProps({ testID: 'codelight-file-retry' })).toHaveLength(0);
+    expect(screen!.root.findByProps({ testID: 'codelync-file-save-error' }).props.children).toBe('Could not save this file. Try Save again.');
+    expect(screen!.root.findByProps({ testID: 'codelync-video-player' })).toBeTruthy(); expect(state.dispose).not.toHaveBeenCalled();
+    expect(screen!.root.findAllByProps({ testID: 'codelync-file-retry' })).toHaveLength(0);
     await act(async () => save()());
     expect(state.share).toHaveBeenCalledTimes(2); expect(state.load).toHaveBeenCalledOnce();
-    expect(screen!.root.findAllByProps({ testID: 'codelight-file-save-error' })).toHaveLength(0);
+    expect(screen!.root.findAllByProps({ testID: 'codelync-file-save-error' })).toHaveLength(0);
 });
 it('a device without Save support shows a specific message while retaining the loaded preview', async () => {
     state.key = new Uint8Array(32); state.available.mockResolvedValueOnce(false); await mount();
     await act(async () => screen!.root.findAllByType('Button').find((node: any) => node.props.accessibilityLabel === 'Save')!.props.onPress());
-    expect(screen!.root.findByProps({ testID: 'codelight-file-save-error' }).props.children).toBe('Saving is unavailable on this device.');
+    expect(screen!.root.findByProps({ testID: 'codelync-file-save-error' }).props.children).toBe('Saving is unavailable on this device.');
     expect(state.share).not.toHaveBeenCalled(); expect(state.load).toHaveBeenCalledOnce(); expect(state.dispose).not.toHaveBeenCalled();
 });
 
 it.each([1_000_000, 1_000_001])('loaded video result at %s bytes cannot bypass the player limit', async size => {
     state.key = new Uint8Array(32); state.load.mockResolvedValueOnce({ uri: 'private-video-uri', name: 'fixture.mp4', mimeType: 'video/mp4', size, text: null, dispose: state.dispose });
     await mount();
-    expect(screen!.root.findAllByProps({ testID: 'codelight-video-player' })).toHaveLength(size > 1_000_000 ? 0 : 1);
+    expect(screen!.root.findAllByProps({ testID: 'codelync-video-player' })).toHaveLength(size > 1_000_000 ? 0 : 1);
     expect(state.dispose).toHaveBeenCalledTimes(size > 1_000_000 ? 1 : 0);
     if (size > 1_000_000) {
-        expect(screen!.root.findAllByProps({ testID: 'codelight-file-retry' })).toHaveLength(0);
+        expect(screen!.root.findAllByProps({ testID: 'codelync-file-retry' })).toHaveLength(0);
         const save = screen!.root.findAllByType('Button').find((node: any) => node.props.accessibilityLabel === 'Save')!;
         expect(save.props.disabled).toBe(true); await act(() => save.props.onPress()); expect(state.share).not.toHaveBeenCalled();
     }

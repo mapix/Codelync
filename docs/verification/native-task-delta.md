@@ -1,6 +1,6 @@
 # Selected task delta verification
 
-2026-11-15. Contract: [selected task deltas](../../spec/codelight-native-task-delta.md).
+2026-11-15. Contract: [selected task deltas](../../spec/codelync-native-task-delta.md).
 
 ## Source behavior
 

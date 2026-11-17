@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { useUnistyles } from 'react-native-unistyles';
 import { Text } from '@/components/StyledText';
 import { PeerChannelControlView, type PeerChannelSnapshot } from '@/components/PeerChannelControlView';
-import { CodeLightSettingsView } from '@/components/CodeLightSettingsView';
+import { CodelyncSettingsView } from '@/components/CodelyncSettingsView';
 import { applyAppThemePreference, type AppThemePreference } from '@/utils/appThemePreference';
 import { ChatHeaderView } from '@/components/ChatHeaderView';
 
@@ -26,13 +26,13 @@ export default function PeerChannelPreview() {
     };
     if (params.layout === 'settings') return <>
         <Stack.Screen options={{ headerShown: false }} />
-        <CodeLightSettingsView snapshot={snapshot} onSelectConnection={select} version="0.5.0 · 2026110112" languageLabel="English"
+        <CodelyncSettingsView remoteDesktopEnabled={false} onRemoteDesktopChange={() => {}} snapshot={snapshot} onSelectConnection={select} version="0.5.0 · 2026110112" languageLabel="English"
             themePreference={themePreference} onThemeChange={preference => { setThemePreference(preference); applyAppThemePreference(preference); }}
             onScan={() => {}} onLanguage={() => router.push('/settings/language')} onNavigate={page => router.navigate(page === 'sessions' ? '/' : '/settings')} />
     </>;
     if (params.layout === 'header') return <View style={{ flex: 1, backgroundColor: theme.colors.groupped.background }}>
         <Stack.Screen options={{ headerShown: false }} />
-        <ChatHeaderView title="Current session" subtitle="CodeLight" onBackPress={() => router.back()} rightSlot={<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <ChatHeaderView title="Current session" subtitle="Codelync" onBackPress={() => router.back()} rightSlot={<View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <PeerChannelControlView snapshot={snapshot} onSelect={select} presentation="header" />
             <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.textSecondary }} /></View>
         </View>} />

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Session } from '@/sync/storageTypes';
-import { isCodeLightSessionSource } from './codeLightSourceScope';
+import { isCodelyncSessionSource } from './codelyncSourceScope';
 
 export const NativeObservedModelSchema = z.object({
     version: z.literal(1), app: z.literal('claude-desktop'), nativeConversationId: z.string().min(1).max(512),
@@ -13,7 +13,7 @@ export function readNativeObservedModel(session: Pick<Session, 'metadata'> | nul
     const metadata = session?.metadata, bridge = metadata?.bridge, source = bridge?.source;
     const parsed = NativeObservedModelSchema.safeParse(metadata?.nativeObservedModel);
     if (!parsed.success || metadata?.client?.id !== 'noninvasive-bridge' || source?.app !== 'claude-desktop'
-        || bridge?.sourceStatus !== 'connected' || bridge.currentTurnId !== null || !isCodeLightSessionSource(source, bridge.controlMode)
+        || bridge?.sourceStatus !== 'connected' || bridge.currentTurnId !== null || !isCodelyncSessionSource(source, bridge.controlMode)
         || parsed.data.nativeConversationId !== source.id || parsed.data.hostId !== source.hostId || parsed.data.ownerGeneration !== source.runtimeGeneration) return null;
     return parsed.data;
 }

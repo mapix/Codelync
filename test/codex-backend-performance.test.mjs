@@ -250,12 +250,12 @@ test('exact ordered content stamps cover untruncated output, revision and owner 
 });
 
 /** Run only when requested; full published views are intentionally included. */
-test('synthetic complete native receive/publish benchmark', { skip: !process.env.CODELIGHT_NATIVE_BENCHMARK }, async (t) => {
+test('synthetic complete native receive/publish benchmark', { skip: !process.env.CODELYNC_NATIVE_BENCHMARK }, async (t) => {
   const currentPath = new URL('../src/adapters/codex-backend.mjs', import.meta.url);
   const currentSource = await readFile(currentPath, 'utf8');
   /** @type {{name:string,Backend:typeof CodexBackend,hash:string}[]} */ const variants = [];
-  if (process.env.CODELIGHT_NATIVE_BASELINE) {
-    const source = await readFile(process.env.CODELIGHT_NATIVE_BASELINE, 'utf8');
+  if (process.env.CODELYNC_NATIVE_BASELINE) {
+    const source = await readFile(process.env.CODELYNC_NATIVE_BASELINE, 'utf8');
     const resolved = source.replace(/from '(\.[^']+)'/g, (_match, relative) => `from '${new URL(relative, currentPath).href}'`);
     const module = await import(`data:text/javascript;base64,${Buffer.from(resolved).toString('base64')}`);
     variants.push({ name: 'previous', Backend: module.CodexBackend, hash: createHash('sha256').update(source).digest('hex') });

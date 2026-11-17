@@ -1,5 +1,5 @@
 /**
- * English translations for the CodeLight app
+ * English translations for the Codelync app
  * Values can be:
  * - String constants for static text
  * - Functions with typed object parameters for dynamic text
@@ -15,32 +15,32 @@ function plural({ count, singular, plural }: { count: number; singular: string; 
 }
 
 export const en = {
-    codeLightHandoff: {
+    codelyncHandoff: {
         action: "Send to…",
         noTargets: "No other connected desktop session on this Mac.",
         unavailable: "The source or target session is no longer available.",
     },
 
-    codeLightSetup: {
+    codelyncSetup: {
         createFailed: "Could not set up this connection. Check the connection to your Mac and try again.",
         storageFailed: "Could not save this connection securely. Check device storage and try again.",
-        reloadFailed: "Close and reopen CodeLight to reconnect with the saved settings.",
-        pairFailed: "This pairing link is unavailable. Scan a fresh QR code shown in CodeLight on your Mac.",
-        macHelp: "Open CodeLight on your Mac and keep your existing Codex / Antigravity / Claude Desktop sessions running.",
-        helpBody: "Open CodeLight on your Mac and keep it running. Scan its QR code from this phone. If the connection address changes, refresh and scan the new code. No registration or VPN is needed.",
+        reloadFailed: "Close and reopen Codelync to reconnect with the saved settings.",
+        pairFailed: "This pairing link is unavailable. Scan a fresh QR code shown in Codelync on your Mac.",
+        macHelp: "Open Codelync on your Mac and keep your existing Codex / Antigravity / Claude Desktop sessions running.",
+        helpBody: "Open Codelync on your Mac and keep it running. Scan its QR code from this phone. If the connection address changes, refresh and scan the new code. No registration or VPN is needed.",
     },
 
     windowControl: { controlling: 'Control', viewOnly: 'View only', sharedWindow: 'Shared desktop window', waitingImage: 'Waiting for a current window image.', showWindow: 'Show desktop window', control: 'Control', chooseInput: 'Choose a desktop input', draft: 'Draft to enter on desktop', fillInput: 'Fill selected input', controls: 'Desktop controls', unconfirmed: 'The window changed or the action is unconfirmed. Refresh and check the desktop before trying again.' },
 
-    codeLightPairing: {
+    codelyncPairing: {
         refresh: "Refresh the QR code on your Mac, then scan it again.",
         storage: "Could not save this connection securely. Check device storage and retry.",
-        invalid: "This code could not be verified. Scan the QR code shown in CodeLight on your Mac.",
-        network: "Could not reach your Mac. Keep CodeLight running there and try again.",
+        invalid: "This code could not be verified. Scan the QR code shown in Codelync on your Mac.",
+        network: "Could not reach your Mac. Keep Codelync running there and try again.",
     },
 
-    codeLightCommands: { modelMenu: 'Use the model button beside the input field to choose this session’s model.', unsupported: "This command is not available for this app in CodeLight. Your draft was kept.", busy: "This session is busy. Your draft was kept.", unconfirmed: "The command result is not confirmed. Check its result." },
-    codeLightModels: {
+    codelyncCommands: { modelMenu: 'Use the model button beside the input field to choose this session’s model.', unsupported: "This command is not available for this app in Codelync. Your draft was kept.", busy: "This session is busy. Your draft was kept.", unconfirmed: "The command result is not confirmed. Check its result." },
+    codelyncModels: {
         nextMessage: 'Next message',
         default: "Default",
         check: "Check settings",
@@ -50,7 +50,7 @@ export const en = {
         unconfirmed: "The change is not confirmed. Check its result without repeating it.",
     },
 
-    codeLightChannels: {
+    codelyncChannels: {
         title: "Connection",
         automatic: "Automatic",
         automaticDetail: "Check saved connections and connect to this Mac.",
@@ -69,14 +69,14 @@ export const en = {
         switchFailed: "Could not connect. Your saved choice was kept.",
         connectingTitle: "Connecting to Mac…",
         failedTitle: "Can’t connect to Mac",
-        failedHelp: "Open CodeLight on your Mac and check the network. Then retry or choose a connection.",
+        failedHelp: "Open Codelync on your Mac and check the network. Then retry or choose a connection.",
         accessEndedTitle: "Mac connection not accepted",
-        accessEndedHelp: "Scan the current QR code in CodeLight on that Mac. Saved messages and drafts are kept.",
+        accessEndedHelp: "Scan the current QR code in Codelync on that Mac. Saved messages and drafts are kept.",
         retryConnection: "Retry connection",
         scanMac: "Scan Mac code",
     },
 
-    codeLightLoading: {
+    codelyncLoading: {
         titles: "Loading Codex, Antigravity and Claude Desktop sessions…",
         discovered: ({ count }: { count: number }) => "{count} entries loaded · loading more…".replace("{count}", String(count)),
         messages: "Loading this session…",
@@ -86,7 +86,7 @@ export const en = {
         empty: "No Codex, Antigravity or Claude Desktop sessions are available on this Mac.",
     },
 
-    codeLightProjects: {
+    codelyncProjects: {
         active: ({ count }: { count: number }) => "Active: {count}".replace("{count}", String(count)),
         waiting: ({ count }: { count: number }) => "Waiting: {count}".replace("{count}", String(count)),
         unknown: ({ count }: { count: number }) => "Unconfirmed: {count}".replace("{count}", String(count)),
@@ -98,7 +98,7 @@ export const en = {
         updated: ({ time }: { time: string }) => "Updated {time}".replace("{time}", String(time)),
     },
 
-    codeLightSessionStatus: {
+    codelyncSessionStatus: {
         active: "Active",
         waiting: "Awaiting action",
         idle: "Idle",
@@ -226,7 +226,7 @@ export const en = {
         developer: 'Developer',
         developerTools: 'Developer Tools',
         about: 'About',
-        aboutFooter: "CodeLight connects to Codex, Antigravity and Claude Desktop on your Mac. Claude Desktop uses Gateway; available actions depend on each session.",
+        aboutFooter: "Codelync connects to Codex, Antigravity and Claude Desktop on your Mac. Claude Desktop uses Gateway; available actions depend on each session.",
         whatsNew: 'What\'s New',
         whatsNewSubtitle: 'See the latest updates and improvements',
         reportIssue: 'Report an Issue',
@@ -464,7 +464,7 @@ export const en = {
         serverUrlLabel: 'Server URL',
         selfHostFooter: 'For self-hosted servers. Sign out and back in after changing it.',
         enterServerUrl: 'Please enter a server URL',
-        notValidHappyServer: 'Not a valid CodeLight Server',
+        notValidHappyServer: 'Not a valid Codelync Server',
         changeServer: 'Change Server',
         continueWithServer: 'Continue with this server?',
         resetToDefault: 'Reset to Default',
@@ -479,8 +479,8 @@ export const en = {
         services: 'Services',
         useCustomServerForVoice: 'Use Custom Server for Voice',
         customServerVoiceEnabled: 'Voice credentials and usage use your custom server',
-        customServerVoiceDisabled: 'Voice uses CodeLight Cloud and your CodeLight subscription',
-        customServerVoiceFooter: 'When off, starting voice contacts CodeLight Cloud and ElevenLabs. Turn this on only if your custom server is configured for voice.',
+        customServerVoiceDisabled: 'Voice uses Codelync Cloud and your Codelync subscription',
+        customServerVoiceFooter: 'When off, starting voice contacts Codelync Cloud and ElevenLabs. Turn this on only if your custom server is configured for voice.',
     },
 
     sessionInfo: {
@@ -489,9 +489,9 @@ export const en = {
         killSessionConfirm: 'Are you sure you want to terminate this session?',
         archiveSession: 'Archive Session',
         archiveSessionConfirm: 'Are you sure you want to archive this session?',
-        happySessionIdCopied: 'CodeLight Session ID copied to clipboard',
-        failedToCopySessionId: 'Failed to copy CodeLight Session ID',
-        happySessionId: 'CodeLight Session ID',
+        happySessionIdCopied: 'Codelync Session ID copied to clipboard',
+        failedToCopySessionId: 'Failed to copy Codelync Session ID',
+        happySessionId: 'Codelync Session ID',
         claudeCodeSessionId: 'Claude Code Session ID',
         claudeCodeSessionIdCopied: 'Claude Code Session ID copied to clipboard',
         codexThreadId: 'Codex Thread ID',
@@ -526,7 +526,7 @@ export const en = {
         path: 'Path',
         operatingSystem: 'Operating System',
         processId: 'Process ID',
-        happyHome: 'CodeLight Home',
+        happyHome: 'Codelync Home',
         copyMetadata: 'Copy session metadata',
         agentState: 'Agent State',
         controlledByUser: 'Controlled by User',
@@ -556,12 +556,12 @@ export const en = {
         emptyMainScreen: {
             // Used by EmptyMainScreen component
             connectComputer: 'Connect your computer',
-            desktopSetupInstructions: 'Install CodeLight Desktop from happy.engineering. In desktop setup, choose “I have the app open,” then scan the device-linking QR code here.',
-            harnessDescription: 'Use Claude Code or Codex, or try CodeLight Harness. Your account stays linked across your computer and phone.',
-            getDesktop: 'Get CodeLight Desktop',
-            terminalAlternative: 'Prefer the terminal? Set up CodeLight CLI',
+            desktopSetupInstructions: 'Install Codelync Desktop from happy.engineering. In desktop setup, choose “I have the app open,” then scan the device-linking QR code here.',
+            harnessDescription: 'Use Claude Code or Codex, or try Codelync Harness. Your account stays linked across your computer and phone.',
+            getDesktop: 'Get Codelync Desktop',
+            terminalAlternative: 'Prefer the terminal? Set up Codelync CLI',
             readyToCode: 'Ready to code?',
-            installCli: 'Install the CodeLight CLI',
+            installCli: 'Install the Codelync CLI',
             runIt: 'Run it',
             scanQrCode: 'Scan the QR code',
             openCamera: 'Open Camera',
@@ -684,13 +684,13 @@ export const en = {
         dismiss: 'Dismiss',
         unsupportedTitle: 'Unsupported request',
         unsupportedDescription: ({ kind }: { kind: string }) =>
-            `This version of CodeLight cannot show a "${kind}" request. Update the app to respond.`,
+            `This version of Codelync cannot show a "${kind}" request. Update the app to respond.`,
         moreQuestions: ({ count }: { count: number }) =>
             count === 1 ? '1 more question' : `${count} more questions`,
     },
 
     sidebar: {
-        sessionsTitle: 'CodeLight',
+        sessionsTitle: 'Codelync',
         showArchived: 'Show archived',
         hideArchived: 'Hide archived',
         newSession: 'New session',
@@ -865,13 +865,13 @@ export const en = {
         },
         // Bring your own agent
         byoTitle: 'Bring Your Own Agent',
-        byoDescription: 'Use your own ElevenLabs agent instead of the CodeLight default. No subscription required — connect directly with your own ElevenLabs account. Your agent must define two client tools: sendMessageToSession (sends text to the coding agent) and processPermissionRequest (allows or denies tool use). It receives session context via the {{initialConversationContext}} dynamic variable.',
+        byoDescription: 'Use your own ElevenLabs agent instead of the Codelync default. No subscription required — connect directly with your own ElevenLabs account. Your agent must define two client tools: sendMessageToSession (sends text to the coding agent) and processPermissionRequest (allows or denies tool use). It receives session context via the {{initialConversationContext}} dynamic variable.',
         customAgentId: 'ElevenLabs Agent ID',
         customAgentIdNotSet: 'Not configured',
-        customAgentIdDescription: 'Enter your ElevenLabs agent ID. Leave empty to use the CodeLight default.',
+        customAgentIdDescription: 'Enter your ElevenLabs agent ID. Leave empty to use the Codelync default.',
         customAgentIdPlaceholder: 'e.g. abc123def456',
         bypassToken: 'Direct Connection',
-        bypassTokenSubtitle: 'Skip CodeLight server, connect straight to ElevenLabs',
+        bypassTokenSubtitle: 'Skip Codelync server, connect straight to ElevenLabs',
         promptGuideTitle: 'Agent Prompt Guide',
         promptGuideDescription: 'Your ElevenLabs agent needs:\n\n• Tool: sendMessageToSession — parameters: sessionId (string), message (string). Sends a message to the specified coding session.\n• Tool: processPermissionRequest — parameters: requestId (string), decision ("allow" or "deny"). Approves or denies a pending tool permission.\n• Dynamic variable: {{initialConversationContext}} — receives session history and context on start.\n\nThe agent acts as a voice bridge between the user and coding agents. It should be concise, only respond when addressed, and report when a coding agent finishes work.',
         // Voice usage
@@ -909,7 +909,7 @@ export const en = {
         secretKeyCopied: 'Secret key copied to clipboard. Store it in a safe place!',
         secretKeyCopyFailed: 'Failed to copy secret key',
         privacy: 'Privacy',
-        privacyDescription: 'Shares usage data, like which features you use and your device type, to help us improve CodeLight. Never your messages or code.',
+        privacyDescription: 'Shares usage data, like which features you use and your device type, to help us improve Codelync. Never your messages or code.',
         analytics: 'Analytics',
         analyticsDisabled: 'No data is shared',
         analyticsEnabled: 'Usage data is shared',
@@ -961,7 +961,7 @@ export const en = {
         invalidConnectionLink: 'Invalid Connection Link',
         invalidConnectionLinkDescription: 'The connection link is missing or invalid. Please check the URL and try again.',
         connectTerminal: 'Connect Terminal',
-        terminalRequestDescription: 'A terminal is requesting to connect to your CodeLight account. This will allow the terminal to send and receive messages securely.',
+        terminalRequestDescription: 'A terminal is requesting to connect to your Codelync account. This will allow the terminal to send and receive messages securely.',
         connectionDetails: 'Connection Details',
         publicKey: 'Public Key',
         encryption: 'Encryption',
@@ -1029,21 +1029,21 @@ export const en = {
         createAccount: 'Create account',
         restoreExisting: 'Restore existing account',
         linkTitle: "Connect to your Mac",
-        installStep: "Open CodeLight on your Mac",
+        installStep: "Open Codelync on your Mac",
         installBodyPrefix: "Open ",
-        installBodyLink: "CodeLight",
+        installBodyLink: "Codelync",
         installBodySuffix: " on your Mac.",
         terminalComment: "# Open the native Mac app",
-        terminalInstall: "open /Applications/CodeLight.app",
-        terminalRun: "open /Applications/CodeLight.app",
+        terminalInstall: "open /Applications/Codelync.app",
+        terminalRun: "open /Applications/Codelync.app",
         // No-break spaces keep the button name on one line.
         openStep: "Keep your Codex / Antigravity / Claude Desktop sessions running",
-        openBody: "Open CodeLight on your Mac and keep Codex / Antigravity / Claude Desktop running. A pairing QR code appears in CodeLight.",
+        openBody: "Open Codelync on your Mac and keep Codex / Antigravity / Claude Desktop running. A pairing QR code appears in Codelync.",
         scanStep: "Scan the QR code",
         scanButton: "Scan QR code",
         pasteLink: "Can’t scan? Paste the link instead",
         pasteLinkTitle: "Paste pairing link",
-        pasteLinkMessage: "On your Mac, choose Copy pairing link in CodeLight, then paste it here.",
+        pasteLinkMessage: "On your Mac, choose Copy pairing link in Codelync, then paste it here.",
         pasteLinkConfirm: "Connect",
         linking: "Connecting…",
         linkFailed: "Could not connect. Refresh the QR code on your Mac and scan it again.",
@@ -1052,8 +1052,8 @@ export const en = {
         offlineTitleMany: 'Your computers are offline',
         offlineLinkedStep: ({ name }: { name: string }) => `Linked ${name}`,
         offlineLinkedStepMany: ({ count }: { count: number }) => `Linked ${count} computers`,
-        offlineOpenStep: "Open CodeLight on your Mac",
-        offlineOpenBody: "Keep your Mac awake and online, then open CodeLight. This screen updates when it reconnects.",
+        offlineOpenStep: "Open Codelync on your Mac",
+        offlineOpenBody: "Keep your Mac awake and online, then open Codelync. This screen updates when it reconnects.",
         offlineTroubleshoot: 'Troubleshoot',
         linkAnother: 'Link another computer',
         // Get help, bottom right of both first-run screens.
@@ -1073,10 +1073,10 @@ export const en = {
         logoutConfirmBody: 'You will go back to Create account. Nothing on your computer changes.',
         restoreTitle: 'Restore Account',
         restoreScan: 'Scan this code with your other phone.',
-        restoreScanPath: 'CodeLight › Settings › Account › Link New Device',
+        restoreScanPath: 'Codelync › Settings › Account › Link New Device',
         restoreUseKey: 'Use a secret key instead',
         secretKeyTitle: 'Secret Key',
-        secretKeyBody: 'Paste your secret key. It is in CodeLight › Settings › Account on your other device.',
+        secretKeyBody: 'Paste your secret key. It is in Codelync › Settings › Account on your other device.',
         restoreButton: 'Restore',
     },
 
@@ -1087,17 +1087,17 @@ export const en = {
         bannerTitleMany: 'All machines offline',
         bannerSubtitle: 'Troubleshoot',
         title: 'Troubleshoot',
-        heading: 'CodeLight is not running on your computer',
-        intro: 'Your phone talks to CodeLight on your computer. When nothing is running there, everything here is offline.',
+        heading: 'Codelync is not running on your computer',
+        intro: 'Your phone talks to Codelync on your computer. When nothing is running there, everything here is offline.',
         awakeStep: 'Is the computer awake and online?',
         awakeBody: 'Sleep and a dropped connection are the usual causes.',
-        desktopStep: 'Is CodeLight Desktop open?',
+        desktopStep: 'Is Codelync Desktop open?',
         desktopBodyPrefix: 'Open it, or download it from ',
         desktopBodyLink: 'happy.engineering',
         desktopBodySuffix: '. We recommend it.',
         terminalStep: 'Using the terminal?',
         terminalBody: 'Run happy again. The computer comes back online as soon as it starts.',
-        terminalComment: '# Not using CodeLight Desktop?',
+        terminalComment: '# Not using Codelync Desktop?',
         machines: 'Machines',
         machineOffline: 'Offline',
         copyAiPrompt: 'Copy AI prompt',

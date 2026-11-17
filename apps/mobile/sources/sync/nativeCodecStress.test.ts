@@ -38,7 +38,7 @@ it('runs only synthetic authenticated data and exposes bounded sanitized results
     expect(report.publishedResults).toBe(0); expect(report.payloadPersisted).toBe(false); expect(report.keysPersisted).toBe(false);
     expect(report.cases.find(item => item.name === 'pending-queue-bound')?.counts?.maxPending).toBeLessThanOrEqual(2);
     expect(JSON.stringify(report)).not.toMatch(/bodyBase64|secretKey|ciphertext|Synthetic Unicode|\"text\"/);
-    expect(NATIVE_CODEC_STRESS_KEY).toBe('codelight-native-codec-stress-v1');
+    expect(NATIVE_CODEC_STRESS_KEY).toBe('codelync-native-codec-stress-v1');
 });
 
 it('never treats missing installed native codec as a passed portable test', async () => {

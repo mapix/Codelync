@@ -1,16 +1,16 @@
-# CodeLight 0.5.8 public preview
+# Codelync 0.5.8 public preview
 
 ## Artifacts
 
-- Website: <https://codelight.novarock.io/>.
-- Release: <https://github.com/mapix/CodeLight/releases/tag/v0.5.8>.
+- Website: <https://codelync.novarock.io/>.
+- Release: <https://github.com/mapix/Codelync/releases/tag/v0.5.8>.
 - Public code: `4e5da5ca7df2b4fa844eca3ddb564ae06e89e9b5` (clean public parent history).
 - Mac ZIP: 113,051,920 bytes; SHA-256 `013fa8dab4677b95a179a3097d7ec16c44b61627d979d3fc7f8d211571b00c58`.
 - Source ZIP: 24,280,734 bytes; SHA-256 `02e6b7cb32fbe3d25d0937dccc9f04086d9aeb8c8071028036c5facd5b9c5f0b`.
 
 ## Native behavior
 
-Mac Start/Pause controls the owned CodeLight service. Pause waits for helper,
+Mac Start/Pause controls the owned Codelync service. Pause waits for helper,
 database and tunnel children to exit before Start enables; original Codex stays
 running. The phone restores encrypted title metadata and permits existing-session
 navigation while titles refresh. Cold connection errors and retry status changes

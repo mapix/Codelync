@@ -1,6 +1,6 @@
 import { NoninvasiveRpcJournal, type BridgeRpcReply, type BridgeRpcStorage, type BridgeRpcCompleteValidator } from './noninvasiveRpcJournal';
-import { rpcTarget } from '@slopus/happy-wire/codelight';
-import { readCodeLightOperationTrace, type CodeLightOperationSource, type CodeLightOperationTrace } from '@/utils/codeLightOperationLog';
+import { rpcTarget } from '@codelync/wire/codelync';
+import { readCodelyncOperationTrace, type CodelyncOperationSource, type CodelyncOperationTrace } from '@/utils/codelyncOperationLog';
 
 type KeyedStorage = {
     getItem(key: string): Promise<string | null>;
@@ -18,7 +18,7 @@ type Options = {
     digest(value: string): Promise<string>;
     id(): string;
     rpc(entityId: string, method: string, params: unknown, serverUrl: string): Promise<BridgeRpcReply>;
-    sourceContext?(entityId: string, target: string): CodeLightOperationSource | null;
+    sourceContext?(entityId: string, target: string): CodelyncOperationSource | null;
     onDiagnostics?(sessionId: string): void;
     validateComplete?: BridgeRpcCompleteValidator;
 };
@@ -94,15 +94,15 @@ export class ScopedNoninvasiveRpc {
     }
 
     /** Local diagnostics only; never recovers a receipt or invokes the source. */
-    async readDiagnostics(sessionId: string): Promise<CodeLightOperationTrace[]> {
-        const authority = this.options.identity?.() ?? this.options.serverUrl(), rows: CodeLightOperationTrace[] = [];
+    async readDiagnostics(sessionId: string): Promise<CodelyncOperationTrace[]> {
+        const authority = this.options.identity?.() ?? this.options.serverUrl(), rows: CodelyncOperationTrace[] = [];
         const keys = await this.options.storage.getAllKeys?.() ?? [];
         for (const key of keys) {
             if (!key.startsWith(this.options.keyPrefix) || !key.endsWith(':diagnostics')) continue;
             const value = JSON.parse(await this.options.storage.getItem(key) ?? '[]');
             if (!Array.isArray(value) || value.length > 32) continue;
             for (const event of value) {
-                const parsed = readCodeLightOperationTrace(event, authority, sessionId);
+                const parsed = readCodelyncOperationTrace(event, authority, sessionId);
                 if (parsed) rows.push(parsed);
             }
         }

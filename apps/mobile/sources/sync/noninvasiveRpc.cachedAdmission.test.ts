@@ -8,7 +8,7 @@ vi.mock('./storage',()=>({storage:{getState:()=>({sessions:mocks.sessions})}}));
 vi.mock('./scopedNoninvasiveRpc',()=>({ScopedNoninvasiveRpc:class{
     execute=mocks.execute;recover=mocks.recover;recoverDetailed=mocks.recoverDetailed;
 }}));
-import { runNoninvasiveRpc,runCodeLightModelRpc,recoverCodeLightModelRpc } from './noninvasiveRpc';
+import { runNoninvasiveRpc,runCodelyncModelRpc,recoverCodelyncModelRpc } from './noninvasiveRpc';
 const cached=()=>({id:'session',draft:'saved draft',metadata:{client:{id:'noninvasive-bridge'},bridge:{controlMode:'session',sourceStatus:'owner-unavailable',source:{app:'codex',kind:'session',id:'native',hostId:'local',runtimeGeneration:'owner'}},
     nativeReadFreshness:{version:1,mode:'cached',currentControlAuthority:false,ownerGeneration:'owner'},capabilities:{readOnly:true}}});
 it('cached state rejects captured new write/read actions before journal allocation, while exact receipt recovery remains available',async()=>{
@@ -16,10 +16,10 @@ it('cached state rejects captured new write/read actions before journal allocati
     for(const method of ['permission','communication','abort','source-command','codex-controls-update','codex-controls-read']){
         await expect(runNoninvasiveRpc('session',method,{id:'retained-request'})).rejects.toMatchObject({effectMayHaveOccurred:false});
     }
-    await expect(runCodeLightModelRpc('session',{model:'never-dispatched'})).rejects.toMatchObject({effectMayHaveOccurred:false});
+    await expect(runCodelyncModelRpc('session',{model:'never-dispatched'})).rejects.toMatchObject({effectMayHaveOccurred:false});
     expect(mocks.execute).not.toHaveBeenCalled();expect(mocks.id).not.toHaveBeenCalled();
     const original={expectedModel:'original',expectedReasoningEffort:'low'};
-    await recoverCodeLightModelRpc('session',original);
+    await recoverCodelyncModelRpc('session',original);
     expect(mocks.recover).toHaveBeenCalledExactlyOnceWith('session','codex-controls-update',original);
     expect(mocks.sessions.session.draft).toBe('saved draft');
     await runNoninvasiveRpc('session','bridge-receipt',{commandId:'original-command'});

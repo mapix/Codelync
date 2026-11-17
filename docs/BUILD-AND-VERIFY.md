@@ -1,4 +1,4 @@
-# Build and verify CodeLight
+# Build and verify Codelync
 
 The standalone source is at this repository root. The current distribution supports
 Codex, Antigravity Desktop and Claude Desktop (Gateway), using their original
@@ -6,7 +6,7 @@ session owners and confirmed capabilities. Claude's complete formal controls
 still require the source's acceptance gates. Standalone CLI/TUI families and
 window sources remain deferred research. Use Node 24.15.0 and pnpm 10.11.0. Dependencies and generated
 native caches stay outside Git. Current scope is defined in
-[the product contract](../spec/codelight-product.md).
+[the product contract](../spec/codelync-product.md).
 
 ## Gates
 
@@ -17,7 +17,7 @@ native caches stay outside Git. Current scope is defined in
 - Project activity checks must cover original-owner status, waiting operations,
   stale/disconnected state, foreground/background transitions and bounded status
   payloads without fetching every conversation's history. The contract is in
-  [codelight-project-activity.md](../spec/codelight-project-activity.md).
+  [codelync-project-activity.md](../spec/codelync-project-activity.md).
 - Verify discovery and restored observers for Codex, Antigravity Desktop and
   Claude Desktop (Gateway), including unsupported versions and unavailable
   controls. Historical CLI and window tests do not establish enabled support.
@@ -29,7 +29,7 @@ native caches stay outside Git. Current scope is defined in
   supported language strings. Record fixture, simulator and physical-phone
   observations separately.
 
-Native UI acceptance uses the dedicated CodeLight simulator and the installed iPhone. Do not send additional model test prompts to validate transport or settings. Model updates can be verified without a new turn.
+Native UI acceptance uses the dedicated Codelync simulator and the installed iPhone. Do not send additional model test prompts to validate transport or settings. Model updates can be verified without a new turn.
 
 Measure request/byte budgets and bounded render work for performance changes.
 Do not describe synthetic timings as measured phone frame rate, battery use or
@@ -47,7 +47,7 @@ previous bundle during replacement.
 
 ## iPhone
 
-Run `pod install` from `apps/mobile/ios`, then use `pnpm build:mobile --device YOUR_DEVICE_ID --team YOUR_TEAM_ID` or `pnpm build:mobile --simulator YOUR_SIMULATOR_ID`. The build entry point resolves signed entitlement files from this repository and propagates the actual Xcode exit status. Use the CodeLight bundle ID. `HAPPY_NONINVASIVE_LOCAL=1 EXPO_NO_DOTENV=1` enables the CodeLight distribution. Keep the system Keychain entitlement for simulator builds. Development profile installs are not App Store releases.
+Run `pod install` from `apps/mobile/ios`, then use `pnpm build:mobile --device YOUR_DEVICE_ID --team YOUR_TEAM_ID` or `pnpm build:mobile --simulator YOUR_SIMULATOR_ID`. The build entry point resolves signed entitlement files from this repository and propagates the actual Xcode exit status. Use the Codelync bundle ID. `CODELYNC_NONINVASIVE_LOCAL=1 EXPO_NO_DOTENV=1` enables the Codelync distribution. Keep the system Keychain entitlement for simulator builds. Development profile installs are not App Store releases.
 
 The Podfile raises dependency and resource-bundle deployment targets below iOS
 15.1 to 15.1, matching the native dependency floor. Xcode 27.2 rejects the older
@@ -72,6 +72,6 @@ does not use the upstream Happy Expo publisher.
 
 `pnpm package:source` produces a repository source ZIP using Git-known files and an additional private-state exclusion filter. Generated products and state are excluded.
 
-Run `node scripts/verify-codelight-source.mjs --install` after export to extract the ZIP, check private-path exclusions, install the frozen workspace and typecheck it independently.
+Run `node scripts/verify-codelync-source.mjs --install` after export to extract the ZIP, check private-path exclusions, install the frozen workspace and typecheck it independently.
 
 Add `--generic` to a device build when the phone is offline; Xcode builds the signed iOS artifact without waiting for hardware. Install verification still requires the paired device.

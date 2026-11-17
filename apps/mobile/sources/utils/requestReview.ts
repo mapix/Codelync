@@ -14,7 +14,7 @@ import { sync } from '@/sync/sync';
 import { storage as syncStorage } from '@/sync/storage';
 import { Platform } from 'react-native';
 
-const localStorage = new MMKV();
+const localStorage = new MMKV({ id: 'codelync-app-state-v1' });
 
 const LOCAL_KEYS = {
     STORE_REVIEW_LAST_SHOWN: 'review_store_last_shown',

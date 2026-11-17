@@ -10,11 +10,11 @@ require('../patches/fix-react-native-audio-api-size-t.cjs');
 require('../patches/fix-flash-list-web-inversion.cjs').patchFlashListWeb();
 require('../patches/fix-virtualized-list-stale-frame-offset.cjs').patchVirtualizedLists();
 
-if (process.env.SKIP_HAPPY_WIRE_BUILD === '1') {
-  console.log('[postinstall] SKIP_HAPPY_WIRE_BUILD=1, skipping @slopus/happy-wire build');
+if (process.env.SKIP_CODELYNC_WIRE_BUILD === '1') {
+  console.log('[postinstall] SKIP_CODELYNC_WIRE_BUILD=1, skipping @codelync/wire build');
   process.exit(0);
 }
 
-execSync('pnpm --filter @slopus/happy-wire build', {
+execSync('pnpm --filter @codelync/wire build', {
   stdio: 'inherit',
 });

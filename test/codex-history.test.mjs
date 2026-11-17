@@ -18,7 +18,7 @@ function header(id, child = false, originator = 'Codex Desktop') {
 }
 /** @param {import('node:test').TestContext} t @param {Value[]} [records] @param {number} [maxPageBytes] */
 async function fixture(t, records = [message('native-message', 'assistant', 'Original visible text')], maxPageBytes = 8192) {
-  const root = await mkdtemp(join(tmpdir(), 'codelight-codex-saved-')); await mkdir(join(root, 'sessions'));
+  const root = await mkdtemp(join(tmpdir(), 'codelync-codex-saved-')); await mkdir(join(root, 'sessions'));
   const parentPath = join(root, 'sessions', PARENT + '.jsonl'), childPath = join(root, 'sessions', CHILD + '.jsonl');
   await writeFile(parentPath, encoded(header(PARENT)), { mode: 0o600 });
   await writeFile(childPath, [header(CHILD, true), ...records].map(encoded).join(''), { mode: 0o600 });

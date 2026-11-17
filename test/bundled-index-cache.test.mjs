@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BundledCodexStorage } from '../src/happy/bundled-codex-storage.mjs';
+import { BundledCodexStorage } from '../src/codelync/bundled-codex-storage.mjs';
 
 test('unchanged index reuses work, returns isolated rows, and changes/TTL refresh safely', async () => {
   let signature = 'one', now = 0, calls = 0;

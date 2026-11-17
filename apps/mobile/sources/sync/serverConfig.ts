@@ -3,22 +3,22 @@ import { MMKV } from 'react-native-mmkv';
 import { normalizeServerOrigin } from '@/utils/serverOrigin';
 
 // Separate MMKV instance for server config that persists across logouts
-const serverConfigStorage = new MMKV({ id: 'server-config' });
+const serverConfigStorage = new MMKV({ id: 'codelync-server-config' });
 
-const SERVER_KEY = 'custom-server-url';
-const LOG_SERVER_KEY = 'log-server-url';
-const USE_CUSTOM_SERVER_FOR_VOICE_KEY = 'use-custom-server-for-voice';
+const SERVER_KEY = 'codelync-custom-server-url';
+const LOG_SERVER_KEY = 'codelync-log-server-url';
+const USE_CUSTOM_SERVER_FOR_VOICE_KEY = 'codelync-use-custom-server-for-voice';
 const DEFAULT_SERVER_URL = 'https://api.cluster-fluster.com';
 let runtimeServerUrl: string | undefined;
 
 export function getServerUrl(): string {
-    // CodeLight 的服务器切换必须重载自己的 JS runtime；旧网络任务不能在 await 后把旧 token 发到新地址。
+    // Codelync 的服务器切换必须重载自己的 JS runtime；旧网络任务不能在 await 后把旧 token 发到新地址。
     if (config.noninvasiveLocal && runtimeServerUrl) return runtimeServerUrl;
     // A selected private run must not silently reuse a previously persisted
     // server (including another loopback run). Production ignores this path.
-    // CodeLight 正常启动允许用户配置自建服务；隔离测试凭据不能成为正式 App 的启动条件。
+    // Codelync 正常启动允许用户配置自建服务；隔离测试凭据不能成为正式 App 的启动条件。
     if (__DEV__ && process.env.EXPO_PUBLIC_HARNESS_MODE === '1') {
-        const configured = process.env.EXPO_PUBLIC_HAPPY_SERVER_URL;
+        const configured = process.env.EXPO_PUBLIC_CODELYNC_SERVER_URL;
         if (!configured) throw new Error('Harness startup requires its explicit server URL.');
         const parsed = new URL(configured);
         if (parsed.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(parsed.hostname)
@@ -28,8 +28,8 @@ export function getServerUrl(): string {
         runtimeServerUrl = parsed.origin; return parsed.origin;
     }
     const selected = serverConfigStorage.getString(SERVER_KEY) ||
-           (globalThis as any).__HAPPY_CONFIG__?.serverUrl ||
-           process.env.EXPO_PUBLIC_HAPPY_SERVER_URL ||
+           (globalThis as any).__CODELYNC_CONFIG__?.serverUrl ||
+           process.env.EXPO_PUBLIC_CODELYNC_SERVER_URL ||
            (config.noninvasiveLocal ? 'http://127.0.0.1:57070' : DEFAULT_SERVER_URL);
     const origin = normalizeServerOrigin(selected);
     if (config.noninvasiveLocal) runtimeServerUrl = origin;

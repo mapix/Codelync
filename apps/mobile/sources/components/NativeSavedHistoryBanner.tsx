@@ -4,7 +4,7 @@ import { useUnistyles } from 'react-native-unistyles';
 import { getCurrentLanguage } from '@/text';
 import type { SupportedLanguage } from '@/text/_all';
 import type { Session } from '@/sync/storageTypes';
-import { codeLightSavedHistory } from '@/utils/nativeSavedHistory';
+import { codelyncSavedHistory } from '@/utils/nativeSavedHistory';
 const labels: Record<SupportedLanguage, string> = {
     "en": "Saved messages · Read only",
     "zh-Hans": "已保存消息 · 只读",
@@ -19,8 +19,8 @@ const labels: Record<SupportedLanguage, string> = {
 };
 export function NativeSavedHistoryBanner({ session, topInset = 0 }: { session: Session; topInset?: number }) {
     const { theme } = useUnistyles();
-    if (!codeLightSavedHistory(session)) return null;
-    return <View testID="codelight-saved-history" style={{ paddingHorizontal: 14, paddingTop: topInset + 14, paddingBottom: 14, backgroundColor: theme.colors.groupped.background }}>
+    if (!codelyncSavedHistory(session)) return null;
+    return <View testID="codelync-saved-history" style={{ paddingHorizontal: 14, paddingTop: topInset + 14, paddingBottom: 14, backgroundColor: theme.colors.groupped.background }}>
         <Text accessibilityLiveRegion="polite" style={{ color: theme.colors.textSecondary }}>{labels[getCurrentLanguage()]}</Text>
     </View>;
 }

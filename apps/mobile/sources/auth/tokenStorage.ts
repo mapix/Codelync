@@ -2,10 +2,10 @@ import * as SecureStore from 'expo-secure-store';
 import { AppState, Platform } from 'react-native';
 import { getServerUrl } from '@/sync/serverConfig';
 import { config } from '@/config';
-import { clearCodeLightBackgroundCache } from '@/sync/codeLightBackgroundCache';
-import type { PeerCredentials } from '@slopus/happy-wire/codelight';
+import { clearCodelyncBackgroundCache } from '@/sync/codelyncBackgroundCache';
+import type { PeerCredentials, ChannelKind } from '@codelync/wire/codelync';
 
-const AUTH_KEY = 'auth_credentials';
+const AUTH_KEY = 'codelync_auth_credentials_v1';
 
 // Cache for synchronous access
 let credentialsCache: string | null = null;
@@ -16,6 +16,8 @@ export interface AuthCredentials {
     secret: string;
     serverUrl?: string;
     peer?: PeerCredentials;
+    /** Local routing intent; this is never sent as a wire credential. */
+    connectionPreference?: { peerId: string; devicePublicKey: string; mode: 'automatic' | 'manual'; channelId?: string; kind?: ChannelKind };
 }
 
 export type CredentialRead = { status: 'available'; credentials: AuthCredentials }
@@ -70,7 +72,7 @@ export const TokenStorage = {
     },
 
     async removeCredentials(): Promise<boolean> {
-        if (config.noninvasiveLocal) clearCodeLightBackgroundCache();
+        if (config.noninvasiveLocal) clearCodelyncBackgroundCache();
         if (Platform.OS === 'web') {    
             localStorage.removeItem(AUTH_KEY);
             return true;

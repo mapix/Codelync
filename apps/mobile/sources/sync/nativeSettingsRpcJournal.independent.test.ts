@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
-import { rpcTarget } from '@slopus/happy-wire/codelight';
+import { rpcTarget } from '@codelync/wire/codelync';
 import { ScopedNoninvasiveRpc } from './scopedNoninvasiveRpc';
 import type { BridgeRpcReply } from './noninvasiveRpcJournal';
 import { confirmedNativeModelRpcReceipt } from '@/utils/nativeModelControls';

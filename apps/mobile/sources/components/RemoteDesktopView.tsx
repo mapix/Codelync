@@ -42,7 +42,7 @@ function DesktopCanvas({ controller, zoom, offset, setZoom, setOffset, mode, onV
         const timer = setInterval(() => { void check(); }, 500); void check();
         return () => { cancelled = true; clearInterval(timer); };
     }, [track, reference && isTrackReference(reference) ? reference.publication.trackSid : null, controller.videoReady, controller.grant?.trackSid, controller.ready]);
-    const controlsEnabled = controller.ready && controller.status?.permissions?.accessibility === true && !controller.busy;
+    const controlsEnabled = controller.ready && controller.inputAllowed && controller.status?.permissions?.accessibility === true && !controller.busy;
     const point = (x: number, y: number) => controller.grant ? desktopPoint(x, y, viewport, controller.grant.display, zoom, offset) : null;
     const send = (input: DesktopInput) => { if (controlsEnabled) void controller.input(input); };
     const responder = PanResponder.create({
@@ -117,7 +117,7 @@ export function RemoteDesktopView() {
     const keyboardCamera = React.useRef<KeyboardCamera | null>(null), keyboardVisible = React.useRef(false);
     const connected = !!controller.grant && !!controller.room;
     const displayId = controller.grant?.display.id ?? (controller.displays.some(display => display.id === selected) ? selected : controller.displays[0]?.id);
-    const inputEnabled = connected && controller.ready && controller.status?.permissions?.accessibility === true && !controller.busy && !exiting;
+    const inputEnabled = connected && controller.ready && controller.inputAllowed && controller.status?.permissions?.accessibility === true && !controller.busy && !exiting;
     React.useEffect(() => {
         target.current = null; keyboardCamera.current = null;
         setZoom(1); setOffset({ x: 0, y: 0 }); setMode('pointer');
@@ -175,7 +175,7 @@ export function RemoteDesktopView() {
             : !controller.status ? labels.checking : labels.notConnected;
     const connectionMessage = controller.error ? remoteDesktopError(controller.error) : controller.notice ? remoteDesktopError(controller.notice)
         : controller.closing ? labels.disconnecting : controller.busy ? labels.connecting : !connected ? emptyMessage
-            : !controller.ready ? labels.waiting : controller.status?.permissions?.accessibility === false ? labels.inputPermission
+            : !controller.inputAllowed ? labels.preferredRoute : !controller.ready ? labels.waiting : controller.status?.permissions?.accessibility === false ? labels.inputPermission
                 : controller.status?.permissions?.accessibility !== true ? labels.inputChecking : labels.connected;
     const warning = !!controller.error || !!controller.notice || !inputEnabled;
     const panelTitle = panel === 'display' ? labels.display : panel === 'quality' ? labels.settings : panel === 'spaces' ? labels.desktops

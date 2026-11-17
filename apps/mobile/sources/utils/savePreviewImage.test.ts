@@ -9,14 +9,14 @@ beforeEach(() => { vi.clearAllMocks(); calls.available.mockResolvedValue(true); 
 describe('saving the loaded image preview', () => {
     it('stages the existing bytes, opens the system save menu and removes the temporary file', async () => {
         await savePreviewImage('data:image/jpeg;base64,AQID', '../../image.png');
-        expect(calls.write).toHaveBeenCalledWith('file:///cache/codelight-image-fixture-______image.jpg', 'AQID', { encoding: 'base64' });
-        expect(calls.share).toHaveBeenCalledWith('file:///cache/codelight-image-fixture-______image.jpg', { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
-        expect(calls.remove).toHaveBeenCalledWith('file:///cache/codelight-image-fixture-______image.jpg', { idempotent: true });
+        expect(calls.write).toHaveBeenCalledWith('file:///cache/codelync-image-fixture-______image.jpg', 'AQID', { encoding: 'base64' });
+        expect(calls.share).toHaveBeenCalledWith('file:///cache/codelync-image-fixture-______image.jpg', { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+        expect(calls.remove).toHaveBeenCalledWith('file:///cache/codelync-image-fixture-______image.jpg', { idempotent: true });
     });
     it('still cleans up after saving fails and rejects nonimage data', async () => {
         calls.share.mockRejectedValueOnce(Error('cancelled'));
         await expect(savePreviewImage('data:image/png;base64,AQID', 'image.png')).rejects.toThrow();
-        expect(calls.remove).toHaveBeenLastCalledWith('file:///cache/codelight-image-fixture-image.png', { idempotent: true });
+        expect(calls.remove).toHaveBeenLastCalledWith('file:///cache/codelync-image-fixture-image.png', { idempotent: true });
         await expect(savePreviewImage('data:text/html;base64,AQID', 'image.html')).rejects.toThrow('not an image');
     });
     it.each(['availability', 'write'])('rechecks scope after %s waits and never shares obsolete bytes', async stage => {

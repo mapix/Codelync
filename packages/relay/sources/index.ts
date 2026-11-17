@@ -23,7 +23,7 @@ export interface StartServerOptions extends StartApiOptions {
 export async function startServer(opts: StartServerOptions): Promise<{ port: number; host: string }> {
     process.env.DB_PROVIDER = process.env.DB_PROVIDER || "pglite";
     process.env.PGLITE_DIR = opts.pgliteDir;
-    process.env.HANDY_MASTER_SECRET = opts.masterSecret;
+    process.env.CODELYNC_MASTER_SECRET = opts.masterSecret;
 
     await db.$connect();
     onShutdown("db", async () => {

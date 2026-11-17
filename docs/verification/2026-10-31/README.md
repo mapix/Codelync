@@ -1,4 +1,4 @@
-# 2026-10-31 CodeLight takeover and performance verification
+# 2026-10-31 Codelync takeover and performance verification
 
 ## Scope
 
@@ -6,9 +6,9 @@ The previous chat was already interrupted in the backend and was archived. Activ
 
 ## Confirmed causes and changes
 
-- Entering a session previously fetched the latest 100 records plus up to five speculative 100-record older pages. CodeLight now starts with 50 and uses scroll-driven exclusive-cursor paging.
+- Entering a session previously fetched the latest 100 records plus up to five speculative 100-record older pages. Codelync now starts with 50 and uses scroll-driven exclusive-cursor paging.
 - Consecutive socket messages previously also invalidated message HTTP/Git synchronization. The native fast path now relies on its sequence admission; gaps still reconcile. Catalog activity is coalesced, preserves concurrent metadata, and skips old-account publications.
-- Native navigation now retains one session route. A 10,000-row single turn previously defeated the initial message window; CodeLight now processes at most 120 rows initially, then grows as the reader asks.
+- Native navigation now retains one session route. A 10,000-row single turn previously defeated the initial message window; Codelync now processes at most 120 rows initially, then grows as the reader asks.
 - Lifecycle-only message updates retain the sorted array. Actual changes sort only changed rows and merge into the existing order. Unrelated message writes reuse the catalog selector result.
 - Long Markdown first renders at most 8,000 characters and expands in chunks. Full original copy content remains available. Header artwork uses a 96-pixel generated brand derivative.
 - Decryption is divided into small scheduling chunks. Selecting a session writes only the small recent-session index, rather than serializing the whole encrypted catalog.
@@ -25,9 +25,9 @@ Synthetic host benchmarks and input sizes are in the adjacent JSON files. They m
 ## Final verification status
 
 - Bridge, phone and production relay typechecks pass; root Lint passes. The final affected suite has 140 passing bridge tests and 74 passing phone tests, with the native projection benchmark executed separately. Earlier performance regressions also passed 102 phone and 37 transport/native-connector tests.
-- Mac final dashboard build succeeds; Developer ID signing verifies six native binaries. `/Applications/CodeLight.app` is updated and its native paired UI defaults to Statistics. The previous installed bundle is preserved locally.
+- Mac final dashboard build succeeds; Developer ID signing verifies six native binaries. `/Applications/Codelync.app` is updated and its native paired UI defaults to Statistics. The previous installed bundle is preserved locally.
 - Source ZIP extraction, frozen dependency installation and standalone bridge/phone typecheck passed. The final source check also verifies the explicit Expo Babel preset and production relay typing.
-- Final iPhone build 2026103110 is installed and launched. CoreDevice app inventory confirms CodeLight 1.8.0 / 2026103110. The user scanned the new Mac QR and confirmed that individual session statuses are visible. Earlier lock-screen launch denial was resolved by unlocking the device.
+- Final iPhone build 2026103110 is installed and launched. CoreDevice app inventory confirms Codelync 1.8.0 / 2026103110. The user scanned the new Mac QR and confirmed that individual session statuses are visible. Earlier lock-screen launch denial was resolved by unlocking the device.
 - Early native CUA capture failed after unlock with ScreenCaptureKit -3811; the updated Mac window later became readable and its Ready-to-scan state was verified. Instruments could not attach to the paired iPhone and timed out waiting for the device to boot. Device process enumeration succeeded. Native frame rate, sustained scrolling feel and thermal acceptance remain unmeasured; no cold-phone claim is made.
 
 No new model test prompts were sent. Private credentials, device registries, native conversations and private environment-bound QA harnesses are excluded from the Git source/export.

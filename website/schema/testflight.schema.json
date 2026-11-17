@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codelync public TestFlight status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "version",
+    "build",
+    "publicURL",
+    "externalGroupEnabled",
+    "externalGroupContainsBuild",
+    "externalApproved",
+    "publishedAt",
+    "appId",
+    "groupId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "status": {
+      "enum": [
+        "coming-soon",
+        "in-review",
+        "available",
+        "closed"
+      ]
+    },
+    "build": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]{8,12}$"
+    },
+    "externalGroupEnabled": {
+      "type": "boolean"
+    },
+    "externalGroupContainsBuild": {
+      "type": "boolean"
+    },
+    "version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "publicURL": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^https://testflight\\.apple\\.com/join/[A-Za-z0-9]{8}$"
+    },
+    "externalApproved": {
+      "type": "boolean"
+    },
+    "publishedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "appId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+$"
+    },
+    "groupId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9-]{1,128}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "build": {
+            "type": "string"
+          },
+          "externalGroupEnabled": {
+            "const": true
+          },
+          "externalGroupContainsBuild": {
+            "const": true
+          },
+          "version": {
+            "type": "string"
+          },
+          "publicURL": {
+            "type": "string"
+          },
+          "externalApproved": {
+            "const": true
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "groupId": {
+            "type": "string"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "publicURL": {
+            "const": null
+          }
+        }
+      }
+    }
+  ]
+}

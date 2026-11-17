@@ -1,7 +1,7 @@
 {
-  "name": "@codelight/relay",
+  "name": "@codelync/relay",
   "version": "0.0.0",
-  "description": "CodeLight embedded encrypted sync API",
+  "description": "Codelync embedded encrypted sync API",
   "repository": {
     "type": "git",
     "url": "https://github.com/slopus/happy"
@@ -52,7 +52,7 @@
     "@fastify/static": "10.1.2",
     "@octokit/webhooks": "14.2.0",
     "@prisma/client": "6.19.2",
-    "@slopus/happy-wire": "workspace:*",
+    "@codelync/wire": "workspace:*",
     "@socket.io/redis-streams-adapter": "^0.2.2",
     "axios": "^1.6.8",
     "chalk": "4.1.2",

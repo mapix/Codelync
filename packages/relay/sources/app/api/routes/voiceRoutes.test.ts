@@ -1,7 +1,7 @@
 import { createHmac } from "crypto";
 import fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { serializerCompiler, validatorCompiler, ZodTypeProvider } from "fastify-type-provider-zod";
-import { VoiceConversationResponseSchema, VoiceUsageResponseSchema } from "@slopus/happy-wire";
+import { VoiceConversationResponseSchema, VoiceUsageResponseSchema } from "@codelync/wire";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Fastify } from "../types";
 import { voiceRoutes } from "./voiceRoutes";
@@ -23,7 +23,7 @@ describe("voiceRoutes", () => {
 
     beforeEach(async () => {
         vi.stubEnv("ELEVENLABS_API_KEY", "test-elevenlabs-key");
-        vi.stubEnv("HANDY_MASTER_SECRET", masterSecret);
+        vi.stubEnv("CODELYNC_MASTER_SECRET", masterSecret);
         vi.stubEnv("REVENUECAT_API_KEY", undefined);
         fetchMock.mockReset();
         // Unexpected network requests must fail, never reach a real service.

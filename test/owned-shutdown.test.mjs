@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { closeOwnedResources, stopOwnedChildren } from '../src/happy/owned-shutdown.mjs';
+import { closeOwnedResources, stopOwnedChildren } from '../src/codelync/owned-shutdown.mjs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 

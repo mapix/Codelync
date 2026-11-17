@@ -92,7 +92,7 @@ before asynchronous encryption. A changed connection rejects the request before
 emission; scoped callers also supply the expected endpoint. These checks apply
 to session and machine RPC without increasing acknowledgment timeouts.
 
-The event diagram and acceptance rules are in `spec/codelight-product.md`.
+The event diagram and acceptance rules are in `spec/codelync-product.md`.
 
 ## Executed checks
 

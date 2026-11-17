@@ -9,7 +9,7 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { loadAttachmentFile, type LoadedAttachmentFile } from '@/sync/attachmentFile';
 import { attachmentByteLabel, attachmentPreviewByteLimit, AttachmentPreviewLimitError, loadedVideoExceedsPreviewLimit,
     MAX_VIDEO_PREVIEW_BYTES, type AttachmentMediaMetadata } from '@/utils/attachmentMedia';
-import { codeLightMediaLabels } from '@/text/codeLightMediaLabels';
+import { codelyncMediaLabels } from '@/text/codelyncMediaLabels';
 import { getCurrentLanguage, t } from '@/text';
 import { AttachmentImagePreview } from './AttachmentImagePreview';
 import { useAttachmentPreviewScope } from '@/hooks/useAttachmentPreviewScope';
@@ -27,7 +27,7 @@ export function AttachmentFilePreview(props: Props) {
 function LoadedFilePreview({ sessionId, refValue, metadata, onClose }: Props) {
     const scope = useAttachmentPreviewScope(sessionId, refValue, onClose);
     const { theme } = useUnistyles(), screen = useWindowDimensions(), insets = useSafeAreaInsets();
-    const labels = codeLightMediaLabels[getCurrentLanguage()];
+    const labels = codelyncMediaLabels[getCurrentLanguage()];
     const [loaded, setLoaded] = React.useState<LoadedAttachmentFile | null>(null), [failed, setFailed] = React.useState(false);
     const [attempt, setAttempt] = React.useState(0), [saving, setSaving] = React.useState(false);
     const [saveError, setSaveError] = React.useState<'failed' | 'unavailable' | null>(null), saveFlight = React.useRef(false);
@@ -61,7 +61,7 @@ function LoadedFilePreview({ sessionId, refValue, metadata, onClose }: Props) {
         } catch { setSaveError('failed'); } finally { saveFlight.current = false; setSaving(false); }
     };
     if (scope.changed) return null;
-    return <View testID="codelight-file-preview" style={[styles.container, { width: screen.width, height: screen.height, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    return <View testID="codelync-file-preview" style={[styles.container, { width: screen.width, height: screen.height, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
             <Text style={styles.name} numberOfLines={1}>{metadata.name}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel={labels.save} disabled={!currentFile || saving} style={styles.action} onPress={() => { void save(); }}>
@@ -71,7 +71,7 @@ function LoadedFilePreview({ sessionId, refValue, metadata, onClose }: Props) {
                 <Ionicons name="close" size={24} color={theme.colors.text} />
             </Pressable>
         </View>
-        {saveError ? <Text testID="codelight-file-save-error" accessibilityLiveRegion="polite" style={[styles.detail, { paddingHorizontal: 14, paddingVertical: 8 }]}>{saveError === 'unavailable' ? labels.saveUnavailable : labels.saveFailed}</Text> : null}
+        {saveError ? <Text testID="codelync-file-save-error" accessibilityLiveRegion="polite" style={[styles.detail, { paddingHorizontal: 14, paddingVertical: 8 }]}>{saveError === 'unavailable' ? labels.saveUnavailable : labels.saveFailed}</Text> : null}
         {currentFile ? <View style={styles.content}>
             {currentFile.mimeType.startsWith('video/') ? Platform.OS === 'web'
                 ? React.createElement('video', { controls: true, autoPlay: false, preload: 'none', src: currentFile.uri, style: { width: '100%', height: '100%' } })
@@ -81,14 +81,14 @@ function LoadedFilePreview({ sessionId, refValue, metadata, onClose }: Props) {
                 : <View style={styles.status}><Ionicons name="document-outline" size={44} color={theme.colors.textSecondary} /><Text style={styles.detail}>{labels.binary}</Text>
                     <Text style={styles.detail}>{attachmentByteLabel(currentFile.size)}</Text></View>}
         </View> : <View style={styles.status}>{failed || !scope.valid || blockedLimit ? <><Text style={styles.detail}>{blockedLimit === MAX_VIDEO_PREVIEW_BYTES ? labels.videoTooLarge : blockedLimit ? labels.tooLarge : failed ? labels.loadFailed : labels.unavailable}</Text>
-            {!blockedLimit ? <Pressable testID="codelight-file-retry" accessibilityRole="button" style={styles.action} onPress={() => { if (scope.retry()) setAttempt(value => value + 1); }}><Text style={styles.detail}>{t('common.retry')}</Text></Pressable> : null}</>
+            {!blockedLimit ? <Pressable testID="codelync-file-retry" accessibilityRole="button" style={styles.action} onPress={() => { if (scope.retry()) setAttempt(value => value + 1); }}><Text style={styles.detail}>{t('common.retry')}</Text></Pressable> : null}</>
             : <><ActivityIndicator /><Text style={styles.detail}>{labels.loading}</Text></>}</View>}
     </View>;
 }
 
 function LocalVideoPlayer({ uri }: { uri: string }) {
     const player = useVideoPlayer({ uri }, instance => { instance.loop = false; instance.pause(); });
-    return <VideoView testID="codelight-video-player" player={player} nativeControls contentFit="contain" style={{ flex: 1 }} />;
+    return <VideoView testID="codelync-video-player" player={player} nativeControls contentFit="contain" style={{ flex: 1 }} />;
 }
 
 const styles = StyleSheet.create(theme => ({

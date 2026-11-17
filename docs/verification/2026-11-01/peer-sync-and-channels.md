@@ -9,7 +9,7 @@ after about 20 seconds. That result did not establish usable channel switching.
 - React Native's installed abort-controller provides instance abort events but
   no AbortSignal.any/timeout static helpers. The channel probe called those static
   methods. A regression without those methods failed before the replacement.
-- The CodeLight server getter caches its runtime endpoint. Channel selection
+- The Codelync server getter caches its runtime endpoint. Channel selection
   updated only MMKV, leaving some current requests on the previous route. The
   authenticated peer owner now commits both the stored and runtime endpoint;
   ordinary account/server edits retain their reload boundary.

@@ -1,4 +1,4 @@
-name: codelight-self-host
+name: codelync-self-host
 
 services:
   caddy:

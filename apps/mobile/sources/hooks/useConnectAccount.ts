@@ -21,7 +21,7 @@ export function useConnectAccount(options?: UseConnectAccountOptions) {
     const checkScannerPermissions = useCheckScannerPermissions();
 
     const processAuthUrl = React.useCallback(async (url: string) => {
-        const prefix = url.startsWith('codelight:///account?') ? 'codelight:///account?' : 'happy:///account?';
+        const prefix = url.startsWith('codelync:///account?') ? 'codelync:///account?' : 'happy:///account?';
         if (!url.startsWith(prefix)) {
             Modal.alert(t('common.error'), t('modals.invalidAuthUrl'), [{ text: t('common.ok') }]);
             return false;
@@ -74,7 +74,7 @@ export function useConnectAccount(options?: UseConnectAccountOptions) {
         if (CameraView.isModernBarcodeScannerAvailable) {
             const subscription = CameraView.onModernBarcodeScanned(async (event) => {
                 if (isProcessingRef.current) return;
-                if (event.data.startsWith('happy:///account?') || event.data.startsWith('codelight:///account?')) {
+                if (event.data.startsWith('happy:///account?') || event.data.startsWith('codelync:///account?')) {
                     isProcessingRef.current = true;
                     try {
                         if (Platform.OS === 'ios') {

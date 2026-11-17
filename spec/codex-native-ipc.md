@@ -23,6 +23,12 @@ model calls, tools, queue, approvals and persistence. The adapter never starts
 an app-server, resumes a rollout in another process, claims ownership, changes
 Codex configuration or modifies the application package.
 
+Model Gateway routing is not a prerequisite for this adapter. Gateway and
+non-Gateway modes use the same original Desktop IPC ownership boundary. Native
+owner/session/protocol verification remains required, and individual controls,
+including model/effort selection, require their own original-owner capability
+and catalog confirmation. A provider mode alone does not enable a control.
+
 ```mermaid
 sequenceDiagram
   participant Phone
@@ -133,7 +139,7 @@ connector load. Recovery never redispatches their saved commands.
 ```mermaid
 sequenceDiagram
  participant P as Phone
- participant C as CodeLight Connector
+ participant C as Codelync Connector
  participant O as Original Desktop Owner
  P->>C: Input with stable local ID
  C->>O: follower-start-turn, inherit existing settings

@@ -32,7 +32,7 @@ export type MessageSentSharedProperties = {
     model_provider_kind: string | null;
     /**
      * Tells provider accounts apart without naming them: a 12-hex-char BLAKE2b of the
-     * account id, keyed by `deriveKey(secret, 'Happy Coder', ['analytics', 'provider-account'])`.
+     * account id, keyed by `deriveKey(secret, 'Codelync Coder', ['analytics', 'provider-account'])`.
      * Stable per user and account, unjoinable across users; null without a Happy Agent account.
      */
     provider_account_hash: string | null;

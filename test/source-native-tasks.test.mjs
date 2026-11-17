@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceNativeTasks, sourceNativeTaskControls, nativeTaskActivity } from '../src/adapters/source-native-tasks.mjs';
 import { aggregateNativeActivity } from '../src/adapters/native-aggregate-activity.mjs';
-import { recentDescriptor } from '../src/happy/recent-data.mjs';
+import { recentDescriptor } from '../src/codelync/recent-data.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const source = { app: 'claude-desktop', id: 'parent', nativeCollection: 'claude-code-sessions', hostId: 'host-code' };

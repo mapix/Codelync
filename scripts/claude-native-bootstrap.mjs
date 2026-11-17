@@ -7,9 +7,9 @@ import { findClaudeNativeDebugger, ClaudeNativeDebugger, attestClaudeStockOwner 
 const [action = 'status', appRootArg = '/Applications/Claude.app', runtimePathArg, bridgePathArg] = process.argv.slice(2);
 const appRoot = resolve(appRootArg), executable = join(appRoot, 'Contents/MacOS/Claude');
 const runtimePath = runtimePathArg ? resolve(runtimePathArg) : null, bridgePath = bridgePathArg ? resolve(bridgePathArg) : null;
-const profilePath = process.env.CODELIGHT_CLAUDE_EXPECTED_PROFILE;
-const asarSha256 = process.env.CODELIGHT_CLAUDE_EXPECTED_ASAR;
-const readOnly = process.env.CODELIGHT_CLAUDE_READ_ONLY === '1';
+const profilePath = process.env.CODELYNC_CLAUDE_EXPECTED_PROFILE;
+const asarSha256 = process.env.CODELYNC_CLAUDE_EXPECTED_ASAR;
+const readOnly = process.env.CODELYNC_CLAUDE_READ_ONLY === '1';
 if (!profilePath || !asarSha256 || !/^[a-f0-9]{64}$/.test(asarSha256) || !['status', 'install', 'remove'].includes(action)) throw Error('Explicit attested profile/artifact and bootstrap action are required.');
 const candidates = execFileSync('/bin/ps', ['-axo', 'pid=,comm='], { encoding: 'utf8' }).split('\n').flatMap(line => {
   const match = line.trim().match(/^(\d+)\s+(.+)$/); return match && match[2] === executable ? [Number(match[1])] : [];
@@ -26,7 +26,7 @@ try {
     const result = await client.evaluate(`(async()=>{const require=process.mainModule.require.bind(process.mainModule),artifact=require(${JSON.stringify(bridgePath)}),bridge=await artifact.installClaudeOwnerBridge({electron:require('electron'),hostRequire:require,...${JSON.stringify(options)}});return {installed:true,pid:bridge.pid,version:bridge.version};})()`);
     process.stdout.write(JSON.stringify({ ...result, readOnly, mutationAllowed: !readOnly, gatewayVerified: proof.gatewayVerified, appVersion: proof.appVersion, asarSha256: proof.asarSha256 }) + '\n');
   } else {
-    const result = await client.evaluate(`(async()=>{const bridge=globalThis[Symbol.for('codelight.claude.native.owner.v1')];if(bridge)await bridge.deactivate();return {removed:true,nativeQueriesNotStopped:true};})()`);
+    const result = await client.evaluate(`(async()=>{const bridge=globalThis[Symbol.for('codelync.claude.native.owner.v1')];if(bridge)await bridge.deactivate();return {removed:true,nativeQueriesNotStopped:true};})()`);
     process.stdout.write(JSON.stringify(result) + '\n');
   }
 } finally { client.close(); }

@@ -70,7 +70,7 @@ remain unverified.
 
 ## Signed 1310 artifact and device reconciliation
 
-CodeLight 1.8.0/build2026111310 built successfully through the established
+Codelync 1.8.0/build2026111310 built successfully through the established
 `asc xcode build` Release/generic-iOS flow. Strict signing passed; the
 1,581-file source snapshot had zero changed or added files before handoff.
 Its 15,692,054-byte JavaScript SHA256 is
@@ -88,9 +88,9 @@ until the phone is unlocked and its installation service is available.
 
 ## Last confirmed installed artifact
 
-The connected iPhone was updated in place to CodeLight 1.8.0, build
+The connected iPhone was updated in place to Codelync 1.8.0, build
 2026111309. CoreDevice inventory confirms the bundle identifier
-`com.learnings.codelight` and this build. Strict signature verification passed.
+`com.learnings.codelync` and this build. Strict signature verification passed.
 The bundled JavaScript SHA256 is
 `0fa1fb38b8a48a56c5e0e6172f8591e95d7235e23c8eac3a69a160df9ade8d16`.
 The 1,575-file build snapshot had no drift before installation. Existing pairing
@@ -171,5 +171,5 @@ last release. In-flight old expansions cannot restore released intent. Cached
 historical rows never replace current controls, requests or pending operations.
 Ninety-one focused regressions, typecheck and lint passed. The installed formal
 service/wire matched the owning source, and original app processes/hash, paired
-devices, keys and unknown receipts remained intact. Only formal CodeLight is
+devices, keys and unknown receipts remained intact. Only formal Codelync is
 running; QA remains closed. Physical gesture/re-entry checks are still open.

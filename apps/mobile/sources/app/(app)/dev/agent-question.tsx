@@ -57,7 +57,7 @@ export default function AgentQuestionDemoScreen() {
     return (
         <>
             <Stack.Screen options={{ headerTitle: 'Agent Questions' }} />
-            <ScrollView testID="codelight-question-history" style={styles.container} contentContainerStyle={styles.content}>
+            <ScrollView testID="codelync-question-history" style={styles.container} contentContainerStyle={styles.content}>
                 <Text style={styles.description}>
                     {historyPreview
                         ? 'Scroll through earlier messages. The latest pending question stays available above the input area.'
@@ -91,7 +91,7 @@ export default function AgentQuestionDemoScreen() {
             </ScrollView>
 
             {historyPreview && (
-                <View testID="codelight-question-history-prompt" style={styles.preview}>
+                <View testID="codelync-question-history-prompt" style={styles.preview}>
                     <AgentQuestionBannerView pending={formCommunication} onPress={() => setOpen(true)} />
                 </View>
             )}

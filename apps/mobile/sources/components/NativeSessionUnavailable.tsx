@@ -6,7 +6,7 @@ import type { Session } from '@/sync/storageTypes';
 import { useSessionMessages } from '@/sync/storage';
 import { loadSessionDrafts } from '@/sync/persistence';
 import { nativeSessionAvailabilityLabels } from '@/text/nativeSessionAvailabilityLabels';
-import { codeLightSourceAppName } from '@/utils/codeLightSourceScope';
+import { codelyncSourceAppName } from '@/utils/codelyncSourceScope';
 
 /** Local retained content only. No session owner or native controls are manufactured. */
 export function NativeSessionUnavailable({ sessionId, known, loading, topInset = 0, onRetry, onBack }: {
@@ -28,20 +28,20 @@ export function NativeSessionUnavailable({ sessionId, known, loading, topInset =
         return result;
     }, [messages]);
     const source = known?.metadata?.bridge?.source;
-    return <View testID="codelight-session-unavailable" style={{ flex: 1, paddingHorizontal: 20, paddingTop: topInset + 20, gap: 12 }}>
+    return <View testID="codelync-session-unavailable" style={{ flex: 1, paddingHorizontal: 20, paddingTop: topInset + 20, gap: 12 }}>
         <Text style={{ color: theme.colors.text, fontSize: 20 }}>{labels.title}</Text>
-        {source ? <Text style={{ color: theme.colors.textSecondary }} numberOfLines={2}>{codeLightSourceAppName(source.app)} · {known?.metadata?.nativeSession?.title || source.id}</Text> : null}
+        {source ? <Text style={{ color: theme.colors.textSecondary }} numberOfLines={2}>{codelyncSourceAppName(source.app)} · {known?.metadata?.nativeSession?.title || source.id}</Text> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {loading || busy ? <ActivityIndicator color={theme.colors.textSecondary} /> : null}
             <Text accessibilityLiveRegion="polite" style={{ flex: 1, color: theme.colors.textSecondary }}>{loading || busy ? labels.loading : failed ? labels.refreshFailed : labels.unavailable}</Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 20 }}>
-            <Pressable testID="codelight-unavailable-retry" accessibilityRole="button" disabled={loading || busy} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => {
+            <Pressable testID="codelync-unavailable-retry" accessibilityRole="button" disabled={loading || busy} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => {
                 if (flight.current || loading) return;
                 setBusy(true); setFailed(false);
                 flight.current = Promise.resolve().then(onRetry).catch(() => { setFailed(true); }).finally(() => { flight.current = null; setBusy(false); });
             }}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable>
-            <Pressable testID="codelight-unavailable-back" accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }} onPress={onBack}><Text style={{ color: theme.colors.text }}>{labels.back}</Text></Pressable>
+            <Pressable testID="codelync-unavailable-back" accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }} onPress={onBack}><Text style={{ color: theme.colors.text }}>{labels.back}</Text></Pressable>
         </View>
         {draft ? <View><Text style={{ color: theme.colors.textSecondary }}>{labels.draft}</Text><Text selectable style={{ color: theme.colors.text }} numberOfLines={6}>{draft}</Text></View> : null}
         {rows.length ? <FlatList data={rows} keyExtractor={row => row.id} ListHeaderComponent={<Text style={{ color: theme.colors.textSecondary }}>{labels.saved}</Text>}

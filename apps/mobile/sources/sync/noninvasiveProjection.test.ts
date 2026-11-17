@@ -10,7 +10,7 @@ const message = (id: string, time: number, ev: Record<string, unknown>) => {
     return normalized;
 };
 
-describe('CodeLight native projection', () => {
+describe('Codelync native projection', () => {
     it('replaces only the named fragments and ignores old fragments replayed later', () => {
         const state = createReducer();
         reducer(state, [message('prefix', 10, { t: 'text', text: 'wrong' }), message('suffix', 11, { t: 'text', text: ' text' }), message('other', 12, { t: 'text', text: 'keep me' })]);

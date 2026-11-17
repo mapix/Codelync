@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import nacl from 'tweetnacl';
 import WebSocket, { WebSocketServer } from 'ws';
-import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
+import { PairingInvitations, createPairingGateway } from '../src/codelync/pairing-gateway.mjs';
 import { gatewayProof } from './fixtures/gateway-proof.mjs';
 
 /** @typedef {Record<string,any>} Value */
@@ -32,7 +32,7 @@ test('public pairing bounds crypto admission, recovers after refill and preserve
   gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
   t.after(() => { gateway.closeAllConnections(); gateway.close(); invitations.close(); });
   const address = gateway.address(); assert.ok(address && typeof address !== 'string');
-  const url = `http://127.0.0.1:${address.port}/codelight/pairing/exchange`;
+  const url = `http://127.0.0.1:${address.port}/codelync/pairing/exchange`;
   const post = (/** @type {Value} */ body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal((await post({})).status, 400);
   const limited = await post(encryptedRequest(grant, device));
@@ -73,10 +73,10 @@ test('gateway forwards HTTP only to its declared loopback API and keeps invitati
   assert.equal((await fetch(origin + '/v1/sessions', { headers: { Authorization: 'Bearer fixture-token' } })).status, 401);
   const unverified = new WebSocket(origin.replace(/^http/u, 'ws') + '/v1/updates', { headers: { Authorization: 'Bearer fixture-token' } });
   await assert.rejects(once(unverified, 'open')); unverified.terminate();
-  assert.equal((await fetch(origin + '/codelight/pairing/code')).status, 404);
-  assert.equal((await fetch(origin + '/codelight/pairing/exchange')).status, 405);
+  assert.equal((await fetch(origin + '/codelync/pairing/code')).status, 404);
+  assert.equal((await fetch(origin + '/codelync/pairing/exchange')).status, 405);
   const grant = f.invitations.issue('https://fixture.example');
-  const response = await fetch(origin + '/codelight/pairing/exchange', { method: 'POST', body: JSON.stringify(encryptedRequest(grant, f.device)) });
+  const response = await fetch(origin + '/codelync/pairing/exchange', { method: 'POST', body: JSON.stringify(encryptedRequest(grant, f.device)) });
   assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
 });
 test('encrypted invitation requests bind both endpoint and phone key before consuming a grant', () => {

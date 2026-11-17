@@ -7,7 +7,7 @@ import { AuthCredentials } from '@/auth/tokenStorage';
 import { clearRegisteredPushToken, loadRegisteredPushToken, saveRegisteredPushToken } from './persistence';
 import { registerPushToken, unregisterPushToken } from './apiPush';
 import { config } from '@/config';
-import { syncCodeLightPushToken } from './codeLightNotifications';
+import { syncCodelyncPushToken } from './codelyncNotifications';
 
 export type PushPermissionStatus = 'unsupported' | 'granted' | 'denied' | 'undetermined';
 
@@ -155,7 +155,7 @@ export async function syncCurrentPushToken(credentials: AuthCredentials): Promis
     let permission = await getPushPermissionInfo();
     if (config.noninvasiveLocal) {
         if (!permission.granted && permission.canAskAgain) permission = normalizePushPermission(await Notifications.requestPermissionsAsync());
-        const token = await syncCodeLightPushToken(credentials, permission.granted);
+        const token = await syncCodelyncPushToken(credentials, permission.granted);
         return { registered: !!token, token, permission };
     }
     if (!permission.granted) {

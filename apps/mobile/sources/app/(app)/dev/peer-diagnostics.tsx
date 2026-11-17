@@ -7,11 +7,11 @@ import { TokenStorage } from '@/auth/tokenStorage';
 import { apiSocket } from '@/sync/apiSocket';
 import { abortBudget } from '@/sync/abortBudget';
 import { peerAuthorization, decodePeerResponse, decodePeerResponseAsync, peerResponseHeaders } from '@/sync/peerNetwork';
-import { getConnectionSnapshot, selectConnection } from '@/sync/codeLightConnection';
-import { nativeRecentMessages, peerDescriptorSession } from '@/sync/codeLightRecent';
+import { getConnectionSnapshot, selectConnection } from '@/sync/codelyncConnection';
+import { nativeRecentMessages, peerDescriptorSession } from '@/sync/codelyncRecent';
 import { decodeBase64 } from '@/encryption/base64';
 import { storage } from '@/sync/storage';
-import { codeLightLoadingProgress } from '@/sync/codeLightLoadingProgress';
+import { codelyncLoadingProgress } from '@/sync/codelyncLoadingProgress';
 import { NATIVE_CODEC_STRESS_KEY, runNativeCodecStress } from '@/sync/nativeCodecStress';
 import { CryptoDigestAlgorithm, digestStringAsync } from 'expo-crypto';
 
@@ -253,11 +253,11 @@ export default function PeerDiagnostics() {
                         result.localBeforeRecent = sourceDiagnostics(storage.getState().sessions[selected.id]);
                         result.residentBeforeRecent = await residentMessageDiagnostics(selected.id);
                         result.nativeRowProvenance = (storage.getState().sessionMessages[selected.id]?.messages ?? []).flatMap(message => message.kind === 'agent-text'
-                            && /CODELIGHT_(?:NATIVE_(?:ARGON|SLASH)|SUBAGENT_RESUMED)/.test(message.text) ? [{ id: message.id,
-                            marker: /CODELIGHT_NATIVE_SLASH/.test(message.text) ? 'slash' : /CODELIGHT_NATIVE_ARGON/.test(message.text) ? 'argon' : 'resumed',
+                            && /CODELYNC_(?:NATIVE_(?:ARGON|SLASH)|SUBAGENT_RESUMED)/.test(message.text) ? [{ id: message.id,
+                            marker: /CODELYNC_NATIVE_SLASH/.test(message.text) ? 'slash' : /CODELYNC_NATIVE_ARGON/.test(message.text) ? 'argon' : 'resumed',
                             nativeRow: message.meta?.nativeRow ?? null, sentFrom: message.meta?.sentFrom, thinking: message.isThinking === true }] : []);
                         result.currentViewMatches = storage.getState().currentViewingSessionId === selected.id;
-                        result.loadingBeforeRecent = codeLightLoadingProgress.getSession(selected.id);
+                        result.loadingBeforeRecent = codelyncLoadingProgress.getSession(selected.id);
                         started = Date.now();
                         result.currentStage = 'recent';
                         const recent = await apiSocket.peerRequest(`/api/peer/sessions/${selected.id}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1 }) });
@@ -270,7 +270,7 @@ export default function PeerDiagnostics() {
                             result.networkRecent = sourceDiagnostics(window.session);
                             result.metadataAhead = !!local && local.metadataVersion > window.session.metadataVersion;
                             result.sameOwner = local?.metadata?.bridge?.source.runtimeGeneration === window.session.metadata?.bridge?.source.runtimeGeneration;
-                            result.loadingAfterRecent = codeLightLoadingProgress.getSession(selected.id);
+                            result.loadingAfterRecent = codelyncLoadingProgress.getSession(selected.id);
                             result.residentAfterRecent = await residentMessageDiagnostics(selected.id);
                             peerDescriptorSession(window.session); nativeRecentMessages(window);
                             result.nativeProjectionValid = true;
@@ -282,7 +282,7 @@ export default function PeerDiagnostics() {
                 }
             } catch { result.failed = true; }
             result.finishedAt = Date.now();
-            await AsyncStorage.setItem('codelight-peer-diagnostics-v1', JSON.stringify(result));
+            await AsyncStorage.setItem('codelync-peer-diagnostics-v1', JSON.stringify(result));
             if (!cancelled) setReport(JSON.stringify(result, null, 2));
         })();
         return () => { cancelled = true; };

@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { mkdtemp, writeFile, unlink, symlink, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readLanListenerPorts } from '../src/happy/lan-listener-ports.mjs';
+import { readLanListenerPorts } from '../src/codelync/lan-listener-ports.mjs';
 
 const original = { lstat: fs.promises.lstat, open: fs.promises.open };
 /** A deterministic race around real file operations, using synthetic hint files only.
@@ -32,7 +32,7 @@ function intercept(path, race) {
 }
 
 test('[N08] swapping a checked hint pathname cannot redirect the read to a foreign synthetic file', async () => {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-port-hint-race-')), path = join(state, 'lan-listeners.json'), foreign = join(state, 'synthetic-foreign.json');
+  const state = await mkdtemp(join(tmpdir(), 'codelync-port-hint-race-')), path = join(state, 'lan-listeners.json'), foreign = join(state, 'synthetic-foreign.json');
   await writeFile(path, JSON.stringify({ version: 1, listeners: [{ host: '192.168.50.2', port: 53000 }] }), { mode: 0o600 });
   await writeFile(foreign, JSON.stringify({ version: 1, listeners: [{ host: '192.168.60.2', port: 54000 }] }), { mode: 0o600 });
   const restore = intercept(path, async () => { await unlink(path); await symlink(foreign, path); });
@@ -44,7 +44,7 @@ test('[N08] swapping a checked hint pathname cannot redirect the read to a forei
 });
 
 test('[N08] a hint file growing after metadata check remains bounded to 4 KiB', async () => {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-port-hint-growth-')), path = join(state, 'lan-listeners.json');
+  const state = await mkdtemp(join(tmpdir(), 'codelync-port-hint-growth-')), path = join(state, 'lan-listeners.json');
   const content = JSON.stringify({ version: 1, listeners: [{ host: '192.168.50.2', port: 53000 }] });
   await writeFile(path, content, { mode: 0o600 });
   const restore = intercept(path, async () => { await writeFile(path, content + ' '.repeat(6000), { mode: 0o600 }); });

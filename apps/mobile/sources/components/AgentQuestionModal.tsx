@@ -130,9 +130,9 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
             presentationStyle="fullScreen"
             onRequestClose={handleDismiss}
         >
-            <View testID="codelight-question-modal" style={[styles.container, { paddingTop: safeArea.top }]}>
+            <View testID="codelync-question-modal" style={[styles.container, { paddingTop: safeArea.top }]}>
                 <View style={styles.header}>
-                    <Pressable testID="codelight-question-close" accessibilityRole="button" onPress={handleDismiss} hitSlop={12} disabled={submitting}>
+                    <Pressable testID="codelync-question-close" accessibilityRole="button" onPress={handleDismiss} hitSlop={12} disabled={submitting}>
                         <Text style={styles.headerAction}>{t('common.cancel')}</Text>
                     </Pressable>
                     <Text style={styles.headerTitle}>{t('agentQuestion.title')}</Text>
@@ -150,7 +150,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
                         const answered = isQuestionAnswered(question, drafts[question.id]);
 
                         return (
-                            <View testID={`codelight-question-${question.id}`} key={question.id} style={styles.questionBlock}>
+                            <View testID={`codelync-question-${question.id}`} key={question.id} style={styles.questionBlock}>
                                 <View style={styles.headerChipRow}>
                                     <View style={styles.headerChip}>
                                         <Text style={styles.headerChipText}>{question.header}</Text>
@@ -167,7 +167,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
                                     return (
                                         <Pressable
                                             key={option.label}
-                                            testID={`codelight-question-option-${question.id}-${optionIndex}`}
+                                            testID={`codelync-question-option-${question.id}-${optionIndex}`}
                                             accessibilityRole="button"
                                             accessibilityState={{ selected }}
                                             style={[styles.option, selected && styles.optionSelected]}
@@ -195,7 +195,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
                                     <View style={styles.customBlock}>
                                         <Text style={styles.customLabel}>{t('agentQuestion.ownAnswer')}</Text>
                                         <TextInput
-                                            testID={`codelight-question-custom-${question.id}`}
+                                            testID={`codelync-question-custom-${question.id}`}
                                             style={styles.customInput}
                                             value={draft.custom}
                                             onChangeText={value => handleCustomChange(question.id, value)}
@@ -218,7 +218,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
 
                 <View style={[styles.footer, { paddingBottom: safeArea.bottom + 12 }]}>
                     <Pressable
-                        testID="codelight-question-submit"
+                        testID="codelync-question-submit"
                         accessibilityRole="button"
                         style={[styles.submit, (!ready || submitting) && styles.submitDisabled]}
                         onPress={handleSubmit}

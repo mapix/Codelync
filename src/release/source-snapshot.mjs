@@ -1,8 +1,8 @@
 import { lstat, mkdir, copyFile, chmod } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-const SOURCE_ROOTS = new Set(['src', 'scripts', 'spec', 'test', 'native', 'public', 'apps', 'packages', 'assets', 'licenses', 'patches', 'docs', 'website', 'deploy', '.github']);
-const ROOT_FILES = new Set(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'README.md', 'README.zh-CN.md', 'CONTRIBUTING.md', 'SECURITY.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'AGENTS.md', 'tsconfig.json', 'eslint.config.mjs', '.nvmrc', '.npmrc', '.gitignore', '.gitleaks.toml']);
+const SOURCE_ROOTS = new Set(['src', 'scripts', 'spec', 'test', 'native', 'public', 'apps', 'packages', 'assets', 'licenses', 'patches', 'docs', 'website', 'deploy', 'metadata', '.github']);
+const ROOT_FILES = new Set(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'README.md', 'README.zh-CN.md', 'README.ja.md', 'CONTRIBUTING.md', 'SECURITY.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'AGENTS.md', 'tsconfig.json', 'eslint.config.mjs', '.nvmrc', '.npmrc', '.gitignore', '.gitleaks.toml']);
 const PRIVATE_DIRS = new Set(['private', 'evidence', 'data', 'research', 'deliverables', 'output', 'node_modules', 'Pods', 'Build', 'build', 'dist', '.git', '.runtime', '.venv', '.module-cache', '.build', '.expo', '.gradle', 'trash', 'xcuserdata', 'DerivedData', 'coverage']);
 const PRIVATE_FILES = new Set(['account.json', 'devices.json', 'relay-key.json', 'mac-box-key.json', 'apns.json', 'network-access.json', 'network-identity.json', 'connection-channels.json', 'credentials.json', 'command-receipts.json', '.xcode.env.local', '.DS_Store', '.cursorrules', '.windsurfrules']);
 const OBSOLETE = new Set(['scripts/package.mjs', 'spec/delivery.md', 'spec/native-mobile-app.md', 'spec/native-mobile-transport.md', 'apps/mobile/google-services.json']);
@@ -13,7 +13,7 @@ export function publicSourcePath(name) {
   const parts = name.split('/');
   if (!name || name.includes('\\') || parts.some(part => !part || part === '.' || part === '..')) return false;
   if (!(parts.length === 1 ? ROOT_FILES.has(name) : SOURCE_ROOTS.has(parts[0]))) return false;
-  if (OBSOLETE.has(name) || /^(?:native\/(?:bin|codelight-qa|codelight-native-worker-qa)|website\/(?:downloads|release\.json)|docs\/tasks)(?:\/|$)/u.test(name)) return false;
+  if (OBSOLETE.has(name) || /^(?:native\/(?:bin|codelync-qa|codelync-native-worker-qa|codelight-qa|codelight-native-worker-qa)|website\/(?:downloads|release\.json)|docs\/tasks)(?:\/|$)/u.test(name)) return false;
   return !parts.some(part => PRIVATE_DIRS.has(part) || PRIVATE_FILES.has(part)
     || part.startsWith('.env') && part !== '.env.example' || part.startsWith('._') || part === '__MACOSX' || /^WORKLOG.*\.md$/iu.test(part)
     || /\.(?:app|framework|xcframework|xcarchive|bundle|xcresult)$/iu.test(part))

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Metadata } from './storageTypes';
-import { isCodeLightSessionSource } from '@/utils/codeLightSourceScope';
+import { isCodelyncSessionSource } from '@/utils/codelyncSourceScope';
 import { nativeQueryCanSend } from '@/utils/nativeQuery';
 
 export const NONINVASIVE_BRIDGE_CLIENT_ID = 'noninvasive-bridge';
@@ -31,7 +31,7 @@ export function canReadFromNoninvasiveSource(metadata: Metadata | null | undefin
     if (!isNoninvasiveBridge(metadata)) return true;
     const bridge = metadata?.bridge;
     if (metadata?.nativeSession?.catalogueAvailable === false) return false;
-    return isCodeLightSessionSource(bridge?.source, bridge?.controlMode) && bridge?.controlMode === 'session' && bridge.sourceStatus === 'connected'
+    return isCodelyncSessionSource(bridge?.source, bridge?.controlMode) && bridge?.controlMode === 'session' && bridge.sourceStatus === 'connected'
         && typeof bridge.source.runtimeGeneration === 'string' && !!bridge.source.runtimeGeneration.trim();
 }
 
@@ -40,7 +40,7 @@ export function canSendToNoninvasiveSource(metadata: Metadata | null | undefined
     if (metadata?.nativeSession?.isSubagent === true || metadata?.nativeSession?.catalogueAvailable === false) return false;
     const bridge = metadata?.bridge;
     if (bridge?.source.app === 'claude-desktop') return nativeQueryCanSend(metadata, agentState?.nativeQuery);
-    return isCodeLightSessionSource(bridge?.source, bridge?.controlMode) && bridge?.controlMode === 'session' && bridge.sourceStatus === 'connected'
+    return isCodelyncSessionSource(bridge?.source, bridge?.controlMode) && bridge?.controlMode === 'session' && bridge.sourceStatus === 'connected'
         && typeof bridge.source.runtimeGeneration === 'string' && bridge.source.runtimeGeneration.trim().length > 0
         && metadata?.capabilities?.steering === true;
 }
@@ -48,7 +48,7 @@ export function canSendToNoninvasiveSource(metadata: Metadata | null | undefined
 export function getNoninvasiveTurnId(metadata: Metadata | null | undefined): string | null {
     if (metadata?.bridge?.source.app === 'claude-desktop') return null;
     if (!isNoninvasiveBridge(metadata) || metadata?.bridge?.sourceStatus !== 'connected'
-        || !isCodeLightSessionSource(metadata.bridge.source, metadata.bridge.controlMode)) return null;
+        || !isCodelyncSessionSource(metadata.bridge.source, metadata.bridge.controlMode)) return null;
     const turnId = metadata.bridge.currentTurnId;
     return typeof turnId === 'string' && turnId.trim() ? turnId : null;
 }

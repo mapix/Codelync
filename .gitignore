@@ -31,11 +31,13 @@ native/bin/
 *.p12
 **/.module-cache/
 apps/mobile/public/canvaskit.wasm
-assets/branding/CodeLight.iconset/
+assets/branding/Codelync.iconset/
 
 *.tsbuildinfo
 
 # Private environment-bound historical QA harnesses remain in the original workspace.
+native/codelync-qa/
+native/codelync-native-worker-qa/
 native/codelight-qa/
 native/codelight-native-worker-qa/
 

@@ -1,21 +1,20 @@
-# CodeLight Relay and remote desktop deployment
+# Codelync Relay and remote desktop deployment
 
 [中文](SELF-HOSTING.zh-CN.md) · [Compose templates](../deploy/self-host/) · [Network relay](../deploy/network-relay/)
 
 This guide describes the current source implementation. The source repository
-requires access permission: sign in to GitHub with an authorized account to read
-its preview or clone it. These templates do not change repository visibility.
+is public at https://github.com/mapix/Codelync; read or clone it directly.
 
 ## Choose what you need
 
-**The Mac already includes LiveKit. In This Mac mode, CodeLight starts its owned
+**The Mac already includes LiveKit. In This Mac mode, Codelync starts its owned
 local media server on demand and captures the screen only for an explicit phone
 connection. An external LiveKit server is optional.**
 
 | Situation | Deploy | Mac configuration |
 | --- | --- | --- |
 | Phone and Mac have reachable LAN media paths | No additional media server | Media relay → This Mac |
-| You want a fixed self-owned communication address | CodeLight Network Relay | Connections → Configure Relay |
+| You want a fixed self-owned communication address | Codelync Network Relay | Connections → Configure Relay |
 | Phone is outside the LAN and Mac media ports are unreachable | External LiveKit; retain Cloudflare or another communication channel | Media relay → Custom server |
 | Both communication and video should use self-hosted public services | Network Relay and external LiveKit | Configure both forms |
 
@@ -31,20 +30,20 @@ When the Mac's media paths are unreachable, the supported configuration option
 is an external LiveKit server. Selecting Custom server makes the Mac use that
 server instead of starting its embedded LiveKit. Extending embedded mode to this
 public-network scenario would require media ingress, ICE/TURN configuration and
-acceptance work; editing CodeLight's generated temporary server files is not a
+acceptance work; editing Codelync's generated temporary server files is not a
 deployment method.
 
 ```mermaid
 flowchart LR
     Phone[Phone] <-->|Pairing, status, input over HTTP/WS| Network[Cloudflare or network relay]
-    Network <-->|Mac-owned outbound connection| Mac[Mac CodeLight]
+    Network <-->|Mac-owned outbound connection| Mac[Mac Codelync]
     Mac -->|Encrypted WebRTC video| Media[External LiveKit]
     Media -->|Encrypted WebRTC video| Phone
 ```
 
 The Mac creates rooms and short-lived tokens. Its video encryption key reaches
 the phone through the paired sealed channel, never through the media server.
-The phone does not configure API secrets. Keep CodeLight running on an unlocked
+The phone does not configure API secrets. Keep Codelync running on an unlocked
 Mac with Screen Recording permission; input also requires Accessibility.
 
 ## Requirements and ports
@@ -83,8 +82,8 @@ discovery egress. Preserve your SSH management access when changing firewalls.
 On the VPS, clone with an account that can access the repository:
 
 ```sh
-git clone https://github.com/mapix/CodeLight.git
-cd CodeLight/deploy/self-host
+git clone https://github.com/mapix/Codelync.git
+cd Codelync/deploy/self-host
 cp .env.example .env
 ```
 
@@ -266,5 +265,5 @@ make the embedded Mac media ports publicly reachable.
 The project has local encrypted native video and simulator verification records.
 Record external-server, public NAT/TURN and specific phone-network acceptance
 separately for your deployment. This guide and its templates do not establish
-those acceptance results. See the [remote desktop contract](../spec/codelight-remote-desktop.md)
-and [network relay contract](../spec/codelight-network-relay.md).
+those acceptance results. See the [remote desktop contract](../spec/codelync-remote-desktop.md)
+and [network relay contract](../spec/codelync-network-relay.md).

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codelync verified public Mac artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "filename", "bytes", "sha256", "notarization", "stapled", "gatekeeperAccepted"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "filename": { "type": "string", "pattern": "^Codelync-[0-9]+\\.[0-9]+\\.[0-9]+-macos-arm64\\.zip$" },
+    "bytes": { "type": "integer", "minimum": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "notarization": { "const": "Accepted" },
+    "stapled": { "const": true },
+    "gatekeeperAccepted": { "const": true },
+    "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+  },
+  "$comment": "Also run validatePublicArtifact from src/release/public-artifact.mjs: filename must exactly match version. Build and Apple private evidence are not public manifest fields."
+}

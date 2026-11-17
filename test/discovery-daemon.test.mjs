@@ -6,17 +6,17 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { Socket } from 'node:net';
 import nacl from 'tweetnacl';
-import { pairCodeLight } from '../src/happy/discovery-pairing.mjs';
-import { CodeLightMacDaemon } from '../src/happy/mac-daemon.mjs';
-import { createBoundSource } from '../src/happy/bound-source.mjs';
-import { sourceKey } from '../src/happy/source-registry.mjs';
+import { pairCodelync } from '../src/codelync/discovery-pairing.mjs';
+import { CodelyncMacDaemon } from '../src/codelync/mac-daemon.mjs';
+import { createBoundSource } from '../src/codelync/bound-source.mjs';
+import { sourceKey } from '../src/codelync/source-registry.mjs';
 import { BridgeError } from '../src/errors.mjs';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
-import { NativeProjectActivityService } from '../src/happy/project-activity.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
+import { NativeProjectActivityService } from '../src/codelync/project-activity.mjs';
 
 /** @typedef {Record<string,any>} Value */
 test('pairing uses an ephemeral public key, decrypts the approved account and preserves server identity', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-pair-')), path = join(directory, 'account.json'), secret = randomBytes(32); let calls = 0, link = '';
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-pair-')), path = join(directory, 'account.json'), secret = randomBytes(32); let calls = 0, link = '';
   const fakeFetch = /** @type {typeof fetch} */ (async (_url, request) => {
     const body = JSON.parse(/** @type {string} */ (request?.body)); assert.equal(body.supportsV2, false);
     const key = new Uint8Array(Buffer.from(body.publicKey, 'base64')); assert.equal(key.length, 32);
@@ -25,17 +25,17 @@ test('pairing uses an ephemeral public key, decrypts the approved account and pr
     return new Response(JSON.stringify({ state: 'authorized', token: 'fixture-token', response: Buffer.concat([Buffer.from(ephemeral.publicKey), nonce, Buffer.from(cipher)]).toString('base64') }));
   });
   try {
-    const account = await pairCodeLight({ accountPath: path, serverUrl: 'http://127.0.0.1:9999', fetch: fakeFetch, pollMs: 1, onLink: value => { link = value; } });
-    assert.ok(link.startsWith('codelight://terminal?')); assert.equal(account.secret, secret.toString('base64')); assert.equal((await stat(path)).mode & 0o777, 0o600);
-    const again = await pairCodeLight({ accountPath: path, serverUrl: account.serverUrl, fetch: fakeFetch }); assert.equal(again.token, account.token); assert.equal(calls, 2);
-    await assert.rejects(pairCodeLight({ accountPath: path, serverUrl: 'http://127.0.0.1:9998', fetch: fakeFetch }), /another server/); assert.equal(calls, 2);
+    const account = await pairCodelync({ accountPath: path, serverUrl: 'http://127.0.0.1:9999', fetch: fakeFetch, pollMs: 1, onLink: value => { link = value; } });
+    assert.ok(link.startsWith('codelync://terminal?')); assert.equal(account.secret, secret.toString('base64')); assert.equal((await stat(path)).mode & 0o777, 0o600);
+    const again = await pairCodelync({ accountPath: path, serverUrl: account.serverUrl, fetch: fakeFetch }); assert.equal(again.token, account.token); assert.equal(calls, 2);
+    await assert.rejects(pairCodelync({ accountPath: path, serverUrl: 'http://127.0.0.1:9998', fetch: fakeFetch }), /another server/); assert.equal(calls, 2);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('unreadable or invalid pairing reply cannot save a credential', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-pair-invalid-')), path = join(directory, 'account.json');
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-pair-invalid-')), path = join(directory, 'account.json');
   try {
-    await assert.rejects(pairCodeLight({ accountPath: path, serverUrl: 'http://127.0.0.1:9999', fetch: /** @type {typeof fetch} */ (async () => new Response(JSON.stringify({ state: 'authorized', token: 'fixture', response: Buffer.alloc(80).toString('base64') }))) }), /could not be decrypted/);
+    await assert.rejects(pairCodelync({ accountPath: path, serverUrl: 'http://127.0.0.1:9999', fetch: /** @type {typeof fetch} */ (async () => new Response(JSON.stringify({ state: 'authorized', token: 'fixture', response: Buffer.alloc(80).toString('base64') }))) }), /could not be decrypted/);
     await assert.rejects(readFile(path), { code: 'ENOENT' });
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -45,7 +45,7 @@ function machineFixture() {
   return { handlers, connection: { registerRpc: (/** @type {string} */ method, /** @type {(params:unknown)=>Promise<any>} */ handler) => { handlers.set(method, handler); }, waitForConnect: async () => {}, close: () => {} } };
 }
 async function daemonFixture() {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-daemon-')), source = { app: 'codex', hostId: 'local', id: 'fixture-original-source', kind: 'session' }, key = sourceKey(source);
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-daemon-')), source = { app: 'codex', hostId: 'local', id: 'fixture-original-source', kind: 'session' }, key = sourceKey(source);
   const binding = { happySessionId: 'fixture-projection', source, sessionKey: randomBytes(32).toString('base64'), metadata: { bridge: { source } } };
   const machine = machineFixture(); let created = 0, opened = 0, started = 0, fail = false;
   const options = { directory, activityBackgroundSources: 0, account: { serverUrl: 'http://127.0.0.1:9999', token: 'fixture-token', secret: randomBytes(32).toString('base64') },
@@ -59,12 +59,12 @@ async function daemonFixture() {
 test('without background notification observation, remembered quiescent history stays lazy while pending inbox restores', async () => {
   const f = await daemonFixture();
   await writeFile(join(f.directory, 'active-sources.json'), JSON.stringify({ version: 1, keys: [f.key] }));
-  let daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false });
+  let daemon = new CodelyncMacDaemon({ ...f.options, observeBackground: false });
   try {
     await daemon.start(); assert.equal(f.counts().created, 0); await daemon.close();
     await mkdir(join(f.directory, 'active', f.key), { recursive: true });
     await writeFile(join(f.directory, 'active', f.key, 'transport.json'), JSON.stringify({ inbox: [{ id: 'queued-phone-input' }], outbox: [] }));
-    daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false });
+    daemon = new CodelyncMacDaemon({ ...f.options, observeBackground: false });
     await daemon.start(); await Promise.all([...daemon.activating.values()]);
     assert.equal(f.counts().created, 1); assert.equal(f.counts().opened, 0);
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
@@ -78,7 +78,7 @@ test('fresh HTTP foreground keeps an idle Antigravity observer across socket los
   const devices = new DeviceRegistry(join(f.directory, 'devices.json'), [{ id: 'fixture-device', publicKey: 'fixture-only', revoked: false }]);
   const socket = new Socket(); devices.connected('fixture-device', socket);
   let retired = 0, starts = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, actorIdleMs: 30000, viewedSessions: () => devices.viewedSessions(),
+  const daemon = new CodelyncMacDaemon({ ...f.options, observeBackground: false, actorIdleMs: 30000, viewedSessions: () => devices.viewedSessions(),
     discovery: { discover: async () => ({ sources: [source] }), adapter: () => ({}) },
     registry: { ...f.options.registry, register: async () => binding },
     sourceFactory: async () => ({ supportsDesktopNavigation: false, start: async () => { starts++; }, close: async () => {},
@@ -102,7 +102,7 @@ test('fresh HTTP foreground keeps an idle Antigravity observer across socket los
 });
 
 test('discovery stays lazy, repeated machine RPC dispatches one original open and unknown receipt never replays', async () => {
-  const f = await daemonFixture(), daemon = new CodeLightMacDaemon(f.options);
+  const f = await daemonFixture(), daemon = new CodelyncMacDaemon(f.options);
   try {
     await daemon.start(); assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 }); assert.equal(daemon.status().sources, 1);
     const request = { sourceKey: f.key, commandId: 'fixture-open-once' };
@@ -116,11 +116,11 @@ test('discovery stays lazy, repeated machine RPC dispatches one original open an
 });
 
 test('daemon restart restores observation but never repeats the prior desktop open or unknown operation', async () => {
-  const f = await daemonFixture(); let daemon = new CodeLightMacDaemon(f.options);
+  const f = await daemonFixture(); let daemon = new CodelyncMacDaemon(f.options);
   try {
     await daemon.start(); f.fail(true); const request = { sourceKey: f.key, commandId: 'fixture-restart-unknown' };
     assert.equal((await daemon.openSource(request)).receipt.status, 'unknown'); await daemon.close(); f.fail(false);
-    daemon = new CodeLightMacDaemon(f.options); await daemon.start(); await Promise.all([...daemon.activating.values()]);
+    daemon = new CodelyncMacDaemon(f.options); await daemon.start(); await Promise.all([...daemon.activating.values()]);
     assert.equal(f.counts().opened, 1); assert.equal(f.counts().started, 1);
     assert.equal((await daemon.openSource(request)).receipt.status, 'unknown'); assert.equal(f.counts().opened, 1);
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
@@ -130,7 +130,7 @@ test('each explicit selection navigates before a slow initial snapshot; stale se
   const f = await daemonFixture(); let finish = () => {}; const hydration = new Promise(resolve => { finish = () => resolve(undefined); });
   let opened = 0, started = 0;
   f.options.sourceFactory = async () => ({ openDesktop: async () => { opened++; }, start: async () => { started++; await hydration; }, status: () => ({ sourceStatus: 'connected' }), close: async () => {} });
-  const daemon = new CodeLightMacDaemon(f.options);
+  const daemon = new CodelyncMacDaemon(f.options);
   try {
     await daemon.start();
     const selection = { sourceKey: f.key, commandId: 'selection-first', selectionClient: 'phone-fixture', selectionSeq: 1 };
@@ -144,19 +144,19 @@ test('each explicit selection navigates before a slow initial snapshot; stale se
   } finally { finish(); await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
 });
 
-test('close-source releases only its CodeLight observer and does not resume it on restart', async () => {
-  const f = await daemonFixture(); let daemon = new CodeLightMacDaemon(f.options);
+test('close-source releases only its Codelync observer and does not resume it on restart', async () => {
+  const f = await daemonFixture(); let daemon = new CodelyncMacDaemon(f.options);
   try {
     await daemon.start(); await daemon.openSource({ sourceKey: f.key, commandId: 'fixture-open-before-close' });
     const reply = await daemon.closeSource({ sourceKey: f.key, commandId: 'fixture-close-observer' });
     assert.equal(/** @type {Value} */ (reply.receipt.result).originalAgentStopped, false); assert.equal(daemon.status().activeSources, 0);
-    await daemon.close(); daemon = new CodeLightMacDaemon(f.options); await daemon.start();
+    await daemon.close(); daemon = new CodelyncMacDaemon(f.options); await daemon.start();
     assert.equal(daemon.activating.size, 0); assert.equal(f.counts().opened, 1); assert.equal(f.counts().started, 1);
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
 });
 
 test('a source lease prevents another profile from acquiring a second writer', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-source-lease-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-source-lease-'));
   const common = { account: { serverUrl: 'http://127.0.0.1:9999', token: 'fixture' }, binding: { source: { app: 'codex', hostId: 'local', id: 'fixture-source' }, happySessionId: 'fixture-session', sessionKey: randomBytes(32).toString('base64'), metadata: {} }, leaseDirectory: join(directory, 'leases'), adapter: {} };
   const first = await createBoundSource({ ...common, directory: join(directory, 'first') });
   try { await assert.rejects(createBoundSource({ ...common, directory: join(directory, 'second') }), error => /** @type {Value} */ (error).code === 'ELOCKED'); }
@@ -167,11 +167,11 @@ test('project activity RPC stays read-only and closes its separate observation s
   const f = await daemonFixture();
   /** @type {Value[]} */
   const calls = []; let closed = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, activityFactory: () => ({ poll: (/** @type {Value} */ input) => { calls.push(input); return { ok: true, version: 1 }; }, close: async () => { closed++; } }) });
+  const daemon = new CodelyncMacDaemon({ ...f.options, activityFactory: () => ({ poll: (/** @type {Value} */ input) => { calls.push(input); return { ok: true, version: 1 }; }, close: async () => { closed++; } }) });
   try {
     await daemon.start();
     const request = { clientId: 'phone-project-status', requestSeq: 1, groups: [] };
-    const handler = f.machine.handlers.get('codelight-project-activity');
+    const handler = f.machine.handlers.get('codelync-project-activity');
     assert.ok(handler); assert.deepEqual(await handler(request), { ok: true, version: 1 });
     assert.deepEqual(calls, [request]); assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
   } finally { await daemon.close(); assert.equal(closed, 1); await rm(f.directory, { recursive: true, force: true }); }
@@ -181,7 +181,7 @@ test('failed inventory preserves sources; a complete empty inventory marks only 
   const f = await daemonFixture();
   /** @type {{sources:Value[],errors:string[]}} */
   let result = { sources: [f.source], errors: [] }; let unavailable = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options,
+  const daemon = new CodelyncMacDaemon({ ...f.options,
     discovery: { ...f.options.discovery, discover: async () => result },
     registry: { ...f.options.registry, markUnavailable: async () => { unavailable++; } },
   });
@@ -201,7 +201,7 @@ test('three-app completeness and cold reconciliation respect configured native a
   const savedClaude = { happySessionId: 'cached-claude', machineId: 'fixture-machine', source: claude, metadata: { nativeSession: { catalogueAvailable: true } } };
   let result = /** @type {{sources:Value[],errors:string[],inventoryApps:string[]}} */ ({ sources: [f.source], errors: [], inventoryApps: ['codex', 'antigravity'] });
   const removed = /** @type {string[]} */ ([]);
-  const daemon = new CodeLightMacDaemon({ ...f.options, discovery: { ...f.options.discovery, discover: async () => result },
+  const daemon = new CodelyncMacDaemon({ ...f.options, discovery: { ...f.options.discovery, discover: async () => result },
     registry: { ...f.options.registry, savedBindings: async () => [savedClaude], markUnavailable: async (/** @type {Value} */ binding) => { removed.push(binding.source.app); } } });
   try {
     await daemon.start(); assert.equal(daemon.inventoryAvailable, true); assert.equal(daemon.registrationAvailable, true); assert.deepEqual(removed, []);
@@ -231,7 +231,7 @@ test('registered descriptors load before native discovery without observers or r
   let finish = (/** @type {Value[]} */ _bindings) => {}, entered = () => {}, discoveryCalls = 0;
   const loaded = new Promise(/** @param {(value:Value[])=>void} resolve */ resolve => { finish = resolve; });
   const loading = new Promise(resolve => { entered = () => resolve(undefined); });
-  const daemon = new CodeLightMacDaemon({ ...f.options, only: source => source.id !== 'filtered',
+  const daemon = new CodelyncMacDaemon({ ...f.options, only: source => source.id !== 'filtered',
     registry: { ...f.options.registry, savedBindings: async () => { entered(); return loaded; } },
     discovery: { ...f.options.discovery, discover: async () => { discoveryCalls++; assert.equal(daemon.registrationAvailable, true);
       return { sources: [], errors: ['codex-index-unavailable', 'antigravity-index-unavailable', 'claude-desktop-index-unavailable'] }; } } });
@@ -248,7 +248,7 @@ test('registered descriptors load before native discovery without observers or r
 });
 
 test('missing registration loading leaves catalog authority unavailable even after healthy discovery', async () => {
-  const f = await daemonFixture(), daemon = new CodeLightMacDaemon(f.options);
+  const f = await daemonFixture(), daemon = new CodelyncMacDaemon(f.options);
   try {
     await daemon.start(); assert.equal(daemon.registrationAvailable, false); assert.equal(daemon.inventoryAvailable, true);
     assert.equal(daemon.sources.size, 1); assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
@@ -260,7 +260,7 @@ test('invalid registration results and lease loss during loading cannot publish 
     const f = await daemonFixture(); let finish = () => {}, entered = () => {};
     const loading = new Promise(resolve => { entered = () => resolve(undefined); });
     const saved = new Promise(resolve => { finish = () => resolve(failure === 'invalid-map' ? null : [{ source: f.source, machineId: 'fixture-machine' }]); });
-    const daemon = new CodeLightMacDaemon({ ...f.options, registry: { ...f.options.registry, savedBindings: async () => { entered(); return saved; } } });
+    const daemon = new CodelyncMacDaemon({ ...f.options, registry: { ...f.options.registry, savedBindings: async () => { entered(); return saved; } } });
     const starting = daemon.start();
     try {
       await loading; assert.equal(daemon.registrationAvailable, false);
@@ -283,7 +283,7 @@ test('restored foreign harness and explicit Codex window bindings cannot start c
     metadata: { bridge: { source, controlMode: 'window' } },
   }));
   await writeFile(join(f.directory, 'active-sources.json'), JSON.stringify({ keys: sources.map(sourceKey) }));
-  const daemon = new CodeLightMacDaemon(f.options);
+  const daemon = new CodelyncMacDaemon(f.options);
   try {
     await daemon.start(); assert.equal(daemon.sources.size, 1);
     assert.deepEqual(f.counts(), { created: 0, opened: 0, started: 0 });
@@ -293,7 +293,7 @@ test('restored foreign harness and explicit Codex window bindings cannot start c
 test('seventeen project selections recycle idle observers without restoring the retired one', async () => {
   const f = await daemonFixture(), sources = Array.from({ length: 17 }, (_, n) => ({ ...f.source, id: `fixture-${n}` }));
   let created = 0, retired = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options,
+  const daemon = new CodelyncMacDaemon({ ...f.options,
     discovery: { ...f.options.discovery, discover: async () => ({ sources }) },
     registry: { ...f.options.registry, register: async (/** @type {Value} */ source) => ({ source, happySessionId: `projection-${source.id}`, metadata: { bridge: { controlMode: 'session' } } }) },
     sourceFactory: async () => {
@@ -322,7 +322,7 @@ test('capacity recycling protects the other foreground viewer and serializes fac
   /** @type {string[]} */
   const retired = [];
   let factories = 0, peak = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, maxActiveSources: 2, viewedSessions: () => viewed,
+  const daemon = new CodelyncMacDaemon({ ...f.options, maxActiveSources: 2, viewedSessions: () => viewed,
     discovery: { ...f.options.discovery, discover: async () => ({ sources }) },
     registry: { ...f.options.registry, register: async (/** @type {Value} */ source) => ({ source, happySessionId: `projection-${source.id}`, metadata: { bridge: { controlMode: 'session' } } }) },
     sourceFactory: async options => {
@@ -344,7 +344,7 @@ test('capacity recycling protects the other foreground viewer and serializes fac
 
 test('Mac discovery maintains native status before phone interest and creates no message actor', async () => {
   const f = await daemonFixture(); let statusRefreshes = 0, closed = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, activityBackgroundSources: 16,
+  const daemon = new CodelyncMacDaemon({ ...f.options, activityBackgroundSources: 16,
     activityFactory: options => new NativeProjectActivityService({ .../** @type {any} */ (options), ipcFactory: () => ({ dispose() {} }),
       observerFactory: () => { let known = false; return { status: () => ({ known, active: known, waiting: false, status: known ? 'ready' : 'refreshing' }),
         refresh: async () => { statusRefreshes++; known = true; }, close: () => { closed++; } }; } }) });
@@ -360,7 +360,7 @@ test('Mac discovery maintains native status before phone interest and creates no
 
 test('actual idle actor use renews its five-minute grace while expired source pins still prevent retirement', async () => {
   const f = await daemonFixture(); let now = 10000, retired = 0, created = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, now: () => now,
+  const daemon = new CodelyncMacDaemon({ ...f.options, observeBackground: false, now: () => now,
     sourceFactory: async () => { created++; return { status: () => ({ sourceStatus: 'connected' }), close: async () => {},
       tryCloseIfIdle: async () => { retired++; return true; } }; } });
   let finish = () => {};
@@ -378,7 +378,7 @@ test('actual idle actor use renews its five-minute grace while expired source pi
 
 test('an already visited native busy actor survives five minutes, while idle, unknown and lease-invalid actors retire', async () => {
   const f = await daemonFixture(); let now = 10000, known = true, active = true, waiting = false, retired = 0, nativeStatusReads = 0;
-  const daemon = new CodeLightMacDaemon({ ...f.options, observeBackground: false, now: () => now,
+  const daemon = new CodelyncMacDaemon({ ...f.options, observeBackground: false, now: () => now,
     activityFactory: options => new NativeProjectActivityService({ .../** @type {any} */ (options), ipcFactory: () => ({ dispose() {} }),
       observerFactory: () => ({ status: () => ({ known, active, waiting, status: known ? 'ready' : 'unavailable' }),
         refresh: async () => { nativeStatusReads++; }, close() {} }) }),
@@ -403,7 +403,7 @@ test('sixteen-actor capacity reclaims idle before older busy cache, then uses bu
   const f = await daemonFixture(), sources = Array.from({ length: 18 }, (_, i) => ({ ...f.source, id: `capacity-${i}` }));
   let now = 1000, nativeActions = 0;
   const busy = new Set(sources.slice(0, 15).map(source => source.id)), retired = /** @type {string[]} */ ([]);
-  const daemon = new CodeLightMacDaemon({ ...f.options, now: () => now,
+  const daemon = new CodelyncMacDaemon({ ...f.options, now: () => now,
     discovery: { discover: async () => ({ sources }), adapter: () => ({ command: () => { nativeActions++; throw Error('Capacity cannot control a native session'); } }) },
     registry: { ...f.options.registry, register: async (/** @type {Value} */ source) => ({ source, happySessionId: 'mirror-' + source.id, metadata: { bridge: { source } } }) },
     activityFactory: () => ({ intrinsicRefresh() {}, close() {}, cachedSourceStatus: (/** @type {Value} */ source) => ({ sameSource: true, known: true, active: busy.has(source.id), waiting: false }) }),
@@ -417,6 +417,6 @@ test('sixteen-actor capacity reclaims idle before older busy cache, then uses bu
     assert.equal(daemon.actors.has(sourceKey(sources[0])), true, 'the oldest busy native cache survives while idle capacity exists');
     busy.add(sources[16].id); now++;
     await daemon.prepareSource(sourceKey(sources[17])); assert.deepEqual(retired, ['capacity-15', 'capacity-0']); assert.equal(daemon.actors.size, 16);
-    assert.equal(nativeActions, 0, 'reclaiming a CodeLight observer never stops the original native session');
+    assert.equal(nativeActions, 0, 'reclaiming a Codelync observer never stops the original native session');
   } finally { await daemon.close(); await rm(f.directory, { recursive: true, force: true }); }
 });

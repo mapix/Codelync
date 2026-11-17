@@ -17,10 +17,10 @@ const labels: Record<SupportedLanguage, { title: string; reading: string; error:
 };
 export function NativeStoredConnectionUnavailable({ busy, onRetry }: { busy: boolean; onRetry: () => void }) {
     const { theme } = useUnistyles(), copy = labels[getCurrentLanguage()];
-    return <View testID="codelight-stored-connection-unavailable" style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 14, backgroundColor: theme.colors.groupped.background }}>
+    return <View testID="codelync-stored-connection-unavailable" style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 14, backgroundColor: theme.colors.groupped.background }}>
         <Text style={{ color: theme.colors.text, fontSize: 20 }}>{copy.title}</Text>
         <Text accessibilityLiveRegion="polite" style={{ color: theme.colors.textSecondary }}>{busy ? copy.reading : copy.error}</Text>
         {busy ? <ActivityIndicator color={theme.colors.textSecondary} /> : null}
-        <Pressable testID="codelight-stored-connection-retry" accessibilityRole="button" disabled={busy} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => { if (!busy) onRetry(); }}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable>
+        <Pressable testID="codelync-stored-connection-retry" accessibilityRole="button" disabled={busy} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => { if (!busy) onRetry(); }}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable>
     </View>;
 }

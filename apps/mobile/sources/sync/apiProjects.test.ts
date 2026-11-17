@@ -13,7 +13,7 @@ vi.mock('./serverConfig', () => ({
 }));
 
 vi.mock('./apiSocket', () => ({
-    getHappyClientId: () => 'happy-test',
+    getCodelyncClientId: () => 'happy-test',
 }));
 
 const credentials: AuthCredentials = {
@@ -109,7 +109,7 @@ describe('project API transport', () => {
 
         await downloadProjectAvatar(credentials, 'project-1');
         expect(fetchMock.mock.calls[1][1]).toEqual({
-            headers: { Authorization: 'Bearer token-1', 'X-Happy-Client': 'happy-test' },
+            headers: { Authorization: 'Bearer token-1', 'X-Codelync-Client': 'happy-test' },
         });
     });
 });

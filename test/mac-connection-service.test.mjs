@@ -7,11 +7,41 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import nacl from 'tweetnacl';
-import { MacConnectionService, privateLANAddresses } from '../src/happy/mac-connection-service.mjs';
+import { MacConnectionService, privateLANAddresses } from '../src/codelync/mac-connection-service.mjs';
+
+test('VPN tunnel addresses cannot be advertised as physical LAN entries', () => {
+  assert.deepEqual(privateLANAddresses({
+    en0: [{ address: '192.168.50.2', family: 'IPv4', internal: false }],
+    utun0: [{ address: '10.0.0.2', family: 'IPv4', internal: false }],
+    ppp0: [{ address: '172.16.3.4', family: 'IPv4', internal: false }],
+  }), ['192.168.50.2']);
+});
+
+test('network-probe proves the same paired Mac without reading sources through every enabled gateway', async t => {
+  const f = await fixture(t);
+  await f.service.manager.configureRelay({ serverUrl: 'https://fixture-relay.example', token: 'synthetic-relay-token' });
+  f.daemon.registrationAvailable = false;
+  for (const kind of /** @type {('local'|'cloudflare'|'relay')[]} */ (['local', 'cloudflare', 'relay'])) {
+    const channel = f.service.candidates().find(row => row.kind === kind); assert.ok(channel);
+    const path = '/network-probe';
+    const url = kind === 'local' ? localRequestUrl(channel, path) : f.service.publicGateways.get(kind)?.origin + path;
+    const authorization = header(f, channel, path);
+    assert.equal((await fetch(url)).status, 401);
+    const response = await fetch(url, { headers: { Authorization: authorization } });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+    const text = await response.text(); assert.ok(text.length < 512);
+    assert.deepEqual(unseal(f, JSON.parse(text)).payload, { version: 1 });
+    assert.equal((await fetch(url, { headers: { Authorization: authorization } })).status, 401);
+    const query = path + '?history=true';
+    assert.equal((await fetch(url + '?history=true', { headers: { Authorization: header(f, channel, query) } })).status, 400);
+    assert.equal((await fetch(url, { method: 'POST', headers: { Authorization: header(f, channel, path, 'POST') } })).status, 405);
+  }
+  assert.equal(f.counters().reads, 0); assert.equal(f.counters().preparations, 0); assert.equal(f.counters().starts, 0);
+});
 import { ConnectionChannelsManager } from '../src/network/connection-channels.mjs';
-import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
-import { channelPath } from '@slopus/happy-wire/codelight';
+import { PairingInvitations, createPairingGateway } from '../src/codelync/pairing-gateway.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
+import { channelPath } from '@codelync/wire/codelync';
 
 /** @typedef {Record<string,any>} Value */
 const LAN = { en0: [{ address: '192.168.50.2', family: 'IPv4', internal: false }] };
@@ -24,7 +54,7 @@ class Tunnel extends EventEmitter {
 }
 /** @param {import('node:test').TestContext} t @param {string} [sourceApp] */
 async function fixture(t, sourceApp = 'codex') {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-mac-connections-')), phone = nacl.box.keyPair(), mac = nacl.box.keyPair();
+  const state = await mkdtemp(join(tmpdir(), 'codelync-mac-connections-')), phone = nacl.box.keyPair(), mac = nacl.box.keyPair();
   const token = 'synthetic-device-token', account = { secret: randomBytes(32).toString('base64url') }, devices = new DeviceRegistry(join(state, 'devices.json'));
   const deviceId = await devices.approve(Buffer.from(phone.publicKey).toString('base64url'), 'Fixture phone', token);
   const invitations = new PairingInvitations({ key: mac.secretKey, credentials: { ...account, token, deviceId } });
@@ -42,7 +72,7 @@ async function fixture(t, sourceApp = 'codex') {
     prepareSource: async (/** @type {string} */ key) => { assert.equal(key, 'fixture-source'); preparations++; actors.set(key, actor); return actor; },
     startSource: async (/** @type {string} */ key, /** @type {Value} */ value) => { assert.equal(key, 'fixture-source'); assert.equal(value, actor); starts++; } };
   const gatewayOptions = /** @type {Value[]} */ ([]), requestedHosts = /** @type {string[]} */ ([]);
-  const service = new MacConnectionService({ state, cloudflared: 'unused', upstream: 'http://127.0.0.1:' + address.port, account, devices, invitations, daemon: /** @type {import('../src/happy/mac-daemon.mjs').CodeLightMacDaemon} */ (/** @type {unknown} */ (daemon)),
+  const service = new MacConnectionService({ state, cloudflared: 'unused', upstream: 'http://127.0.0.1:' + address.port, account, devices, invitations, daemon: /** @type {import('../src/codelync/mac-daemon.mjs').CodelyncMacDaemon} */ (/** @type {unknown} */ (daemon)),
     interfaces: () => LAN,
     gatewayFactory: options => { gatewayOptions.push(options); const server = createPairingGateway(options), listen = server.listen.bind(server);
       server.listen = /** @type {typeof server.listen} */ ((/** @type {number} */ port, /** @type {string} */ host) => { requestedHosts.push(host); return listen(port, '127.0.0.1'); }); return server; },
@@ -54,7 +84,7 @@ async function fixture(t, sourceApp = 'codex') {
 /** @param {Value} f @param {Value} channel @param {string} path @param {string} [method] */
 function header(f, channel, path, method = 'GET') {
   const nonce = randomBytes(24), payload = { version: 2, token: f.token, origin: channel.url, method, path: channelPath(channel.url, channel.url + path), at: Date.now() };
-  return 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
+  return 'Codelync ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
     ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(payload)), nonce, f.mac.publicKey, f.phone.secretKey)).toString('base64url') })).toString('base64url');
 }
 /** The fixture intercepts requested binds to keep every test listener on loopback.

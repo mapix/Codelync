@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View } from 'react-native';
-import { CodeLightMark } from './CodeLightMark';
+import { CodelyncMark } from './CodelyncMark';
 
 const HEADER_LOGO_SIZE = 19;
 
@@ -17,7 +17,7 @@ export const HeaderLogo = React.memo(() => {
             alignItems: 'center',
             justifyContent: 'center',
         }}>
-            <CodeLightMark size={HEADER_LOGO_SIZE} />
+            <CodelyncMark size={HEADER_LOGO_SIZE} />
         </View>
     );
 });

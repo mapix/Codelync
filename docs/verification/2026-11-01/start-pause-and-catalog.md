@@ -20,7 +20,7 @@ wrong-key cache data is ignored so fresh synchronization can proceed.
 sequenceDiagram
     participant User
     participant Mac as Mac controller
-    participant Service as CodeLight service
+    participant Service as Codelync service
     participant Phone as Phone sync runtime
     User->>Mac: Pause
     Mac->>Mac: Pausing; disable Start

@@ -2,7 +2,7 @@
 
 ## Entry and ownership
 
-Open `codelight://dev/peer-diagnostics?codec=stress-v1` only after the coordinated
+Open `codelync://dev/peer-diagnostics?codec=stress-v1` only after the coordinated
 JS artifact is ready. The route's early branch runs before token storage,
 connection selection, catalog/API requests or source operations. One mounted
 entry starts at most one run; leaving it cancels the diagnostic. A zero-delay
@@ -16,7 +16,7 @@ request. Secret arrays are cleared after the run. Payloads, packets and keys are
 not logged or stored.
 
 Only a sanitized result is placed in the private simulator's
-`codelight-native-codec-stress-v1` store. It contains fixed case names, success
+`codelync-native-codec-stress-v1` store. It contains fixed case names, success
 booleans, reason codes, elapsed stages, byte counts and numeric native admission
 metrics. There are no body, ciphertext, key, text or source-content fields.
 

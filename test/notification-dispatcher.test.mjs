@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
-import { NotificationDispatcher, notificationSummary, actionableTransitions } from '../src/happy/notification-dispatcher.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
+import { NotificationDispatcher, notificationSummary, actionableTransitions } from '../src/codelync/notification-dispatcher.mjs';
 
 test('notifications require a new original transition; bootstrap and historical backfill remain quiet', () => {
   const old = { currentTurnId: null, turns: { old: 'completed' }, requests: ['old-approval'] };
@@ -13,10 +13,12 @@ test('notifications require a new original transition; bootstrap and historical 
   assert.deepEqual(actionableTransitions({ ...old, currentTurnId: 'new' }, { ...old, turns: { ...old.turns, new: 'completed' }, requests: ['old-approval', 'new-input'] }).map(e => e.kind), ['completed', 'input']);
   const summary = notificationSummary({ rows: [{ turnId: 'turn', status: 'complete', text: 'private text' }], currentTurnId: null }, [{ key: 'request', request: { command: 'private command' } }]);
   assert.ok(!JSON.stringify(summary).includes('private'));
+  const failed = notificationSummary({ rows: [{ turnId: 'failed-turn', status: 'error' }], currentTurnId: null }, []);
+  assert.deepEqual(actionableTransitions({ ...old, currentTurnId: 'failed-turn' }, failed), [{ identity: 'turn:failed-turn:failed', kind: 'failed' }]);
 });
 
 test('device-bound delivery deduplicates across restart, suppresses the viewed session and excludes revoked devices', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-notifications-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-notifications-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const devices = await DeviceRegistry.load(join(directory, 'devices.json'));
   const first = await devices.approve('first', 'Phone', 'first-token'), second = await devices.approve('second', 'Phone', 'second-token');
   await devices.registerPush(first, { enabled: true, token: 'a'.repeat(64), environment: 'development' });
@@ -38,7 +40,7 @@ test('device-bound delivery deduplicates across restart, suppresses the viewed s
 });
 
 test('provider invalidation disables only that push token; no configured sender creates no backlog', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-invalid-push-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-invalid-push-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const devices = await DeviceRegistry.load(join(directory, 'devices.json')), id = await devices.approve('device', 'Phone', 'fixture-token');
   await devices.registerPush(id, { enabled: true, token: 'a'.repeat(64), environment: 'development' });
   const dispatcher = new NotificationDispatcher({ path: join(directory, 'notifications.json'), devices, origin: () => '', sender: { environment: 'development', send: async () => ({ invalidToken: true, ok: false }) } });

@@ -4,7 +4,7 @@ import { projectClaudeTasks, readClaudeTaskLogPage } from './claude-tasks.mjs';
 import { sourceNativeTasks } from './source-native-tasks.mjs';
 import { BridgeError } from '../errors.mjs';
 import { createHash, randomBytes } from 'node:crypto';
-import { nativeSettingsScope, sameNativeSettingsScope, confirmedNativeSettingsEvidence } from '../happy/native-settings-scope.mjs';
+import { nativeSettingsScope, sameNativeSettingsScope, confirmedNativeSettingsEvidence } from '../codelync/native-settings-scope.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const TASK_EVENT_TYPES = new Set(['task_started', 'task_progress', 'task_updated', 'task_notification', 'background_tasks_changed']);
@@ -363,7 +363,7 @@ export class ClaudeDesktopBackend {
       if (reply.cancelRequested !== true || reply.sessionId !== id) throw new BridgeError('delivery-unknown', 'The original Claude Desktop interruption is unconfirmed.');
       return { cancelRequested: true, foregroundActive: reply.observedStatus === 'running', observedStatus: reply.observedStatus, ownerGeneration: reply.ownerGeneration };
     }
-    // Native message UUID is deterministic for the stable CodeLight operation ID.
+    // Native message UUID is deterministic for the stable Codelync operation ID.
     const hash = createHash('sha256').update(commandId).digest('hex');
     const uuid = `${hash.slice(0,8)}-${hash.slice(8,12)}-4${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;
     const reply = await this.rpc.call(this.namespace + '.send', { sessionId: id, message: payload.text, messageUuid: uuid, expectedOwnerGeneration: view.ownerGeneration, expectedExecutionToken: view.nativeInput.queryToken },

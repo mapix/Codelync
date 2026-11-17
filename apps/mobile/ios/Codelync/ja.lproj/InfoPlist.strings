@@ -1,0 +1,13 @@
+"NSCalendarsFullAccessUsageDescription" = "AI の応答を改善するため、Codelync にカレンダーへのアクセスを許可します。";
+"NSCalendarsUsageDescription" = "AI の応答を改善するため、Codelync にカレンダーへのアクセスを許可します。";
+"NSCameraUsageDescription" = "QR コードのスキャンや写真の共有のため、Codelync にカメラの使用を許可します。";
+"NSFaceIDUsageDescription" = "Codelync に Face ID の使用を許可します。";
+"NSLocalNetworkUsageDescription" = "Codelync にローカルネットワーク上のデバイスの検索と接続を許可します。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "AI の応答を改善するため、Codelync に位置情報の使用を許可します。";
+"NSLocationAlwaysUsageDescription" = "AI の応答を改善するため、Codelync に位置情報の使用を許可します。";
+"NSLocationWhenInUseUsageDescription" = "AI の応答を改善するため、Codelync に位置情報の使用を許可します。";
+"NSMicrophoneUsageDescription" = "音声会話のため、Codelync にマイクの使用を許可します。";
+"NSMotionUsageDescription" = "Codelync にデバイスのモーションデータへのアクセスを許可します。";
+"NSPhotoLibraryUsageDescription" = "Codelync に写真へのアクセスを許可します。";
+"NSRemindersFullAccessUsageDescription" = "Codelync にリマインダーへのアクセスを許可します。";
+"NSRemindersUsageDescription" = "Codelync にリマインダーへのアクセスを許可します。";

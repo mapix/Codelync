@@ -1,7 +1,7 @@
 # Claude task wire integration
 
 Source verification, 2026-11-14. Native installation is not established by these
-tests. Contract: [native task wire](../../spec/codelight-native-tasks.md).
+tests. Contract: [native task wire](../../spec/codelync-native-tasks.md).
 
 ## Implemented
 

@@ -27,6 +27,14 @@ describe('getSessionRouteFromNotificationData', () => {
 });
 
 describe('getSessionRouteFromNotificationResponse', () => {
+    it('uses stable Mac identity across endpoint changes and rejects another Mac', () => {
+        const response = { notification: { request: { content: { data: { sessionId: 'session', peerId: 'same-mac', origin: 'old-tunnel' } } } } };
+        expect(getSessionRouteFromNotificationResponse(response, 'new-tunnel', 'same-mac')).toBe('/session/session');
+        expect(getSessionRouteFromNotificationResponse(response, 'old-tunnel', 'another-mac')).toBeNull();
+        expect(getSessionRouteFromNotificationResponse(response, 'old-tunnel')).toBeNull();
+        const legacy = { notification: { request: { content: { data: { sessionId: 'session', origin: 'old-tunnel' } } } } };
+        expect(getSessionRouteFromNotificationResponse(legacy, 'new-tunnel', 'same-mac')).toBeNull();
+    });
     it('reads the route from content data', () => {
         expect(getSessionRouteFromNotificationResponse({
             notification: {

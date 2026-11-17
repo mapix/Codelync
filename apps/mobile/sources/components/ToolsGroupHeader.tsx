@@ -6,7 +6,7 @@ import type { ToolsGroupItem } from '@/hooks/useGroupedMessages';
 import type { Metadata } from '@/sync/storageTypes';
 import type { ToolCallMessage } from '@/sync/typesMessage';
 import { getCurrentLanguage } from '@/text';
-import { codeLightToolGroupLabels, formatToolGroupTimestamp } from '@/text/codeLightToolGroupLabels';
+import { codelyncToolGroupLabels, formatToolGroupTimestamp } from '@/text/codelyncToolGroupLabels';
 import { layout } from './layout';
 
 /** Native observation/index times never stand in for the original tool time. */
@@ -32,7 +32,7 @@ export const ToolsGroupHeader = React.memo((props: {
 }) => {
     const { theme } = useUnistyles();
     const language = getCurrentLanguage();
-    const label = codeLightToolGroupLabels[language](props.group.messages.length);
+    const label = codelyncToolGroupLabels[language](props.group.messages.length);
     const nativeSession = props.metadata?.client?.id === 'noninvasive-bridge';
     const time = formatToolGroupTimestamp(latestToolGroupTimestamp(props.group.messages, nativeSession), language);
     return (
@@ -42,7 +42,7 @@ export const ToolsGroupHeader = React.memo((props: {
                     accessibilityRole="button"
                     accessibilityLabel={`${label}, ${time}`}
                     accessibilityState={{ expanded: props.expanded }}
-                    testID={`codelight-tools-group:${props.group.id}`}
+                    testID={`codelync-tools-group:${props.group.id}`}
                     onPress={props.onToggle}
                     style={({ pressed }) => [styles.header, pressed && styles.pressed]}
                 >

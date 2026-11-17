@@ -62,7 +62,7 @@ export default function ImageDiagnostics() {
                 result.phase = 'complete'; result.ok = true;
             } catch { result.ok = false; }
             result.finishedAt = Date.now();
-            await AsyncStorage.setItem('codelight-native-image-probe-v1', JSON.stringify(result));
+            await AsyncStorage.setItem('codelync-native-image-probe-v1', JSON.stringify(result));
             if (!cancelled) setReport(JSON.stringify(result, null, 2));
         })();
         return () => { cancelled = true; };

@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import { isCuid } from '@paralleldrive/cuid2';
-import { stripLeadingTaskNotificationWrappers } from '@slopus/happy-wire';
-import { isNativeToolInput, type NativeToolInput } from '@slopus/happy-wire/codelight';
+import { stripLeadingTaskNotificationWrappers } from '@codelync/wire';
+import { isNativeToolInput, type NativeToolInput } from '@codelync/wire/codelync';
 import { MessageMetaSchema, MessageMeta } from './typesMessageMeta';
 
 //

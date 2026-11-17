@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 type Stage = 'rpc-start' | 'rpc-received' | 'rpc-failed' | 'rpc-decrypt-failed' | 'connection-changed' | 'response-invalid' | 'download-start' | 'download-failed' | 'blob-decrypt-failed' | 'image-loaded' | 'render-failed' | 'preview-scope';
-const key = 'codelight-native-image-diagnostics-v1';
+const key = 'codelync-native-image-diagnostics-v1';
 let tail = Promise.resolve();
 /** Bounded device-private stages only; no image, path, ref, URL, credentials or conversation text. */
 export function noteNativeImageStage(stage: Stage, info: { bytes?: number; ms?: number; reason?: string; keyPresent?: boolean; peerMatch?: boolean } = {}): void {

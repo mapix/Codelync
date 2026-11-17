@@ -5,10 +5,10 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DesktopSourceSubscriptions, DESKTOP_SOURCE_APPS } from '../src/happy/source-subscriptions.mjs';
-import { CodeLightMacDaemon } from '../src/happy/mac-daemon.mjs';
-import { MacConnectionService } from '../src/happy/mac-connection-service.mjs';
-import { SourceRegistry, sourceKey } from '../src/happy/source-registry.mjs';
+import { DesktopSourceSubscriptions, DESKTOP_SOURCE_APPS } from '../src/codelync/source-subscriptions.mjs';
+import { CodelyncMacDaemon } from '../src/codelync/mac-daemon.mjs';
+import { MacConnectionService } from '../src/codelync/mac-connection-service.mjs';
+import { SourceRegistry, sourceKey } from '../src/codelync/source-registry.mjs';
 /** @typedef {Record<string,any>} Value */
 
 const nativeSources = [
@@ -25,7 +25,7 @@ function gate() { let finish = () => {}; const promise = new Promise(resolve => 
 async function flush() { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); }
 /** @param {import('node:test').TestContext} t */
 async function fixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-subscription-daemon-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-subscription-daemon-'));
   const settings = new DesktopSourceSubscriptions({ path: join(directory, 'source-choices.json') }); await settings.reload();
   const sources = nativeSources.map(source => ({ ...source })), bindings = new Map(sources.map(source => [sourceKey(source), bindingFor(source)]));
   const controls = /** @type {Value} */ ({}), counts = { created: 0, started: 0, closed: 0, navigated: 0, markedDisabled: 0, scans: 0, providersClosed: 0 };
@@ -49,12 +49,12 @@ async function fixture(t) {
         close: async () => { if (!actor.closed) { actor.closed = true; counts.closed++; } }, status: () => ({ sourceStatus: actor.closed ? 'disconnected' : 'connected' }) };
       actors.push(actor); if (controls.factory) await controls.factory; return actor;
     } };
-  const daemon = new CodeLightMacDaemon(options); await daemon.start();
+  const daemon = new CodelyncMacDaemon(options); await daemon.start();
   t.after(async () => { controls.scan = null; await daemon.close(); await rm(directory, { recursive: true, force: true }); });
   return { directory, settings, daemon, counts, actors, bindings, sources, controls, activity, options };
 }
 
-test('disable preserves receipts/inbox, stops CodeLight observations and re-enable never resumes the old full actor', async t => {
+test('disable preserves receipts/inbox, stops Codelync observations and re-enable never resumes the old full actor', async t => {
   const f = await fixture(t), source = nativeSources[1], key = sourceKey(source);
   await f.daemon.observeSource({ sourceKey: key, commandId: 'fixture-observe-ag' }); await Promise.all([...f.daemon.starts.values()]);
   const folder = join(f.directory, 'connector', 'active', key); await mkdir(folder, { recursive: true });

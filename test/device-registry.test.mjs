@@ -6,12 +6,12 @@ import { join } from 'node:path';
 import { Socket } from 'node:net';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
-import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
+import { PairingInvitations, createPairingGateway } from '../src/codelync/pairing-gateway.mjs';
 import { gatewayProof } from './fixtures/gateway-proof.mjs';
 
 test('device revocation closes only its connections and remains effective after reload', async t => {
-  const folder = await mkdtemp(join(tmpdir(), 'codelight-devices-')); t.after(() => rm(folder, { recursive: true, force: true }));
+  const folder = await mkdtemp(join(tmpdir(), 'codelync-devices-')); t.after(() => rm(folder, { recursive: true, force: true }));
   const path = join(folder, 'devices.json'), devices = await DeviceRegistry.load(path);
   const first = await devices.approve('fixture-phone-key', 'Phone', 'phone-token'), second = await devices.approve('fixture-tablet-key', 'Tablet', 'tablet-token');
   await devices.rename(first, 'My phone'); const socket = new Socket(); devices.connected(first, socket);
@@ -20,7 +20,7 @@ test('device revocation closes only its connections and remains effective after 
   const restored = await DeviceRegistry.load(path); assert.equal(restored.authorize('phone-token'), null); assert.equal(restored.list().find(row => row.id === first)?.name, 'My phone');
 });
 test('public gateway rejects legacy tokens, accepts approved device proofs and enforces revocation', async t => {
-  const folder = await mkdtemp(join(tmpdir(), 'codelight-admission-')); t.after(() => rm(folder, { recursive: true, force: true }));
+  const folder = await mkdtemp(join(tmpdir(), 'codelync-admission-')); t.after(() => rm(folder, { recursive: true, force: true }));
   const devices = await DeviceRegistry.load(join(folder, 'devices.json'));
   const upstream = createServer((_req, res) => res.end('{}')); upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
   const address = upstream.address(); assert.ok(address && typeof address !== 'string');
@@ -31,23 +31,23 @@ test('public gateway rejects legacy tokens, accepts approved device proofs and e
   const local = gateway.address(); assert.ok(local && typeof local !== 'string'); const url = `http://127.0.0.1:${local.port}`;
   t.after(async () => { gateway.closeAllConnections(); await new Promise(r => gateway.close(r)); await new Promise(r => upstream.close(r)); invitations.close(); await devices.tail; });
   const headers = (/** @type {string} */ path, method = 'GET') => device.headers(path, method);
-  for (const path of ['/v1/sessions', '/api/peer/channels', '/codelight/notifications/device', '/codelight/notifications/presence']) {
+  for (const path of ['/v1/sessions', '/api/peer/channels', '/codelync/notifications/device', '/codelync/notifications/presence']) {
     assert.equal((await fetch(url + path, { method: path.includes('/notifications/') ? 'POST' : 'GET', headers: { Authorization: 'Bearer device-token' } })).status, 401);
   }
-  const pushUrl = url + '/codelight/notifications/device';
+  const pushUrl = url + '/codelync/notifications/device';
   assert.equal((await fetch(pushUrl, { method: 'POST', body: '{}' })).status, 401);
-  assert.equal((await fetch(pushUrl, { method: 'POST', headers: headers('/codelight/notifications/device', 'POST'), body: JSON.stringify({ enabled: true, token: 'a'.repeat(64), environment: 'development' }) })).status, 200);
+  assert.equal((await fetch(pushUrl, { method: 'POST', headers: headers('/codelync/notifications/device', 'POST'), body: JSON.stringify({ enabled: true, token: 'a'.repeat(64), environment: 'development' }) })).status, 200);
   assert.equal(devices.notificationDevices().length, 1);
-  assert.equal((await fetch(url + '/codelight/notifications/presence', { method: 'POST', headers: headers('/codelight/notifications/presence', 'POST'), body: JSON.stringify({ active: true, sessionId: 'session', sequence: 7 }) })).status, 200);
+  assert.equal((await fetch(url + '/codelync/notifications/presence', { method: 'POST', headers: headers('/codelync/notifications/presence', 'POST'), body: JSON.stringify({ active: true, sessionId: 'session', sequence: 7 }) })).status, 200);
   assert.equal(devices.list()[0].connected, false);
   assert.deepEqual([...devices.viewedSessions()], ['session']);
-  assert.equal((await fetch(url + '/codelight/notifications/presence', { method: 'POST', headers: headers('/codelight/notifications/presence', 'POST'), body: JSON.stringify({ active: false, sessionId: 'old-session', sequence: 6 }) })).status, 200);
+  assert.equal((await fetch(url + '/codelync/notifications/presence', { method: 'POST', headers: headers('/codelync/notifications/presence', 'POST'), body: JSON.stringify({ active: false, sessionId: 'old-session', sequence: 6 }) })).status, 200);
   assert.deepEqual([...devices.viewedSessions()], ['session']);
   assert.equal((await fetch(url + '/v1/sessions')).status, 401); assert.equal((await fetch(url + '/v1/sessions', { headers: headers('/v1/sessions') })).status, 200);
   assert.equal((await fetch(url + '/v1/auth', { headers: headers('/v1/auth') })).status, 401); await devices.revoke(id);
   assert.equal((await fetch(url + '/v1/sessions', { headers: headers('/v1/sessions') })).status, 401);
   assert.equal(devices.viewedSessions().size, 0);
-  assert.equal((await fetch(pushUrl, { method: 'POST', headers: headers('/codelight/notifications/device', 'POST'), body: '{}' })).status, 401); assert.equal(devices.notificationDevices().length, 0);
+  assert.equal((await fetch(pushUrl, { method: 'POST', headers: headers('/codelync/notifications/device', 'POST'), body: '{}' })).status, 401); assert.equal(devices.notificationDevices().length, 0);
 });
 
 test('out-of-order foreground requests and legacy requests cannot overwrite a newer sequenced viewer', () => {

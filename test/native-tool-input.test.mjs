@@ -4,9 +4,9 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isNativeToolInput, projectNativeToolInput } from '@slopus/happy-wire/codelight';
+import { isNativeToolInput, projectNativeToolInput } from '@codelync/wire/codelync';
 import { projectAntigravityTrajectory } from '../src/adapters/antigravity-backend.mjs';
-import { NativeHappyConnector } from '../src/happy/native-connector.mjs';
+import { NativeHappyConnector } from '../src/codelync/native-connector.mjs';
 import { CommandReceipts } from '../src/commands.mjs';
 
 /** @typedef {Record<string,any>} Value */
@@ -46,9 +46,9 @@ test('sanitized real read/write shapes retain ordinary input through the selecte
     const recent = await connector.readRecent();
     const read = recent.rows.find((/** @type {Value} */ row) => row.tools?.[0]?.name === 'read_file').tools[0];
     const write = recent.rows.find((/** @type {Value} */ row) => row.tools?.[0]?.name === 'write_file').tools[0];
-    assert.deepEqual(read.input, { Path: '/isolated/codelight-qa/input.json' }); assert.equal(read.arguments, undefined);
-    assert.deepEqual(write.input, { Path: '/isolated/codelight-qa/result.json', Content: '{"sum":42}\n', Overwrite: true });
-    reply.trajectory.steps[2].metadata.toolCall.argumentsJson = JSON.stringify({ Path: '/isolated/codelight-qa/result.json', Content: 'Updated native input', Overwrite: true });
+    assert.deepEqual(read.input, { Path: '/isolated/codelync-qa/input.json' }); assert.equal(read.arguments, undefined);
+    assert.deepEqual(write.input, { Path: '/isolated/codelync-qa/result.json', Content: '{"sum":42}\n', Overwrite: true });
+    reply.trajectory.steps[2].metadata.toolCall.argumentsJson = JSON.stringify({ Path: '/isolated/codelync-qa/result.json', Content: 'Updated native input', Overwrite: true });
     view = projectAntigravityTrajectory('fixture-cascade', reply, 'fixture-owner');
     await connector.project(view);
     const revision = transport.records.findLast(record => record.content.ev.t === 'native-row-upsert');

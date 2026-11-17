@@ -6,7 +6,7 @@ import { expect, it, vi } from 'vitest';
 import { closeDatabase } from './closeDatabase';
 
 it('closes the real embedded engine after Prisma disconnect and preserves data across reopen', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'codelight-db-close-'));
+    const directory = await mkdtemp(join(tmpdir(), 'codelync-db-close-'));
     const pg = new PGlite(directory);
     try {
         await pg.exec('CREATE TABLE fixture (id integer PRIMARY KEY); INSERT INTO fixture VALUES (7)');

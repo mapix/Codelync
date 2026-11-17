@@ -1,0 +1,6 @@
+{
+  "description": "Codelync 是面向已在 Codex、Antigravity Desktop 或 Claude Desktop 配置 Gateway 模式用户的独立 iPhone 伴侣。日常官方订阅使用推荐各厂商的官方 App。\n\n与个人 Mac 上的 Codelync 配对，查看已有项目、会话和可用子代理日志。原桌面应用继续拥有会话和模型请求；操作范围取决于各原应用已确认的能力。\n\n先读取最近消息，按需加载历史。可选择已保存连接，使用紧凑增量更新，并查看清楚的恢复状态。支持中文、日文和英文，默认跟随系统语言。远程桌面是可选功能，默认隐藏；需要时在设置开启功能开关并授予 Mac 必要权限。\n\nCodelync 不隶属于 OpenAI、Anthropic 或 Google，不提供模型订阅或内置模型凭据。原生会话功能需要兼容的 Mac 和现有 Gateway 桌面配置。",
+  "keywords": "Gateway,桌面,会话,编程,远程,项目,代理",
+  "supportUrl": "https://codelync.novarock.io/support.html",
+  "marketingUrl": "https://codelync.novarock.io/"
+}

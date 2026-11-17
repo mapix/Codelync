@@ -57,7 +57,7 @@ The request and target generation are verified before and after capture.
 `python3 native/test-readonly.py` tests validation and an absent synthetic app;
 it does not access real conversation contents, perform actions, or capture images.
 
-Current product acceptance is recorded in `CODELIGHT-DELIVERY.md` at the project
+Current product acceptance is recorded in `CODELYNC-DELIVERY.md` at the project
 root. Historical private probes and screenshots are not shipped. An empty
 AXWindows array alone does not prove that an app is stopped or the Mac is locked;
 the current helper also checks legitimate AXMainWindow/AXFocusedWindow objects.
@@ -93,4 +93,4 @@ Current composer/Stop CAS uses exact target descriptors and the actual composer 
 
 AX-only background observations may be cached after native cancellation/completion. contentFreshness= ax-observation-only and presentationVerified=false make this explicit; normal explicit activation and a fresh capture restore current presentation. Backend windows remain windows, not native session IDs.
 
-2026-10-29 original ZCode window verification: complete two-line Chinese/emoji input without automatic admission, explicit Send and assistant echo, original model cancellation through Stop, recovery and queue admission 2007ms before the previous assistant completed. The sanitized scope is in the root `CODELIGHT-DELIVERY.md`; detailed records remain private. Model tests have ended; ZCode permission/question tools were not triggered.
+2026-10-29 original ZCode window verification: complete two-line Chinese/emoji input without automatic admission, explicit Send and assistant echo, original model cancellation through Stop, recovery and queue admission 2007ms before the previous assistant completed. The sanitized scope is in the root `CODELYNC-DELIVERY.md`; detailed records remain private. Model tests have ended; ZCode permission/question tools were not triggered.

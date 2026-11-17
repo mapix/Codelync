@@ -1,4 +1,4 @@
-import { nativeTaskDigestText, nativeTaskTransferApply } from '@slopus/happy-wire/native-tasks';
+import { nativeTaskDigestText, nativeTaskTransferApply } from '@codelync/wire/native-tasks';
 import { CryptoDigestAlgorithm, digestStringAsync } from 'expo-crypto';
 import { NativeTaskReadReplySchema, NativeTasksSchema, type NativeTasks } from './nativeTasks';
 

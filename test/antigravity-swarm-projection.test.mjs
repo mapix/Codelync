@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { projectAntigravityTrajectory } from '../src/adapters/antigravity-backend.mjs';
-import { recentRowsPage } from '../src/happy/recent-data.mjs';
+import { recentRowsPage } from '../src/codelync/recent-data.mjs';
 
 /** @typedef {Record<string,any>} Value */
 /** @param {Value[]} steps */

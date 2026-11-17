@@ -1,7 +1,7 @@
 import { NativeModelControlScopeSchema, type NativeModelControlScope, type Session, type Metadata } from '@/sync/storageTypes';
-import { isCodeLightSessionSource } from './codeLightSourceScope';
+import { isCodelyncSessionSource } from './codelyncSourceScope';
 import { readNativeQuery } from './nativeQuery';
-import { currentNativeTaskSignal } from './codeLightNativeTasks';
+import { currentNativeTaskSignal } from './codelyncNativeTasks';
 import { nativeComposerInputReadOnly } from './nativeComposerInputReadOnly';
 
 export function nativeModelControlScopesEqual(a: NativeModelControlScope, b: NativeModelControlScope): boolean {
@@ -16,7 +16,7 @@ export function readNativeModelControlScope(session: Session | null | undefined)
     const query = readNativeQuery(metadata, session?.agentState?.nativeQuery);
     const main = metadata?.nativeDesktopRuntimeGeneration ?? session?.agentState?.nativeDesktopRuntimeGeneration ?? currentNativeTaskSignal(session)?.scope.runtimeGeneration;
     if (!parsed.success || metadata?.client?.id !== 'noninvasive-bridge' || !source || source.app !== 'claude-desktop'
-        || bridge?.sourceStatus !== 'connected' || !isCodeLightSessionSource(source, bridge.controlMode) || !query || !main) return null;
+        || bridge?.sourceStatus !== 'connected' || !isCodelyncSessionSource(source, bridge.controlMode) || !query || !main) return null;
     const scope = parsed.data;
     return scope.app === source.app && scope.appMode === source.appMode && scope.nativeCollection === source.nativeCollection
         && scope.nativeConversationId === source.id && scope.hostId === source.hostId && scope.ownerGeneration === source.runtimeGeneration

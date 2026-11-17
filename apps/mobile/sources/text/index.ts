@@ -111,8 +111,8 @@ const currentLanguage: SupportedLanguage = resolveLanguage(
  * t('settings.title')                   // "Settings" or "Настройки"
  * 
  * // Functions with required object parameters
- * t('codeLightProjects.active', { count: 2 })
- * t('codeLightProjects.updated', { time: '09:30' })
+ * t('codelyncProjects.active', { count: 2 })
+ * t('codelyncProjects.updated', { time: '09:30' })
  * 
  * // Complex parameters
  * t('sessionInfo.agentState')           // "Agent State" or "Состояние агента"

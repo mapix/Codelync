@@ -20,7 +20,7 @@
  *
  * A release from anywhere else is a special case the user has to ask for by
  * name in the current conversation. Then, and only then, set
- * `HAPPY_RELEASE_ALLOW_OFF_MAIN=1`: the checks still run and still print
+ * `CODELYNC_RELEASE_ALLOW_OFF_MAIN=1`: the checks still run and still print
  * what is off, but they let the release through.
  */
 import { execFileSync } from 'node:child_process';
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const allowOffMain = process.env.HAPPY_RELEASE_ALLOW_OFF_MAIN === '1';
+const allowOffMain = process.env.CODELYNC_RELEASE_ALLOW_OFF_MAIN === '1';
 
 function git(...args) {
     return execFileSync('git', args, { cwd: appDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -83,7 +83,7 @@ if (problems.length === 0) {
 }
 
 const header = allowOffMain
-    ? 'Release preflight: proceeding OFF MAIN because HAPPY_RELEASE_ALLOW_OFF_MAIN=1 was set. Say so in the report.'
+    ? 'Release preflight: proceeding OFF MAIN because CODELYNC_RELEASE_ALLOW_OFF_MAIN=1 was set. Say so in the report.'
     : 'Release preflight: refusing to release.';
 console.error(header);
 for (const problem of problems) console.error(`  - ${problem}`);
@@ -91,6 +91,6 @@ if (!allowOffMain) {
     console.error('');
     console.error('Release from a local main that matches origin/main:');
     console.error('  git checkout main && git fetch origin main && git merge --ff-only origin/main');
-    console.error('If the user asked, in this conversation, for a release from somewhere else, rerun with HAPPY_RELEASE_ALLOW_OFF_MAIN=1.');
+    console.error('If the user asked, in this conversation, for a release from somewhere else, rerun with CODELYNC_RELEASE_ALLOW_OFF_MAIN=1.');
     process.exit(1);
 }

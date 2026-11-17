@@ -1,19 +1,19 @@
-# CodeLight Relay 与远程桌面部署指南
+# Codelync Relay 与远程桌面部署指南
 
 [English](SELF-HOSTING.md) · [部署模板](../deploy/self-host/) · [通信 Relay 模板](../deploy/network-relay/)
 
-本指南对应当前源码。源码仓库需要访问权限；在 GitHub 登录有权限的账号才能
-阅读预览页或克隆仓库。部署模板不改变仓库可见范围。
+本指南对应当前源码。源码仓库 https://github.com/mapix/Codelync 已公开，
+可直接阅读预览页或克隆仓库。
 
 ## 先选择需要部署的服务
 
-**Mac 已经内置 LiveKit。选用“本机”时，CodeLight 按需在 Mac 启动它，
+**Mac 已经内置 LiveKit。选用“本机”时，Codelync 按需在 Mac 启动它，
 手机连接桌面后才开始捕获画面。** 外部 LiveKit 是可选部署方案。
 
 | 场景 | 部署什么 | Mac 配置 |
 | --- | --- | --- |
 | 手机和 Mac 在可互通的局域网 | 无需额外媒体服务器 | 媒体 Relay → 本机 |
-| 只希望用固定自有地址替代 Cloudflare 通信入口 | CodeLight Network Relay | 连接方式 → 配置 Relay |
+| 只希望用固定自有地址替代 Cloudflare 通信入口 | Codelync Network Relay | 连接方式 → 配置 Relay |
 | 手机在外网，Mac 的媒体端口不可达 | 外部 LiveKit；通信可继续走 Cloudflare 或已有 Relay | 媒体 Relay → 自定义服务器 |
 | 通信和视频都通过自建公网服务 | Network Relay + 外部 LiveKit | 分别配置两处服务器 |
 
@@ -26,20 +26,20 @@ TURN 的产品入口。**仅部署当前通信 Relay，不会把 Mac 内置 Live
 因此，公网媒体端口不可达时，可以使用下面的外部 LiveKit 方案。切换到
 “自定义服务器”后，Mac 使用该服务器，不启动内置 LiveKit。若希望继续使用
 内置服务器来覆盖这种公网场景，需要进一步实现媒体入口、ICE/TURN 配置与验证，
-不应通过修改 CodeLight 自动生成的临时配置文件来部署。
+不应通过修改 Codelync 自动生成的临时配置文件来部署。
 
 ## 网络结构
 
 ```mermaid
 flowchart LR
     Phone[手机] <-->|配对、状态、键鼠 HTTP/WS| Network[Cloudflare 或通信 Relay]
-    Network <-->|Mac 主动建立的通信通道| Mac[Mac CodeLight]
+    Network <-->|Mac 主动建立的通信通道| Mac[Mac Codelync]
     Mac -->|WebRTC 加密视频| Media[外部 LiveKit]
     Media -->|WebRTC 加密视频| Phone
 ```
 
 房间和短期令牌由 Mac 创建，视频加密密钥通过已配对的密封通道送到手机。
-手机不填写 API secret，也不在 VPS 登录原桌面应用。Mac 必须保持 CodeLight
+手机不填写 API secret，也不在 VPS 登录原桌面应用。Mac 必须保持 Codelync
 运行、已解锁，并有屏幕录制权限；键鼠控制另外需要辅助功能权限。
 
 ## 部署前准备
@@ -72,11 +72,11 @@ flowchart LR
 
 ## 运行模板
 
-在 VPS 上使用有仓库权限的账号克隆源码：
+在 VPS 上克隆公开源码：
 
 ```sh
-git clone https://github.com/mapix/CodeLight.git
-cd CodeLight/deploy/self-host
+git clone https://github.com/mapix/Codelync.git
+cd Codelync/deploy/self-host
 cp .env.example .env
 ```
 
@@ -252,5 +252,5 @@ docker compose --profile media up -d --force-recreate livekit
 
 当前项目有本地原生加密视频和模拟器的验证记录。外部 LiveKit、公网 NAT/TURN
 及具体手机网络的结果应按实际部署另行记录；本文与模板本身不宣称这些场景
-已完成验收。产品合同见 [远程桌面](../spec/codelight-remote-desktop.md) 和
-[通信 Relay](../spec/codelight-network-relay.md)。
+已完成验收。产品合同见 [远程桌面](../spec/codelync-remote-desktop.md) 和
+[通信 Relay](../spec/codelync-network-relay.md)。

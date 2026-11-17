@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { configure } from '../deploy/self-host/configure.mjs';
 
 test('self-host setup keeps private independent credentials across a domain change', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-self-host-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-self-host-'));
   try {
     await writeFile(join(directory, '.env'), 'MEDIA_DOMAIN=media.deployment.dev\nRELAY_DOMAIN=relay.deployment.dev\n');
     const initial = await configure(directory);
@@ -24,7 +24,7 @@ test('self-host setup keeps private independent credentials across a domain chan
 });
 
 test('network-only setup produces no media proxy and needs no media hostname', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-network-only-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-network-only-'));
   try {
     await writeFile(join(directory, '.env'), 'MEDIA_DOMAIN=\nRELAY_DOMAIN=relay.deployment.dev\n');
     await configure(directory);
@@ -35,7 +35,7 @@ test('network-only setup produces no media proxy and needs no media hostname', a
 });
 
 test('invalid or shared credentials do not replace a working configuration', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-config-refusal-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-config-refusal-'));
   try {
     await writeFile(join(directory, '.env'), 'MEDIA_DOMAIN=media.deployment.dev\n');
     const initial = await configure(directory);

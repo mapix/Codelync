@@ -35,7 +35,7 @@ test('unsupported choices and failed readback cannot be presented as applied', a
   assert.equal(pending.applied, true); assert.equal(pending.settingsReadbackConfirmed, false); assert.equal(pending.acknowledged, false); assert.equal(unknown.writes.length, 1);
 });
 test('provider IDs gate cached capabilities, so foreign account candidates cannot become available', async t => {
-  const home = await mkdtemp(join(tmpdir(), 'codelight-native-catalog-')); t.after(() => rm(home, { recursive: true, force: true }));
+  const home = await mkdtemp(join(tmpdir(), 'codelync-native-catalog-')); t.after(() => rm(home, { recursive: true, force: true }));
   await writeFile(join(home, 'config.toml'), 'model_provider="own-provider"\n[model_providers.own-provider]\nmodel_catalog_url="https://fixture.example/models"\nexperimental_bearer_token="fixture-only"\n');
   await writeFile(join(home, 'models_cache.json'), JSON.stringify({ client_version: '0.165.0', identity: 'foreign-account-identity', models: [
     { slug: 'allowed-model', display_name: 'Allowed', visibility: 'list', supported_reasoning_levels: [{ effort: 'low' }], default_reasoning_level: 'low' },

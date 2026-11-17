@@ -18,7 +18,7 @@ The user requested simulator-only acceptance and a manual test before merge.
 - Mobile coordinate inversion, letterboxing and bounded pointer input ordering.
 - Swift capture/control helper and pinned LiveKit 1.13.11 server compilation.
 - Mac packaging, including a packaged helper startup check; signed simulator
-  build with preserved CodeLight identity and native secure storage.
+  build with preserved Codelync identity and native secure storage.
 - Genuine encrypted video from the Mac to the isolated simulator, desktop-only
   landscape layout, separate quality/display panel and live clarity/fps changes.
 - Immersive fullscreen and exit, disconnect/media-process cleanup, and native

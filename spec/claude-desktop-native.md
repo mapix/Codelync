@@ -10,7 +10,7 @@ A desktop-owned internal SDK process is part of the original desktop runtime;
 an independently started CLI/SDK is not an adapter substitute.
 
 Claude Desktop owns its original sessions, native processes, permission brokers,
-transcripts and Gateway settings. CodeLight is an observer and command forwarder.
+transcripts and Gateway settings. Codelync is an observer and command forwarder.
 It never substitutes a newly launched CLI/SDK process for a desktop-owned session.
 Probe changes run only in a copied app with isolated user data, HOME and workspace;
 original Claude, Codex and Antigravity are not modified or restarted.
@@ -45,7 +45,7 @@ explicitly unavailable instead of falling back to window control or another runn
 A private runtime manifest identifies the verified desktop process, exact bridge
 origin/socket, storage namespace and protocol version. It contains no conversation
 body and stays outside Git. Any bridge credential stays on the Mac and behind
-CodeLight's existing paired/sealed transport. Discovery does not create a session,
+Codelync's existing paired/sealed transport. Discovery does not create a session,
 enable a remote model execution, navigate the desktop or change account settings.
 
 The adapter provides `status`, `list`, `snapshot`, `freshSnapshot`,
@@ -96,13 +96,22 @@ starting a second operation.
 
 The isolated Code lane has verified native `Write` permission requests and
 single-use approval through `respondToToolPermission`. Requests bind the exact
-native request ID, session and query generation. CodeLight offers `accept`/`decline`
+native request ID, session and query generation. Codelync offers `accept`/`decline`
 for verified, in-turn requests that the native owner allows on that surface.
 Other tools, out-of-turn requests and card-only policies remain explicit
 unavailable controls until separately verified. Old history never carries
 operable requests.
 
 ## Gateway and mode capability
+
+The current adapter accepts only verified Gateway mode. Ordinary official-login
+and other non-Gateway Claude Desktop modes are not supported. The owner bridge
+checks the effective native provider and applied Gateway profile before publishing
+its runtime manifest; an absent, unverified or changed Gateway route makes this
+source unavailable. Gateway verification is separate from the production
+installation and per-mode native-control acceptance gates, which remain required.
+Codex and Antigravity do not share this Gateway prerequisite; see the
+[current product scope](codelync-product.md#模型-gateway-与原生会话接入).
 
 Isolated probes must never reset or change the user's login/default keychain.
 The copied app uses a separate private-file encryption backend, with a 0600 key
@@ -285,7 +294,7 @@ Only complete, unsuperseded ACKs and actual effective readback produce
 the confirmed scope retains every identity and has the new snapshot digest.
 Result controls use that confirmed scope and actual effective values. Partial,
 missing or superseded ACKs after possible dispatch remain unknown and cannot
-automatically replay the command. The stable CodeLight command ID is admitted
+automatically replay the command. The stable Codelync command ID is admitted
 before invoking the native setters. Original readonly writes remain refused.
 
 Receipt-query and ordinary catalogue-refresh recovery retain the same validated

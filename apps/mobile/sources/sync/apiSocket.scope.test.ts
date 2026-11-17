@@ -13,6 +13,7 @@ vi.mock('./storage', () => ({ storage: {} }));
 vi.mock('@/config', () => ({ config: mocks.distribution }));
 import { apiSocket } from './apiSocket';
 import nacl from 'tweetnacl';
+import { setPeerRouteWriteFence } from './peerNetwork';
 import { encodeBase64 } from '@/encryption/base64';
 afterEach(() => { apiSocket.disconnect(); mocks.sockets.length = 0; mocks.credentials = { token: 'fixture-token' }; mocks.distribution.noninvasiveLocal = true; });
 
@@ -40,7 +41,7 @@ it('a pinned peer proves socket entry even without a distribution manifest flag'
     const peer = { id: 'fixture-peer', key: encodeBase64(mac.publicKey, 'base64url'), channels: [{ id: 'local', kind: 'local' as const, url: endpoint }],
         device: { publicKey: encodeBase64(device.publicKey, 'base64url'), secretKey: encodeBase64(device.secretKey, 'base64url') } };
     apiSocket.initialize({ endpoint, token: 'fixture-token', peer }, {} as any);
-    const packet = JSON.parse(Buffer.from(mocks.sockets[0].options.extraHeaders.Authorization.slice(10), 'base64url').toString());
+    const packet = JSON.parse(Buffer.from(mocks.sockets[0].options.extraHeaders.Authorization.slice('Codelync '.length), 'base64url').toString());
     const plain = nacl.box.open(Buffer.from(packet.ciphertext, 'base64url'), Buffer.from(packet.nonce, 'base64url'), device.publicKey, mac.secretKey)!;
     expect(JSON.parse(Buffer.from(plain).toString())).toMatchObject({ path: '/v1/updates/', token: 'fixture-token' });
 });
@@ -71,7 +72,7 @@ it('saved peer socket initialization works before a pairing provider installs an
         expect(()=>apiSocket.initialize({endpoint,token:'fixture-token',peer},{} as any)).not.toThrow();
         expect(mocks.sockets).toHaveLength(1); expect(unavailable).not.toHaveBeenCalled();
         const options=mocks.sockets[0].options;
-        const packet=JSON.parse(Buffer.from(options.extraHeaders.Authorization.slice(10),'base64url').toString());
+        const packet=JSON.parse(Buffer.from(options.extraHeaders.Authorization.slice('Codelync '.length),'base64url').toString());
         const plain=nacl.box.open(Buffer.from(packet.ciphertext,'base64url'),Buffer.from(packet.nonce,'base64url'),device.publicKey,mac.secretKey)!;
         expect(JSON.parse(Buffer.from(plain).toString()).path).toBe('/v1/updates/');
         expect(options.path).toBe('/v1/updates/');
@@ -168,6 +169,16 @@ it('a stored credential from another peer cannot authorize an HTTP request to th
     const endpoint = 'https://current.example', peer = { id: 'current-peer', key: encodeBase64(mac.publicKey, 'base64url'), channels: [{ id: 'cloudflare', kind: 'cloudflare' as const, url: endpoint }], device: { publicKey: encodeBase64(device.publicKey, 'base64url'), secretKey: encodeBase64(device.secretKey, 'base64url') } };
     apiSocket.initialize({ endpoint, token: 'fixture-token', peer }, {} as any); mocks.credentials = { token: 'other-token', peer: { ...peer, id: 'different-peer' } };
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    try { await expect(apiSocket.request('/codelight/notifications/presence', { method: 'POST' })).rejects.toThrow('authenticated peer changed'); expect(fetch).not.toHaveBeenCalled(); }
+    try { await expect(apiSocket.request('/codelync/notifications/presence', { method: 'POST' })).rejects.toThrow('authenticated peer changed'); expect(fetch).not.toHaveBeenCalled(); }
     finally { vi.unstubAllGlobals(); }
+});
+
+it('cold manual intent fences source mutation before connection initialization and leaves receipt reads admitted',async()=>{
+ const mac=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(3)),device=nacl.box.keyPair.fromSecretKey(new Uint8Array(32).fill(4));const endpoint='https://cf.example';
+ const peer={id:'fixture-peer',key:encodeBase64(mac.publicKey,'base64url'),channels:[{id:'local',kind:'local' as const,url:'http://192.168.1.3:9900'},{id:'cf',kind:'cloudflare' as const,url:endpoint}],automatic:false,selectedChannel:'local',device:{publicKey:encodeBase64(device.publicKey,'base64url'),secretKey:encodeBase64(device.secretKey,'base64url')}};
+ const encryptRaw=vi.fn().mockResolvedValue('ciphertext');apiSocket.initialize({endpoint,token:'fixture-token',peer},{getSessionEncryption:()=>({encryptRaw,decryptRaw:async()=>({})})} as any);
+ await expect(apiSocket.sessionRPC('fixture','communication',{})).rejects.toMatchObject({effectMayHaveOccurred:false,code:'preferred-route-unavailable'});expect(encryptRaw).not.toHaveBeenCalled();
+ await expect(apiSocket.sessionRPC('fixture','bridge-receipt',{})).resolves.toEqual({});
+ setPeerRouteWriteFence(null);let finish!:(value:string)=>void;encryptRaw.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const pending=apiSocket.sessionRPC('fixture','communication',{});setPeerRouteWriteFence(peer);finish('ciphertext');await expect(pending).rejects.toMatchObject({effectMayHaveOccurred:false});
+ expect(mocks.sockets[0].emitWithAck).toHaveBeenCalledOnce();
 });

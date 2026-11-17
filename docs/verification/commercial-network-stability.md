@@ -56,9 +56,9 @@ requests or native mutations.
 
 - `src/network/connection-channels.mjs`
 - `src/network/public-access.mjs`
-- `src/happy/mac-connection-service.mjs`
-- `src/happy/lan-listener-ports.mjs`
-- `spec/codelight-network-relay.md`
+- `src/codelync/mac-connection-service.mjs`
+- `src/codelync/lan-listener-ports.mjs`
+- `spec/codelync-network-relay.md`
 - `test/network-stability.test.mjs`
 - `test/lan-listener-state-races.test.mjs`
 - `test/cloudflare-cleanup.test.mjs`

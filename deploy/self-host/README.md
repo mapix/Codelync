@@ -1,9 +1,9 @@
-# CodeLight self-hosting templates
+# Codelync self-hosting templates
 
 [Deployment guide](../../docs/SELF-HOSTING.md) ·
 [中文部署指南](../../docs/SELF-HOSTING.zh-CN.md)
 
-These Linux Docker Compose templates run either CodeLight's HTTP/WebSocket
+These Linux Docker Compose templates run either Codelync's HTTP/WebSocket
 network relay, an external LiveKit media server, or both. The Mac already owns
 an embedded LiveKit server in **This Mac** mode. Deploying the network relay
 alone does not forward that server's WebRTC media.
@@ -17,7 +17,7 @@ alone does not forward that server's WebRTC media.
    ```sh
    # Network relay only; no external LiveKit is started.
    docker compose --profile network up -d --build
-   # External media only; keep an existing CodeLight communication channel.
+   # External media only; keep an existing Codelync communication channel.
    docker compose --profile media up -d
    # Both services.
    docker compose --profile network --profile media up -d --build

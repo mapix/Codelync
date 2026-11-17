@@ -9,7 +9,7 @@ import { t } from '@/text';
 import { RoundButton } from './RoundButton';
 import { useSessionMessages } from '@/sync/storage';
 import { sync } from '@/sync/sync';
-import { useCodeLightMessageProgress } from '@/sync/codeLightLoadingProgress';
+import { useCodelyncMessageProgress } from '@/sync/codelyncLoadingProgress';
 import { canReadFromNoninvasiveSource, isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
 import { nativeParentControl } from '@/utils/nativeParentControl';
 
@@ -93,7 +93,7 @@ function formatRelativeTime(timestamp: number): string {
 
 export function EmptyMessages({ session }: EmptyMessagesProps) {
     const { hasMoreOlder, isLoadingOlder, isLoaded } = useSessionMessages(session.id);
-    const progress = useCodeLightMessageProgress(session.id);
+    const progress = useCodelyncMessageProgress(session.id);
     const historyConfirmed = !isNoninvasiveBridge(session.metadata)
         || isLoaded && progress.phase === 'complete' && (canReadFromNoninvasiveSource(session.metadata)
             || session.metadata?.bridge?.sourceStatus === 'connected' && !!nativeParentControl(session));

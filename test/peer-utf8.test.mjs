@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
-import { decodePeerUtf8, encodeCompactPeerPlaintext, decodeCompactPeerPlaintext } from '@slopus/happy-wire/peer-codec';
+import { decodePeerUtf8, encodeCompactPeerPlaintext, decodeCompactPeerPlaintext } from '@codelync/wire/peer-codec';
 
 test('native peer UTF8 preserves Unicode and surrogate pairs across bounded output chunks and byte offsets', () => {
   for (const text of ['', 'ASCII 中文 / 🙂🌍', '\ufeffinitial BOM', 'inside\ufeffBOM', 'a'.repeat(8191) + '🌍' + '中文'.repeat(10000), 'x'.repeat(500000)]) {

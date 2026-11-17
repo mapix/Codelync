@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeCatalogDeltas, CodeLightRecentService } from '../src/happy/recent-data.mjs';
+import { NativeCatalogDeltas, CodelyncRecentService } from '../src/codelync/recent-data.mjs';
 
 /** @param {string} id @param {number} [version] */
 function entry(id, version = 1) {
@@ -114,7 +114,7 @@ test('Mac maintains headers before phone arrival and HTTP pages never read sourc
   let now = 1000, sourceReads = 0, checkpoints = 0;
   const entries = Array.from({ length: 1500 }, (_, at) => ({ ...entry(String(at).padStart(4, '0')),
     actor: { transport: { peerSnapshot() { checkpoints++; return {}; } } } }));
-  const service = new CodeLightRecentService({ sources: () => { sourceReads++; return entries; }, resolveSource: async () => { throw Error('No native reads'); },
+  const service = new CodelyncRecentService({ sources: () => { sourceReads++; return entries; }, resolveSource: async () => { throw Error('No native reads'); },
     machineId: () => 'machine', catalogRefreshMs: 5000, now: () => now });
   t.after(() => service.close());
   assert.throws(() => service.catalog({ catalogVersion: 2 }), { code: 'source-unavailable' });
@@ -136,7 +136,7 @@ test('Mac maintains headers before phone arrival and HTTP pages never read sourc
 test('failed background directory capture retains its original time and closes maintenance cleanly', t => {
   t.mock.timers.enable({ apis: ['setInterval'] });
   let now = 1000, available = true, reads = 0;
-  const service = new CodeLightRecentService({ sources: () => { reads++; return [entry('a')]; }, resolveSource: async () => { throw Error('No native reads'); },
+  const service = new CodelyncRecentService({ sources: () => { reads++; return [entry('a')]; }, resolveSource: async () => { throw Error('No native reads'); },
     available: () => available, machineId: () => 'machine', catalogRefreshMs: 5000, now: () => now });
   t.after(() => service.close()); service.startCatalogMaintenance();
   const first = service.catalog({ catalogVersion: 2 });
@@ -162,7 +162,7 @@ test('maintained captures and older page continuations cannot cross machine iden
 
 test('closing maintenance cannot admit a deferred revalidation or activate another reader', async () => {
   let nativeReaders = 0;
-  const service = new CodeLightRecentService({ sources: () => [], resolveSource: async () => { nativeReaders++; throw Error('Must not activate'); } });
+  const service = new CodelyncRecentService({ sources: () => [], resolveSource: async () => { nativeReaders++; throw Error('Must not activate'); } });
   service.revalidate('phone-a', 20); service.close();
   await Promise.resolve(); await Promise.resolve();
   assert.equal(nativeReaders, 0);

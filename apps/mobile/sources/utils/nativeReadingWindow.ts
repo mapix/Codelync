@@ -1,5 +1,5 @@
 import type { Metadata } from '@/sync/storageTypes';
-import { isCodeLightSessionIdentity } from './codeLightSourceScope';
+import { isCodelyncSessionIdentity } from './codelyncSourceScope';
 import { canReadFromNoninvasiveSource, isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
 
 export type NativeReadingWindowState = { identity: string; owner: string | null };
@@ -7,7 +7,7 @@ export type NativeReadingWindowState = { identity: string; owner: string | null 
 /** Authenticated content identity is independent of temporary controller readiness. */
 export function nativeReadingIdentity(sessionId: string, metadata: Metadata | null, authority: string): string | null {
     const bridge = metadata?.bridge, source = bridge?.source;
-    if (!authority || !isNoninvasiveBridge(metadata) || !isCodeLightSessionIdentity(source, bridge?.controlMode)
+    if (!authority || !isNoninvasiveBridge(metadata) || !isCodelyncSessionIdentity(source, bridge?.controlMode)
         || typeof source?.id !== 'string' || !source.id.trim() || typeof source.hostId !== 'string' || !source.hostId.trim()) return null;
     return JSON.stringify([authority, sessionId, metadata?.machineId ?? null, source.app, source.hostId, source.id,
         source.kind ?? 'session', source.protocol ?? null, source.appMode ?? null, source.nativeCollection ?? null]);

@@ -1,9 +1,9 @@
 // Isolated-copy entry only. Never install this into the user's original app.
 const electron = require('electron'), http = require('node:http'), fs = require('node:fs');
 const crypto = require('node:crypto'), cp = require('node:child_process');
-const { ClaudeCommandReceipts } = require('./codelight-command-receipts.cjs');
-const runtimePath = process.env.CODELIGHT_CLAUDE_BRIDGE_MANIFEST;
-const external = process.env.CODELIGHT_CLAUDE_BRIDGE_HANDLERS;
+const { ClaudeCommandReceipts } = require('./codelync-command-receipts.cjs');
+const runtimePath = process.env.CODELYNC_CLAUDE_BRIDGE_MANIFEST;
+const external = process.env.CODELYNC_CLAUDE_BRIDGE_HANDLERS;
 if (!runtimePath || !external || electron.app.getVersion() !== '4.16336.0') throw Error('unverified-probe-owner');
 const epoch = crypto.randomBytes(16).toString('hex'), token = crypto.randomBytes(32).toString('hex');
 const receipts = new ClaudeCommandReceipts(); let runtime, code, cowork;

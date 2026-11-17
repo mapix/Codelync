@@ -7,7 +7,7 @@ const mocked = vi.hoisted(() => ({ request: vi.fn(), connection: { peerId: 'fixt
 vi.mock('react-native', () => ({ AppState: { addEventListener: () => ({ remove: vi.fn() }) } }));
 vi.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 vi.mock('@/auth/tokenStorage', () => ({ TokenStorage: {} }));
-vi.mock('@/sync/codeLightConnection', () => ({ getConnectionSnapshot: () => mocked.connection, subscribeConnection: () => () => {} }));
+vi.mock('@/sync/codelyncConnection', () => ({ getConnectionSnapshot: () => mocked.connection, subscribeConnection: () => () => {} }));
 vi.mock('livekit-client', () => ({
     Room: class { async setE2EEEnabled() {} async connect() {} async disconnect() {} on() {} },
     RoomEvent: { Disconnected: 'disconnected', Reconnecting: 'reconnecting', EncryptionError: 'encryption-error' }, setLogLevel: () => {},

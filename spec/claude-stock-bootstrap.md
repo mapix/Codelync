@@ -56,15 +56,15 @@ launch another model runner or restart the original Desktop.
 5. Ordinary writable installation requires the native owner to be idle. Explicit
    readonly installation preserves active native work. `install` loads the
    reviewed standalone bridge into that same main process and writes a private
-   0600 manifest under CodeLight's private runtime directory.
+   0600 manifest under Codelync's private runtime directory.
 6. Verify Code/Chat headers, bounded first read, collection-scoped identities,
    native query token and readonly source binding. Use a dedicated native probe
    session for any final send/stop/permission verification.
-7. Close the inspector once the limited bridge is verified. Keep CodeLight's
+7. Close the inspector once the limited bridge is verified. Keep Codelync's
    paired/sealed transport as the external boundary; do not expose the inspector
    through a tunnel or relay.
 
-`CODELIGHT_CLAUDE_EXPECTED_PROFILE` and `CODELIGHT_CLAUDE_EXPECTED_ASAR` are explicit
+`CODELYNC_CLAUDE_EXPECTED_PROFILE` and `CODELYNC_CLAUDE_EXPECTED_ASAR` are explicit
 inputs to the administrative script. It never prints the debugger endpoint,
 Gateway URL/key, provider object or private manifest contents. The app root,
 private manifest path and bundled bridge path are explicit arguments.
@@ -82,7 +82,7 @@ Only actual native `sessionType:chat` is accepted in the LAM Chat path. A native
 mode conversion invalidates old controls. Cowork VM, model/effort mutations and
 unverified child controls remain unavailable.
 
-`remove` closes only CodeLight's bridge and event listeners, deletes its private
+`remove` closes only Codelync's bridge and event listeners, deletes its private
 manifest and leaves native queries and settings intact. A Desktop quit removes
 the runtime endpoint. Renderer reload does not replace the main owner: the copied
 test preserved PID, native IDs, owner generation, query token and history rows.
@@ -104,7 +104,7 @@ loopback connection and the endpoint deactivated. CSP is preserved.
 - Synthetic native credential-epoch drift refuses old requests without leaking
   provider, endpoint or credential data.
 
-The copied endpoint remains available for native CodeLight client acceptance.
+The copied endpoint remains available for native Codelync client acceptance.
 The original stock Code read gate is recorded below. Copied Chat support does
 not establish stock Chat support for an untyped or missing native record.
 
@@ -158,7 +158,7 @@ model requests. Installation uses a new content-addressed CJS path to avoid old
 native `require` cache entries. Verify original keyboard handlers, native record
 and query references, editor content statistics and Gateway fingerprint before
 and after installation; close the main inspector after verification.
-The administrative bootstrap uses `CODELIGHT_CLAUDE_READ_ONLY=1` for this explicit
+The administrative bootstrap uses `CODELYNC_CLAUDE_READ_ONLY=1` for this explicit
 mode. It does not stop running native work to obtain an idle condition; ordinary
 write-enabled installation retains its native idle gate.
 

@@ -1,6 +1,6 @@
 Use case: logo-brand
-Asset type: CodeLight iPhone and Mac application icon, square, 1024x1024.
-Primary request: Design a distinctive, precise professional app icon for CodeLight, a mobile companion that connects to coding sessions on a Mac through one QR scan.
+Asset type: Codelync iPhone and Mac application icon, square, 1024x1024.
+Primary request: Design a distinctive, precise professional app icon for Codelync, a mobile companion that connects to coding sessions on a Mac through one QR scan.
 Subject: one bold geometric light bridge symbol, combining an open terminal bracket and a compact lightning stroke through deliberate negative space. Readable at 32 pixels.
 Style: polished flat brand mark with very subtle optical depth, crisp edges, balanced weight, premium native software feel.
 Composition: one centered symbol, no text, no border, no mockup, fill the entire square background. The symbol occupies about 62 percent of the square.

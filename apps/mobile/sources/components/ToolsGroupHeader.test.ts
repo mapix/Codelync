@@ -4,7 +4,7 @@ import * as React from 'react';
 import { act, create } from 'react-test-renderer';
 import type { ToolCallMessage } from '@/sync/typesMessage';
 import { latestToolGroupTimestamp, ToolsGroupHeader } from './ToolsGroupHeader';
-import { formatToolGroupTimestamp } from '@/text/codeLightToolGroupLabels';
+import { formatToolGroupTimestamp } from '@/text/codelyncToolGroupLabels';
 
 vi.mock('react-native', () => ({ Pressable: 'Pressable', Text: 'Text', View: 'View' }));
 vi.mock('react-native-unistyles', () => ({ useUnistyles: () => ({ theme: { colors: { textSecondary: 'secondary' } } }), StyleSheet: { create: () => ({}) } }));

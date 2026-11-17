@@ -22,36 +22,36 @@ function plural({ count, one, few, many }: { count: number; one: string; few: st
 }
 
 /**
- * Russian translations for the CodeLight app
+ * Russian translations for the Codelync app
  * Must match the exact structure of the English translations
  */
 export const ru: TranslationStructure = {
-    codeLightHandoff: {
+    codelyncHandoff: {
         action: "Передать в…",
         noTargets: "На этом Mac нет другой подключённой сессии приложения.",
         unavailable: "Исходная или целевая сессия больше недоступна.",
     },
 
-    codeLightSetup: {
+    codelyncSetup: {
         createFailed: "Не удалось настроить соединение. Проверьте подключение к Mac и повторите попытку.",
         storageFailed: "Не удалось безопасно сохранить соединение. Проверьте свободное место на устройстве и повторите попытку.",
-        reloadFailed: "Закройте и снова откройте CodeLight, чтобы подключиться с сохранёнными настройками.",
-        pairFailed: "Ссылка для подключения недоступна. Отсканируйте новый QR-код в CodeLight на Mac.",
-        macHelp: "Откройте CodeLight на Mac и оставьте существующие сеансы Codex / Antigravity / Claude Desktop запущенными.",
-        helpBody: "Откройте CodeLight на Mac и оставьте его запущенным. Отсканируйте QR-код этим телефоном. Если адрес соединения изменится, обновите и отсканируйте новый код. Регистрация и VPN не нужны.",
+        reloadFailed: "Закройте и снова откройте Codelync, чтобы подключиться с сохранёнными настройками.",
+        pairFailed: "Ссылка для подключения недоступна. Отсканируйте новый QR-код в Codelync на Mac.",
+        macHelp: "Откройте Codelync на Mac и оставьте существующие сеансы Codex / Antigravity / Claude Desktop запущенными.",
+        helpBody: "Откройте Codelync на Mac и оставьте его запущенным. Отсканируйте QR-код этим телефоном. Если адрес соединения изменится, обновите и отсканируйте новый код. Регистрация и VPN не нужны.",
     },
 
     windowControl: en.windowControl,
 
-    codeLightPairing: {
+    codelyncPairing: {
         refresh: "Обновите QR-код на Mac и отсканируйте его снова.",
         storage: "Не удалось безопасно сохранить соединение. Проверьте свободное место и повторите попытку.",
-        invalid: "Не удалось проверить код. Отсканируйте QR-код из CodeLight на Mac.",
-        network: "Не удалось подключиться к Mac. Оставьте CodeLight запущенным и повторите попытку.",
+        invalid: "Не удалось проверить код. Отсканируйте QR-код из Codelync на Mac.",
+        network: "Не удалось подключиться к Mac. Оставьте Codelync запущенным и повторите попытку.",
     },
 
-    codeLightCommands: { modelMenu: 'Выберите модель этой сессии кнопкой модели рядом с полем ввода.', unsupported: "Эта команда приложения недоступна в CodeLight. Черновик сохранён.", busy: "Сеанс занят. Черновик сохранён.", unconfirmed: "Результат команды не подтверждён. Проверьте результат." },
-    codeLightModels: {
+    codelyncCommands: { modelMenu: 'Выберите модель этой сессии кнопкой модели рядом с полем ввода.', unsupported: "Эта команда приложения недоступна в Codelync. Черновик сохранён.", busy: "Сеанс занят. Черновик сохранён.", unconfirmed: "Результат команды не подтверждён. Проверьте результат." },
+    codelyncModels: {
         nextMessage: 'Следующее сообщение',
         default: "По умолчанию",
         check: "Проверить настройки",
@@ -61,7 +61,7 @@ export const ru: TranslationStructure = {
         unconfirmed: "Изменение не подтверждено. Проверьте результат, не повторяя изменение.",
     },
 
-    codeLightChannels: {
+    codelyncChannels: {
         title: "Подключение",
         automatic: "Автоматически",
         automaticDetail: "Проверить сохранённые подключения и подключиться к этому Mac.",
@@ -80,14 +80,14 @@ export const ru: TranslationStructure = {
         switchFailed: "Не удалось подключиться. Предыдущий выбор сохранён.",
         connectingTitle: "Подключение к Mac…",
         failedTitle: "Не удаётся подключиться к Mac",
-        failedHelp: "Откройте CodeLight на Mac и проверьте сеть. Повторите подключение или выберите другое.",
+        failedHelp: "Откройте Codelync на Mac и проверьте сеть. Повторите подключение или выберите другое.",
         accessEndedTitle: "Подключение к Mac не подтверждено",
-        accessEndedHelp: "Сканируйте текущий QR-код в CodeLight на этом Mac. Сохранённые сообщения и черновики останутся.",
+        accessEndedHelp: "Сканируйте текущий QR-код в Codelync на этом Mac. Сохранённые сообщения и черновики останутся.",
         retryConnection: "Повторить подключение",
         scanMac: "Сканировать код Mac",
     },
 
-    codeLightLoading: {
+    codelyncLoading: {
         titles: "Загрузка сеансов Codex, Antigravity и Claude Desktop…",
         discovered: ({ count }: { count: number }) => "Загружено записей: {count} · загрузка продолжается…".replace("{count}", String(count)),
         messages: "Загрузка этого сеанса…",
@@ -97,7 +97,7 @@ export const ru: TranslationStructure = {
         empty: "На этом Mac нет доступных сеансов Codex, Antigravity или Claude Desktop.",
     },
 
-    codeLightProjects: {
+    codelyncProjects: {
         active: ({ count }: { count: number }) => "Активные: {count}".replace("{count}", String(count)),
         waiting: ({ count }: { count: number }) => "Ожидают действия: {count}".replace("{count}", String(count)),
         unknown: ({ count }: { count: number }) => "Не подтверждены: {count}".replace("{count}", String(count)),
@@ -109,7 +109,7 @@ export const ru: TranslationStructure = {
         updated: ({ time }: { time: string }) => "Обновлено: {time}".replace("{time}", String(time)),
     },
 
-    codeLightSessionStatus: {
+    codelyncSessionStatus: {
         active: "Активен",
         waiting: "Ожидает действия",
         idle: "Неактивен",
@@ -213,7 +213,7 @@ export const ru: TranslationStructure = {
         developer: 'Разработчик',
         developerTools: 'Инструменты разработчика',
         about: 'О программе',
-        aboutFooter: "CodeLight подключается к сеансам Codex, Antigravity и Claude Desktop на Mac. Claude Desktop использует Gateway; доступные действия зависят от сеанса.",
+        aboutFooter: "Codelync подключается к сеансам Codex, Antigravity и Claude Desktop на Mac. Claude Desktop использует Gateway; доступные действия зависят от сеанса.",
         whatsNew: 'Что нового',
         whatsNewSubtitle: 'Посмотреть последние обновления и улучшения',
         reportIssue: 'Сообщить о проблеме',
@@ -397,7 +397,7 @@ export const ru: TranslationStructure = {
         // Used by Server Configuration screen (app/(app)/server.tsx)
         serverConfiguration: 'Настройка сервера',
         enterServerUrl: 'Пожалуйста, введите URL сервера',
-        notValidHappyServer: 'Это не валидный сервер CodeLight',
+        notValidHappyServer: 'Это не валидный сервер Codelync',
         changeServer: 'Изменить сервер',
         continueWithServer: 'Продолжить с этим сервером?',
         resetToDefault: 'Сбросить по умолчанию',
@@ -412,8 +412,8 @@ export const ru: TranslationStructure = {
         services: 'Сервисы',
         useCustomServerForVoice: 'Использовать пользовательский сервер для голоса',
         customServerVoiceEnabled: 'Голосовые учетные данные и данные об использовании обрабатываются вашим сервером',
-        customServerVoiceDisabled: 'Голос использует CodeLight Cloud и вашу подписку CodeLight',
-        customServerVoiceFooter: 'Если выключено, при запуске голосового режима используются CodeLight Cloud и ElevenLabs. Включайте только если на вашем сервере настроена голосовая связь.',
+        customServerVoiceDisabled: 'Голос использует Codelync Cloud и вашу подписку Codelync',
+        customServerVoiceFooter: 'Если выключено, при запуске голосового режима используются Codelync Cloud и ElevenLabs. Включайте только если на вашем сервере настроена голосовая связь.',
     },
 
     sessionInfo: {
@@ -422,9 +422,9 @@ export const ru: TranslationStructure = {
         killSessionConfirm: 'Вы уверены, что хотите завершить эту сессию?',
         archiveSession: 'Архивировать сессию',
         archiveSessionConfirm: 'Вы уверены, что хотите архивировать эту сессию?',
-        happySessionIdCopied: 'ID сессии CodeLight скопирован в буфер обмена',
-        failedToCopySessionId: 'Не удалось скопировать ID сессии CodeLight',
-        happySessionId: 'ID сессии CodeLight',
+        happySessionIdCopied: 'ID сессии Codelync скопирован в буфер обмена',
+        failedToCopySessionId: 'Не удалось скопировать ID сессии Codelync',
+        happySessionId: 'ID сессии Codelync',
         claudeCodeSessionId: 'ID сессии Claude Code',
         claudeCodeSessionIdCopied: 'ID сессии Claude Code скопирован в буфер обмена',
         codexThreadId: 'ID треда Codex',
@@ -459,7 +459,7 @@ export const ru: TranslationStructure = {
         path: 'Путь',
         operatingSystem: 'Операционная система',
         processId: 'ID процесса',
-        happyHome: 'Домашний каталог CodeLight',
+        happyHome: 'Домашний каталог Codelync',
         copyMetadata: 'Копировать метаданные',
         agentState: 'Состояние агента',
         controlledByUser: 'Управляется пользователем',
@@ -489,7 +489,7 @@ export const ru: TranslationStructure = {
             ...en.components.emptyMainScreen,
             // Used by EmptyMainScreen component
             readyToCode: 'Готовы к программированию?',
-            installCli: 'Установите CodeLight CLI',
+            installCli: 'Установите Codelync CLI',
             runIt: 'Запустите его',
             scanQrCode: 'Отсканируйте QR-код',
             openCamera: 'Открыть камеру',
@@ -666,13 +666,13 @@ export const ru: TranslationStructure = {
         submitFailed: "Не удалось отправить ответ",
         dismiss: "Скрыть",
         unsupportedTitle: "Неподдерживаемый запрос",
-        unsupportedDescription: ({ kind }: { kind: string }) => `Эта версия CodeLight не может показать запрос «${kind}». Обновите приложение, чтобы ответить.`,
+        unsupportedDescription: ({ kind }: { kind: string }) => `Эта версия Codelync не может показать запрос «${kind}». Обновите приложение, чтобы ответить.`,
         moreQuestions: ({ count }: { count: number }) =>
             count === 1 ? "ещё 1 вопрос" : `${count} вопросов ещё`,
     },
 
     sidebar: {
-        sessionsTitle: 'CodeLight',
+        sessionsTitle: 'Codelync',
         showArchived: 'Показать архив',
         hideArchived: 'Скрыть архив',
         newSession: 'Новая сессия',
@@ -847,13 +847,13 @@ export const ru: TranslationStructure = {
         },
         // Bring your own agent
         byoTitle: 'Используйте своего агента',
-        byoDescription: 'Используйте собственного агента ElevenLabs вместо стандартного CodeLight. Подписка не требуется — подключайтесь напрямую через свой аккаунт ElevenLabs. Ваш агент должен определить два клиентских инструмента: sendMessageToSession (отправляет текст агенту кодирования) и processPermissionRequest (разрешает или запрещает использование инструментов). Контекст сессии передаётся через динамическую переменную {{initialConversationContext}}.',
+        byoDescription: 'Используйте собственного агента ElevenLabs вместо стандартного Codelync. Подписка не требуется — подключайтесь напрямую через свой аккаунт ElevenLabs. Ваш агент должен определить два клиентских инструмента: sendMessageToSession (отправляет текст агенту кодирования) и processPermissionRequest (разрешает или запрещает использование инструментов). Контекст сессии передаётся через динамическую переменную {{initialConversationContext}}.',
         customAgentId: 'ElevenLabs Agent ID',
         customAgentIdNotSet: 'Не настроено',
-        customAgentIdDescription: 'Введите ваш ElevenLabs Agent ID. Оставьте пустым, чтобы использовать стандартный CodeLight.',
+        customAgentIdDescription: 'Введите ваш ElevenLabs Agent ID. Оставьте пустым, чтобы использовать стандартный Codelync.',
         customAgentIdPlaceholder: 'e.g. abc123def456',
         bypassToken: 'Прямое подключение',
-        bypassTokenSubtitle: 'Пропустить сервер CodeLight, подключиться напрямую к ElevenLabs',
+        bypassTokenSubtitle: 'Пропустить сервер Codelync, подключиться напрямую к ElevenLabs',
         promptGuideTitle: 'Руководство по промптам агента',
         promptGuideDescription: 'Вашему агенту ElevenLabs необходимы:\n\n• Инструмент: sendMessageToSession — параметры: sessionId (string), message (string). Отправляет сообщение в указанную сессию кодирования.\n• Инструмент: processPermissionRequest — параметры: requestId (string), decision ("allow" или "deny"). Одобряет или отклоняет ожидающее разрешение на использование инструмента.\n• Динамическая переменная: {{initialConversationContext}} — получает историю и контекст сессии при запуске.\n\nАгент выступает голосовым мостом между пользователем и агентами кодирования. Он должен быть кратким, отвечать только при обращении и сообщать, когда агент кодирования завершает работу.',
         usageTitle: 'Использование (последние 30 дней)',
@@ -890,7 +890,7 @@ export const ru: TranslationStructure = {
         secretKeyCopied: 'Секретный ключ скопирован в буфер обмена. Сохраните его в безопасном месте!',
         secretKeyCopyFailed: 'Не удалось скопировать секретный ключ',
         privacy: 'Конфиденциальность',
-        privacyDescription: 'Передаёт данные об использовании, например какие функции вы используете и тип вашего устройства, чтобы помочь нам улучшить CodeLight. Никогда — ваши сообщения или код.',
+        privacyDescription: 'Передаёт данные об использовании, например какие функции вы используете и тип вашего устройства, чтобы помочь нам улучшить Codelync. Никогда — ваши сообщения или код.',
         analytics: 'Аналитика',
         analyticsDisabled: 'Данные не передаются',
         analyticsEnabled: 'Данные об использовании передаются',
@@ -930,7 +930,7 @@ export const ru: TranslationStructure = {
         invalidConnectionLink: 'Неверная ссылка подключения',
         invalidConnectionLinkDescription: 'Ссылка подключения отсутствует или неверна. Проверьте URL и попробуйте снова.',
         connectTerminal: 'Подключить терминал',
-        terminalRequestDescription: 'Терминал запрашивает подключение к вашему аккаунту CodeLight. Это позволит терминалу безопасно отправлять и получать сообщения.',
+        terminalRequestDescription: 'Терминал запрашивает подключение к вашему аккаунту Codelync. Это позволит терминалу безопасно отправлять и получать сообщения.',
         connectionDetails: 'Детали подключения',
         publicKey: 'Публичный ключ',
         encryption: 'Шифрование',
@@ -985,19 +985,19 @@ export const ru: TranslationStructure = {
         propNoPassword: "Без регистрации и VPN",
         propOpenSource: "Открытый код, лицензия MIT",
         linkTitle: "Подключиться к Mac",
-        installStep: "Откройте CodeLight на Mac",
+        installStep: "Откройте Codelync на Mac",
         openStep: "Оставьте сеансы Codex / Antigravity / Claude Desktop запущенными",
-        openBody: "Откройте CodeLight на Mac и оставьте Codex / Antigravity / Claude Desktop запущенным. В CodeLight появится QR-код для подключения.",
+        openBody: "Откройте Codelync на Mac и оставьте Codex / Antigravity / Claude Desktop запущенным. В Codelync появится QR-код для подключения.",
         scanStep: "Отсканируйте QR-код",
         scanButton: "Сканировать QR-код",
         pasteLink: "Не получается сканировать? Вставьте ссылку",
         pasteLinkTitle: "Вставить ссылку для подключения",
-        pasteLinkMessage: "На Mac выберите «Копировать ссылку для подключения» в CodeLight и вставьте её здесь.",
+        pasteLinkMessage: "На Mac выберите «Копировать ссылку для подключения» в Codelync и вставьте её здесь.",
         pasteLinkConfirm: "Подключиться",
         linking: "Подключение…",
         linkFailed: "Не удалось подключиться. Обновите QR-код на Mac и отсканируйте его снова.",
-        offlineOpenStep: "Откройте CodeLight на Mac",
-        offlineOpenBody: "Оставьте Mac включённым и подключённым к сети, затем откройте CodeLight. Экран обновится после подключения.",
+        offlineOpenStep: "Откройте Codelync на Mac",
+        offlineOpenBody: "Оставьте Mac включённым и подключённым к сети, затем откройте Codelync. Экран обновится после подключения.",
         getHelp: "Помощь",
         settingsTitle: "Настройки",
         settingsServer: "Сервер",

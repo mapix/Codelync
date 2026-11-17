@@ -1,5 +1,5 @@
 import type { Metadata, Session } from './storageTypes';
-import { isCodeLightSessionIdentity } from '@/utils/codeLightSourceScope';
+import { isCodelyncSessionIdentity } from '@/utils/codelyncSourceScope';
 
 type NativeHeader = NonNullable<Metadata['nativeSession']>;
 export type NativeDirectoryAuthority = { identity: string; header: NativeHeader };
@@ -8,7 +8,7 @@ function identity(session: Pick<Session, 'id' | 'metadata'>): string | null {
     const metadata = session.metadata, bridge = metadata?.bridge, source = bridge?.source;
     if (metadata?.client?.id !== 'noninvasive-bridge' || !metadata.machineId || !source?.id || !source.hostId
         || source.kind !== undefined && source.kind !== 'session') return null;
-    const native = isCodeLightSessionIdentity(source, bridge?.controlMode);
+    const native = isCodelyncSessionIdentity(source, bridge?.controlMode);
     if (!native) return null;
     // Owner proof can become temporarily unavailable during reattachment. It
     // remains a control fence, and cannot clear this independent directory fact.

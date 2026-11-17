@@ -1,4 +1,4 @@
-# CodeLight network relay
+# Codelync network relay
 
 This is the public HTTP/WebSocket forwarding service, not the embedded
 `packages/relay` account mirror or the LiveKit desktop media server.
@@ -11,7 +11,7 @@ Use [the self-hosting guide](../../docs/SELF-HOSTING.md) and
 Build from the **repository root**:
 
 ```sh
-docker build -f deploy/network-relay/Dockerfile -t codelight-network-relay:local .
+docker build -f deploy/network-relay/Dockerfile -t codelync-network-relay:local .
 ```
 
 `Dockerfile.dockerignore` restricts the build context to the deployment manifest
@@ -33,8 +33,8 @@ installation. Set your hostname, TLS issuer and immutable image reference before
 applying. Create the namespace and registration secret separately:
 
 ```sh
-kubectl create namespace codelight
-kubectl -n codelight create secret generic codelight-network-registration \
+kubectl create namespace codelync
+kubectl -n codelync create secret generic codelync-network-registration \
   --from-file=token=/secure/path/registration-token
 ```
 

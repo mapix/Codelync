@@ -33,7 +33,7 @@ bounded stage/time/status values without answer text, credentials or endpoints.
 
 ## Installation failure and recovery
 
-During restart, an orphaned CodeLight database process and tunnel process were
+During restart, an orphaned Codelync database process and tunnel process were
 found. Both stopped with SIGTERM. Subsequent PGlite startup failed because its
 WAL checkpoint was invalid; the old/new server bundle and PGlite JS/WASM/data
 artifacts matched. A private copy reproduced the failure. The original corrupt

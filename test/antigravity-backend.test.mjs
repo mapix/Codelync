@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { AntigravityBackend, AntigravityActivityObserver, antigravitySource, projectAntigravityTrajectory } from '../src/adapters/antigravity-backend.mjs';
 import { fixtureSummaryReplica } from './helpers/antigravity-summary-replica.mjs';
 import { antigravityHostId } from '../src/adapters/antigravity-rpc.mjs';
-import { sourceKey } from '../src/happy/source-registry.mjs';
+import { sourceKey } from '../src/codelync/source-registry.mjs';
 import { BridgeError } from '../src/errors.mjs';
 
 /** @typedef {Record<string,any>} Value */

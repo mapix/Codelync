@@ -20,7 +20,7 @@ function message(row) {
 }
 
 /** Pure native endpoint used by the renderer socket. Owner proof must come from
- * the local CodeLight installer, not from website titles or inferred window IDs.
+ * the local Codelync installer, not from website titles or inferred window IDs.
  * @param {Value} native @param {{ownerEpoch:string,gatewayVerified:boolean,executionToken?:(id:string,mode:string)=>Promise<string|null>}} proof */
 export function createClaudeRendererEndpoint(native, proof) {
   if (!native?.LocalSessions || !native?.LocalAgentModeSessions || !proof.ownerEpoch) throw failure('native-renderer-unavailable');

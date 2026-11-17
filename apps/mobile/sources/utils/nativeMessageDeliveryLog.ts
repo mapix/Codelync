@@ -1,9 +1,9 @@
 import type { Message } from '../sync/typesMessage';
 import type { Session } from '../sync/storageTypes';
 import { NativeDispatchContextSchema, type NativeDispatchContext } from './nativeDispatchContext';
-import type { CodeLightOperationStatus } from './codeLightOperationLog';
+import type { CodelyncOperationStatus } from './codelyncOperationLog';
 
-export type NativeMessageDeliveryRow = { id: string; at: number; status: CodeLightOperationStatus; context: NativeDispatchContext | null };
+export type NativeMessageDeliveryRow = { id: string; at: number; status: CodelyncOperationStatus; context: NativeDispatchContext | null };
 /** Existing receipt state only. Message text and the current owner are never copied into a historical dispatch. */
 export function nativeMessageDeliveryLog(messages: Message[], session: Session): NativeMessageDeliveryRow[] {
     const source = session.metadata?.bridge?.source;
@@ -14,7 +14,7 @@ export function nativeMessageDeliveryLog(messages: Message[], session: Session):
         if (raw && (!parsed.success || parsed.data.app !== source.app || parsed.data.nativeConversationId !== source.id
             || parsed.data.hostId !== source.hostId || parsed.data.machineId !== session.metadata?.machineId)) return [];
         const context = parsed.success ? parsed.data : null;
-        const status: CodeLightOperationStatus = message.deliveryUnconfirmed ? 'unknown' : message.sendError ? 'not-sent'
+        const status: CodelyncOperationStatus = message.deliveryUnconfirmed ? 'unknown' : message.sendError ? 'not-sent'
             : message.pending === false && session.metadata?.capabilities?.messageReceipts === true ? 'confirmed' : 'pending';
         return [{ id: `local-message:${message.localId}`, at: message.createdAt, status, context }];
     }).sort((a, b) => b.at - a.at).slice(0, 16);

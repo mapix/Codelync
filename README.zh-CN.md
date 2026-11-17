@@ -1,19 +1,36 @@
-# CodeLight
+# Codelync
 
-[网站与 Mac 下载](https://codelight.novarock.io/) · [源码](https://github.com/mapix/CodeLight) · [MIT 许可](LICENSE) · [English](README.md)
+[网站与 Mac 下载](https://codelync.novarock.io/) · [源码](https://github.com/mapix/Codelync) · [MIT 许可](LICENSE) · [English](README.md)
 
-CodeLight 同时支持 Codex、Antigravity Desktop 和 Claude Desktop（Gateway）
-的已有原生会话。在 iPhone 查看项目、会话和可用子代理日志，按各桌面应用的
+Codelync 面向已在 Codex、Antigravity Desktop 或 Claude Desktop 配置
+Gateway 模式的用户。在 iPhone 查看已有项目、会话和可用子代理日志，按各桌面应用的
 当前状态使用已确认的操作。接入一个应用不代表所有应用的控制完全相同；
-Claude Desktop 的完整正式控制仍在验证。CodeLight 不另起模型运行器，
+Claude Desktop 的完整正式控制仍在验证。Codelync 不另起模型运行器，
 不修改或重启原桌面应用。
+
+日常官方订阅使用推荐各厂商的官方 App。手机远程桌面默认隐藏，可在设置的
+功能开关中主动启用；Mac 的远控开关和系统权限仍需分别确认。
 
 CLI 家族、其他 harness 和窗口远控均为延期研究，历史记录不因此变成受支持会话。
 三桌面实现需构建当前源码。协议和实测边界见
 [Antigravity 接入合同](spec/antigravity-remote-control.md)和
 [Claude Desktop 接入合同](spec/claude-desktop-native.md)。
 
-源码仓库需访问权限，现有可见范围保持不变。
+源码仓库已在 GitHub 公开。
+
+## Gateway 发行范围
+
+这里的 Gateway 指原桌面模型请求所用的第三方推理网关，与 Codelync 的配对、
+Relay 和网络通道不同。
+
+| 桌面 | 当前发行面向 | 原生接入条件 |
+| --- | --- | --- |
+| Codex | 已配置 Gateway 模式的用户 | 已运行并核验的 Desktop IPC owner 与原会话身份 |
+| Antigravity Desktop | 已配置 Gateway 模式的用户 | 已运行并核验的原生 Language Server owner 与原会话身份 |
+| Claude Desktop | 当前仅接受已核验的 Gateway 模式；普通官方登录／非 Gateway 模式尚未支持 | 显式安装并核验的原生 owner bridge／runtime manifest，且当前有效 Gateway 配置通过校验 |
+
+各桌面的可用操作仍以原 owner 当前已确认的能力为准；Claude 的正式安装与
+完整原生控制验收仍有待完成。
 
 ## 当前发行
 
@@ -22,7 +39,7 @@ CLI 家族、其他 harness 和窗口远控均为延期研究，历史记录不�
 - 当前公开 Mac 下载 0.6.1 包含三桌面接入，各应用仅提供已确认的原生能力。
 - iPhone 客户端：目前需从源码构建并使用自己的 Apple 开发签名。
   尚无公开 App Store/TestFlight 发行，不提供带私人设备登记信息的开发 IPA。
-- 安装后在手机扫描 Mac 二维码，无需另外注册 CodeLight 账号或安装 VPN。
+- 安装后在手机扫描 Mac 二维码，无需另外注册 Codelync 账号或安装 VPN。
   一个二维码包含全部已启用地址。手机自动选择已验证的可用连接，也可以在
   “连接方式”面板随时手动切换，或恢复“自动”。
 
@@ -31,7 +48,7 @@ CLI 家族、其他 harness 和窗口远控均为延期研究，历史记录不�
 轻量状态；未知或断连状态保留“未确认”，不伪装为空闲。
 
 “接入来源”可独立选择 Codex、Antigravity Desktop 和 Claude Desktop（Gateway），
-默认三项全选，选择会保存。关闭来源只停止 CodeLight 对该来源的发现、观察和控制，
+默认三项全选，选择会保存。关闭来源只停止 Codelync 对该来源的发现、观察和控制，
 原应用与会话继续运行。重新启用读取当前来源状态，不重放旧命令。
 
 Mac 的“连接方式”通过复选框独立启用本地网络、Cloudflare 和已配置的 Relay。
@@ -71,8 +88,8 @@ iOS 首次询问本地网络权限时，请允许后再使用 LAN。Mac 重启�
 ## 构建与验证
 
 ```sh
-git clone https://github.com/mapix/CodeLight.git
-cd CodeLight
+git clone https://github.com/mapix/Codelync.git
+cd Codelync
 pnpm install --frozen-lockfile
 pnpm typecheck:all
 pnpm lint
@@ -98,5 +115,13 @@ Expo/React Native 客户端，`src` 为会话桥接，`packages/relay` 为嵌入
 性能基准记录的是合成历史下的 Mac CPU 与请求工作量，不代表已测得的
 iPhone 帧率、续航或温度，也不保证手机不会发热。
 
-CodeLight 是独立开源项目，不隶属于 OpenAI。基于 Happy 的 MIT 组件构建，
+Codelync 是独立开源项目，不隶属于 OpenAI。基于 Happy 的 MIT 组件构建，
 保留原许可证和第三方归属，详见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+
+## 来源与许可
+
+Codelync 原名 CodeLight。早期 iPhone 客户端和加密同步服务基于
+[Happy](https://github.com/slopus/happy) 的 MIT 许可源码改造，保留原版权和许可。
+详见[第三方说明](THIRD-PARTY-NOTICES.md)和[Happy 许可](licenses/Happy-LICENSE)。
+当前原生 Desktop 连接、配对通路恢复、Mac App 和原 owner 控制由本项目后续增加；
+第三方 Desktop 和模型运行时仍由原应用拥有，不随本项目分发。

@@ -4,7 +4,7 @@ Updated 2026-11-13 for the authorized Codex plus Antigravity scope.
 
 ## Original owner and compatibility
 
-CodeLight reads the existing Codex follower IPC owner. The running local app's
+Codelync reads the existing Codex follower IPC owner. The running local app's
 bundle version is read from its actual process path and verified
 `com.openai.codex` Info.plist, not a guessed application name or CLI version.
 Version display and native protocol support remain independent. A missing or

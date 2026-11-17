@@ -6,11 +6,11 @@ import { createCipheriv, createHash, createHmac, randomBytes } from 'node:crypto
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NativeHappyConnector } from '../src/happy/native-connector.mjs';
+import { NativeHappyConnector } from '../src/codelync/native-connector.mjs';
 import { CommandReceipts } from '../src/commands.mjs';
 import { BridgeError } from '../src/errors.mjs';
-import { encryptRecord, decryptRecord } from '../src/happy/session-transport.mjs';
-import { readObserverHistoryArchives } from '../src/happy/observer-history.mjs';
+import { encryptRecord, decryptRecord } from '../src/codelync/session-transport.mjs';
+import { readObserverHistoryArchives } from '../src/codelync/observer-history.mjs';
 
 /** @typedef {Record<string,any>} Value */
 class FixtureTransport extends EventEmitter {

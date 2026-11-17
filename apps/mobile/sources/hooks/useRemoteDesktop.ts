@@ -4,7 +4,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Room, RoomEvent, setLogLevel } from 'livekit-client';
 import { registerGlobals, RNKeyProvider, RNE2EEManager } from '@livekit/react-native';
 import { TokenStorage } from '@/auth/tokenStorage';
-import { getConnectionSnapshot, subscribeConnection } from '@/sync/codeLightConnection';
+import { getConnectionSnapshot, subscribeConnection } from '@/sync/codelyncConnection';
 import { desktopRequest, desktopBinding, DesktopRequestError, type DesktopStatus, type DesktopDisplay, type DesktopGrant, type DesktopInput, type DesktopQuality, type DesktopView, type DesktopSpaceAction } from '@/sync/remoteDesktop';
 import { DesktopInputQueue, DesktopInputQueueError, desktopInputAcknowledged } from '@/sync/desktopInputQueue';
 
@@ -185,5 +185,5 @@ export function useRemoteDesktop() {
             if (live.current === active) { setNotice(errorCode(failure)); setError(null); await recoverView(); }
         } finally { if (live.current === active) { requestPending.current = false; setBusy(false); } }
     }, [ready, adoptView, recoverView]);
-    return { status, displays, grant, room, busy, closing, ready, error, notice, quality, connect, disconnect, refresh, input, changeQuality, switchDisplay, navigateSpace, videoReady };
+    return { status, displays, grant, room, busy, closing, ready, inputAllowed: connection.writable !== false, error, notice, quality, connect, disconnect, refresh, input, changeQuality, switchDisplay, navigateSpace, videoReady };
 }

@@ -7,12 +7,12 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import nacl from 'tweetnacl';
 import { TokenVerifier } from 'livekit-server-sdk';
-import { RemoteDesktop, desktopConfiguration, desktopQuality } from '../src/happy/remote-desktop.mjs';
+import { RemoteDesktop, desktopConfiguration, desktopQuality } from '../src/codelync/remote-desktop.mjs';
 
 /** @typedef {Record<string,any>} Value */
 /** @param {import('node:test').TestContext} t */
 async function fixture(t) {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-desktop-'));
+  const state = await mkdtemp(join(tmpdir(), 'codelync-desktop-'));
   const mac = nacl.box.keyPair(), phone = nacl.box.keyPair(), other = nacl.box.keyPair();
   const devices = Object.assign(new EventEmitter(), { revoked: false, publicKey(/** @type {string} */ id) { return id === 'phone' && !this.revoked ? Buffer.from(phone.publicKey).toString('base64url') : id === 'other' ? Buffer.from(other.publicKey).toString('base64url') : null; } });
   const calls = /** @type {Value[]} */ ([]), relayCalls = /** @type {Value[]} */ ([]), display = { id: '1', name: 'Main display', width: 3000, height: 2000, geometry: 'geometry-1' };
@@ -78,7 +78,7 @@ test('joins produce device-bound restricted JWT and a fresh independent encrypti
   const claims = await new TokenVerifier('test-api-key', 'a'.repeat(64)).verify(grant.token);
   assert.ok(claims.video && claims.sub);
   assert.equal(claims.video.canPublish, false); assert.equal(claims.video.canPublishData, false);
-  assert.match(claims.sub, /^viewer-phone-/u); assert.equal(claims.video.room, 'codelight-desktop-' + grant.connectionId);
+  assert.match(claims.sub, /^viewer-phone-/u); assert.equal(claims.video.room, 'codelync-desktop-' + grant.connectionId);
   assert.equal(Buffer.from(grant.key, 'base64url').length, 32);
   assert.equal(grant.url, 'https://paired.example/r/012345678901234567890123/api/peer/desktop/media');
   assert.equal(JSON.stringify(f.desktop.status()).includes(grant.key), false);

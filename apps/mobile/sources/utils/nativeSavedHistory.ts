@@ -12,7 +12,7 @@ export const NativeSavedHistorySchema = z.object({
 export type NativeSavedHistory = z.infer<typeof NativeSavedHistorySchema>;
 
 /** Saved data availability never implies a native controller or current turn. */
-export function codeLightSavedHistory(session: Pick<Session, 'metadata'> | null | undefined): NativeSavedHistory | null {
+export function codelyncSavedHistory(session: Pick<Session, 'metadata'> | null | undefined): NativeSavedHistory | null {
     const metadata = session?.metadata, bridge = metadata?.bridge;
     const parsed = NativeSavedHistorySchema.safeParse(metadata?.nativeSavedHistory);
     if (!parsed.success || metadata?.client?.id !== 'noninvasive-bridge' || bridge?.sourceStatus !== 'history-only'

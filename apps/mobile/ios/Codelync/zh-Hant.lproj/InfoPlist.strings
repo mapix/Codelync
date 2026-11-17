@@ -1,0 +1,13 @@
+"NSCalendarsFullAccessUsageDescription" = "允許 Codelync 存取行事曆以改進 AI 體驗。";
+"NSCalendarsUsageDescription" = "允許 Codelync 存取行事曆以改進 AI 體驗。";
+"NSCameraUsageDescription" = "允許 Codelync 使用相機扫描QR 碼和分享照片。";
+"NSFaceIDUsageDescription" = "允許 Codelync 使用Face ID。";
+"NSLocalNetworkUsageDescription" = "允許 Codelync 尋找并連接區域網路中的裝置。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "允許 Codelync 使用位置以改進 AI 體驗。";
+"NSLocationAlwaysUsageDescription" = "允許 Codelync 使用位置以改進 AI 體驗。";
+"NSLocationWhenInUseUsageDescription" = "允許 Codelync 使用位置以改進 AI 體驗。";
+"NSMicrophoneUsageDescription" = "允許 Codelync 使用麥克風进行語音對話。";
+"NSMotionUsageDescription" = "允許 Codelync 存取裝置動作資料。";
+"NSPhotoLibraryUsageDescription" = "允許 Codelync 存取照片。";
+"NSRemindersFullAccessUsageDescription" = "允許 Codelync 存取提醒事項。";
+"NSRemindersUsageDescription" = "允許 Codelync 存取提醒事項。";

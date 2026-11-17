@@ -5,32 +5,32 @@ import { readFile, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import nacl from 'tweetnacl';
 import { io } from 'socket.io-client';
-import { LocalSourceDiscovery } from '../src/happy/discovery.mjs';
-import { CodeLightMacDaemon } from '../src/happy/mac-daemon.mjs';
+import { LocalSourceDiscovery } from '../src/codelync/discovery.mjs';
+import { CodelyncMacDaemon } from '../src/codelync/mac-daemon.mjs';
 import { AntigravityBackend } from '../src/adapters/antigravity-backend.mjs';
-import { HappySessionTransport, encryptRecord, decryptRecord } from '../src/happy/session-transport.mjs';
-import { sourceKey } from '../src/happy/source-registry.mjs';
+import { CodelyncSessionTransport, encryptRecord, decryptRecord } from '../src/codelync/session-transport.mjs';
+import { sourceKey } from '../src/codelync/source-registry.mjs';
 
 /** @typedef {Record<string,any>} Value */
 /** @param {()=>Promise<boolean>} condition @param {number} [timeout] */
 async function until(condition, timeout = 45000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 200)); }
-  throw Error('The isolated native CodeLight verification did not reach its expected state.');
+  throw Error('The isolated native Codelync verification did not reach its expected state.');
 }
 
 // Explicit opt-in sends one bounded test prompt to the copied desktop. It never
 // sends a prompt to Codex or the installed original Antigravity application.
-test('real isolated Antigravity over sealed CodeLight: dual discovery, native admission, once and encrypted projection',
-  { skip: process.env.CODELIGHT_ANTIGRAVITY_LIVE !== '1', timeout: 120000 }, async () => {
-    const root = process.env.CODELIGHT_ANTIGRAVITY_PROBE;
+test('real isolated Antigravity over sealed Codelync: dual discovery, native admission, once and encrypted projection',
+  { skip: process.env.CODELYNC_ANTIGRAVITY_LIVE !== '1', timeout: 120000 }, async () => {
+    const root = process.env.CODELYNC_ANTIGRAVITY_PROBE;
     assert.ok(root && root.startsWith('/'), 'Choose the prepared private probe directory.');
     const runtimePath = join(root, 'runtime.json');
     const runtime = JSON.parse(await readFile(runtimePath, 'utf8'));
     assert.equal(runtime.home, join(root, 'home'));
     assert.equal(runtime.binary, join(root, 'Antigravity Probe.app/Contents/Resources/bin/language_server'));
     const qa = JSON.parse(await readFile(join(root, 'qa-session.json'), 'utf8'));
-    const origin = process.env.CODELIGHT_ANTIGRAVITY_RELAY ?? 'http://127.0.0.1:57071';
+    const origin = process.env.CODELYNC_ANTIGRAVITY_RELAY ?? 'http://127.0.0.1:57071';
     const url = new URL(origin);
     assert.ok(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && url.port);
     const seed = new Uint8Array(randomBytes(32)), signer = nacl.sign.keyPair.fromSeed(seed), challenge = randomBytes(32);
@@ -41,11 +41,11 @@ test('real isolated Antigravity over sealed CodeLight: dual discovery, native ad
     const agy = new AntigravityBackend({ runtimePath });
     const discovery = new LocalSourceDiscovery({ antigravityBackend: agy });
     const directory = await mkdtemp(join(root, 'sealed-qa-'));
-    const codexId = process.env.CODELIGHT_ANTIGRAVITY_CODEX_ID;
-    const daemon = new CodeLightMacDaemon({ directory, leaseDirectory: join(directory, 'leases'), account, discovery,
+    const codexId = process.env.CODELYNC_ANTIGRAVITY_CODEX_ID;
+    const daemon = new CodelyncMacDaemon({ directory, leaseDirectory: join(directory, 'leases'), account, discovery,
       only: source => source.app === 'antigravity' && source.id === qa.cascadeId || source.app === 'codex' && source.id === codexId });
     const socket = io(origin, { path: '/v1/updates', auth: { token: account.token, clientType: 'user-scoped' }, transports: ['websocket'], autoConnect: false });
-    /** @type {HappySessionTransport|null} */ let peer = null;
+    /** @type {CodelyncSessionTransport|null} */ let peer = null;
     /** @param {string} method @param {Value} params */
     const machineCall = async (method, params) => {
       const reply = await socket.timeout(15000).emitWithAck('rpc-call', { method: `${daemon.machine?.id}:${method}`, params: encryptRecord(params, seed, 'legacy') });
@@ -58,16 +58,16 @@ test('real isolated Antigravity over sealed CodeLight: dual discovery, native ad
       if (codexId) assert.ok(entries.some(e => e.source.app === 'codex'), 'The selected real Codex source must also be discovered.');
       await new Promise((resolve, reject) => { socket.once('connect', () => resolve(undefined)); socket.once('connect_error', reject); socket.connect(); });
       const entry = entries.find(e => e.source.app === 'antigravity'); assert.ok(entry);
-      const selected = await machineCall('codelight-select-source', { sourceKey: sourceKey(entry.source), commandId: 'live-select-' + randomUUID(), selectionClient: 'isolated-native-qa', selectionSeq: 1 });
+      const selected = await machineCall('codelync-select-source', { sourceKey: sourceKey(entry.source), commandId: 'live-select-' + randomUUID(), selectionClient: 'isolated-native-qa', selectionSeq: 1 });
       assert.equal(selected.receipt.status, 'complete');
       assert.equal(selected.receipt.result.desktopSwitchRequested, false);
       const key = new Uint8Array(Buffer.from(entry.binding.sessionKey, 'base64'));
-      peer = new HappySessionTransport({ serverOrigin: origin, token: account.token, sessionId: entry.binding.happySessionId,
+      peer = new CodelyncSessionTransport({ serverOrigin: origin, token: account.token, sessionId: entry.binding.happySessionId,
         encryptionKey: key, statePath: join(directory, 'phone-transport.json'), pollMs: 0 });
       await peer.start();
       const localId = 'live-sealed-input-' + randomUUID();
-      const marker = 'CODELIGHT_SEALED_OK_' + randomUUID().slice(0, 8);
-      const message = { role: 'user', content: { type: 'text', text: `This is the final bounded isolated CodeLight sealed-transport check. Reply exactly ${marker}. Do not use any tools or change files.` } };
+      const marker = 'CODELYNC_SEALED_OK_' + randomUUID().slice(0, 8);
+      const message = { role: 'user', content: { type: 'text', text: `This is the final bounded isolated Codelync sealed-transport check. Reply exactly ${marker}. Do not use any tools or change files.` } };
       const ack = await peer.publish(localId, message);
       await until(async () => { await peer?.catchUp(); return !!peer?.listInbox().some((/** @type {Value} */ incoming) => incoming.record?.content?.ev?.t === 'user-message-accepted' && incoming.record.content.ev.ref === ack.id); });
       const accepted = peer.listInbox().find((/** @type {Value} */ incoming) => incoming.record?.content?.ev?.t === 'user-message-accepted' && incoming.record.content.ev.ref === ack.id);

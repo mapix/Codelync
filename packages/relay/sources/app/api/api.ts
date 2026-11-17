@@ -121,7 +121,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     if (opts.staticDir) {
         const fastifyStatic = (await import('@fastify/static')).default;
         const injectScript = opts.injectHtmlConfig
-            ? `<script>window.__HAPPY_CONFIG__ = ${JSON.stringify(opts.injectHtmlConfig)};</script>`
+            ? `<script>window.__CODELYNC_CONFIG__ = ${JSON.stringify(opts.injectHtmlConfig)};</script>`
             : null;
         app.register(fastifyStatic, {
             root: opts.staticDir,

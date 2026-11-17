@@ -6,10 +6,10 @@ import { TokenStorage } from '@/auth/tokenStorage';
 import { Encryption } from './encryption/encryption';
 import { storage } from './storage';
 import { config } from '@/config';
-import type { PeerCredentials } from '@slopus/happy-wire/codelight';
-import { peerAuthorization, decodePeerResponseAsync } from './peerNetwork';
+import type { PeerCredentials } from '@codelync/wire/codelync';
+import { peerAuthorization, decodePeerResponseAsync, assertPeerRouteWrite, peerRouteWriteRevision, peerRouteWritable, setPeerRouteWriteFence } from './peerNetwork';
 import { abortBudget } from './abortBudget';
-import { PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_CODEC_VALUE } from '@slopus/happy-wire/peer-codec';
+import { PEER_RESPONSE_CODEC_HEADER, PEER_RESPONSE_CODEC_VALUE } from '@codelync/wire/peer-codec';
 import { isNoninvasiveBridge } from './noninvasiveBridge';
 
 // The existing native read methods retain their transport behavior. Unknown
@@ -21,11 +21,11 @@ function nativeRpcNeedsLiveConnection(sessionId: string, method: string, pinnedP
     try {
         const session = storage.getState().sessions[sessionId];
         if (session) return isNoninvasiveBridge(session.metadata);
-    } catch { /* An unknown CodeLight source cannot acquire an offline write queue. */ }
+    } catch { /* An unknown Codelync source cannot acquire an offline write queue. */ }
     return !!config.noninvasiveLocal || pinnedPeer;
 }
 
-export function getHappyClientId(): string {
+export function getCodelyncClientId(): string {
     let platform: string = Platform.OS; // 'ios' | 'android' | 'web'
     if (platform === 'web' && typeof window !== 'undefined' && '__TAURI__' in window) {
         platform = 'desktop';
@@ -103,6 +103,8 @@ class ApiSocket {
     private intentionalDisconnect = false;
     private lastPeerConnectionError: { code: string; httpStatus?: number } | null = null;
     peerConnected() { return this.socket?.connected === true; }
+    peerWritable() { return this.peerConnected() && (!this.config?.peer || peerRouteWritable(this.config.peer, this.config.endpoint)); }
+    assertPeerWriteRoute(method: string) { if (this.config?.peer) assertPeerRouteWrite(this.config.peer, method, undefined, this.config.endpoint); }
     peerConnectionError() { return this.lastPeerConnectionError; }
     peerCanReconnect() { return !this.intentionalDisconnect; }
     peerIdentity() { return this.config?.peer?.id ? 'peer:' + this.config.peer.id : null; }
@@ -145,6 +147,9 @@ class ApiSocket {
     //
 
     initialize(config: SyncSocketConfig, encryption: Encryption) {
+        const active = config.peer?.channels.find(channel => channel.url === config.endpoint);
+        setPeerRouteWriteFence(config.peer?.automatic === false ? config.peer : null,
+            config.peer?.automatic === false && config.peer.selectedChannel === active?.id ? config.endpoint : null);
         this.config = config;
         this.encryption = encryption;
         this.connect();
@@ -181,7 +186,7 @@ class ApiSocket {
             auth: (cb) => cb({
                 ...(!connection.peer ? { token: connection.token } : {}),
                 clientType: 'user-scoped' as const,
-                happyClient: getHappyClientId(),
+                happyClient: getCodelyncClientId(),
                 appState: getCurrentAppState(),
             }),
             transports: ['websocket'],
@@ -273,6 +278,8 @@ class ApiSocket {
      */
     async sessionRPC<R, A>(sessionId: string, method: string, params: A, expectedServerUrl?: string): Promise<R> {
         const config = this.config, socket = this.socket, encryption = this.encryption;
+        const routeRevision = peerRouteWriteRevision();
+        if (config?.peer) assertPeerRouteWrite(config.peer, method, undefined, config.endpoint);
         const nativeWrite = nativeRpcNeedsLiveConnection(sessionId, method, !!config?.peer), connectionGeneration = this.writeConnectionGeneration;
         if (nativeWrite && !socket?.connected) throw Object.assign(new Error('Not connected to the computer'), { effectMayHaveOccurred: false });
         if (expectedServerUrl !== undefined && config?.endpoint !== expectedServerUrl) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
@@ -292,6 +299,7 @@ class ApiSocket {
         );
         // 加密是异步的；期间扫码切换连接后，旧请求不能随全局 socket 发到新账户/入口。
         if (config !== this.config || socket !== this.socket || encryption !== this.encryption) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
+        if (config?.peer) assertPeerRouteWrite(config.peer, method, routeRevision, config.endpoint);
         if (nativeWrite && (!socket?.connected || connectionGeneration !== this.writeConnectionGeneration)) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
         const result = await labelRpcStep(
             'sending the request',
@@ -311,6 +319,8 @@ class ApiSocket {
      */
     async machineRPC<R, A>(machineId: string, method: string, params: A, expectedServerUrl?: string): Promise<R> {
         const config = this.config, socket = this.socket, encryption = this.encryption;
+        const routeRevision = peerRouteWriteRevision();
+        if (config?.peer) assertPeerRouteWrite(config.peer, method, undefined, config.endpoint);
         if (expectedServerUrl !== undefined && config?.endpoint !== expectedServerUrl) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
         const machineEncryption = encryption!.getMachineEncryption(machineId);
         if (!machineEncryption) {
@@ -319,6 +329,7 @@ class ApiSocket {
 
         const encrypted = await labelRpcStep('encrypting the request', () => machineEncryption.encryptRaw(params));
         if (config !== this.config || socket !== this.socket || encryption !== this.encryption) throw Object.assign(new Error('RPC connection changed'), { effectMayHaveOccurred: false });
+        if (config?.peer) assertPeerRouteWrite(config.peer, method, routeRevision, config.endpoint);
         const result = await this.rpcCall(
             `${machineId}:${method}`,
             encrypted,
@@ -340,6 +351,7 @@ class ApiSocket {
     }
 
     send(event: string, data: any) {
+        if (this.config?.peer) assertPeerRouteWrite(this.config.peer, event, undefined, this.config.endpoint);
         this.socket!.emit(event, data);
         return true;
     }
@@ -370,7 +382,7 @@ class ApiSocket {
         if (connection.peer && credentials.peer?.id !== connection.peer.id) throw Error('The authenticated peer changed before this request');
         const url = `${connection.endpoint}${path}`;
         const headers = {
-            'X-Happy-Client': getHappyClientId(),
+            'X-Codelync-Client': getCodelyncClientId(),
             ...options?.headers,
             Authorization: connection.peer ? peerAuthorization(credentials.token, connection.peer, connection.endpoint, options?.method ?? 'GET', url) : `Bearer ${credentials.token}`,
         };

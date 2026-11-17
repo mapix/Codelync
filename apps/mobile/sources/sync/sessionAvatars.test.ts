@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const { decrypt } = vi.hoisted(() => ({ decrypt: vi.fn(() => new Uint8Array([97])) }));
 vi.mock('expo-crypto', () => ({ getRandomBytes: (size: number) => new Uint8Array(size) }));
 vi.mock("@/encryption/blob", () => ({ decryptBlob: decrypt }));
-vi.mock("./apiSocket", () => ({ getHappyClientId: () => "test" }));
+vi.mock("./apiSocket", () => ({ getCodelyncClientId: () => "test" }));
 vi.mock("./serverConfig", () => ({
   getServerUrl: () => "https://happy.test",
   rewriteLoopbackHost: (url: string) => url,

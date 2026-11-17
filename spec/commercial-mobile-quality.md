@@ -3,7 +3,7 @@
 ## Scope and ownership
 
 The mobile surface presents verified original Codex, Antigravity and Claude
-Desktop Gateway sources through CodeLight's existing paired peer and gateways.
+Desktop Gateway sources through Codelync's existing paired peer and gateways.
 CLI/TUI sources and official Claude cloud/onboarding routes are deferred. A
 Gateway variant label uses original-owner evidence rather than a guessed route.
 A source is listed
@@ -29,10 +29,10 @@ build/install operations are coordinated before mutation.
 
 An unsigned validation build is not an install-ready replacement for the paired
 simulator app. Before installation the artifact uses Xcode's simulated Mach-O
-entitlements section for the existing CodeLight application identifier and group:
-`SIMULATOR.com.learnings.codelight`. Its signed identifier is
-`com.learnings.codelight`; Info.plist binding and the `__TEXT,__entitlements`
-section are verified against `native/codelight-simulator.entitlements`. The
+entitlements section for the existing Codelync application identifier and group:
+`SIMULATOR.com.learnings.codelync`. Its signed identifier is
+`com.learnings.codelync`; Info.plist binding and the `__TEXT,__entitlements`
+section are verified against `native/codelync-simulator.entitlements`. The
 SIMULATOR identity is not written as physical code-signing entitlements.
 
 The reusable simulator signing step rejects physical-device and unrelated app
@@ -50,7 +50,7 @@ read callers continue to fail closed as read errors.
 Build recipe: compile Release with `CODE_SIGN_ENTITLEMENTS` pointing to the
 simulator file, `CODE_SIGN_STYLE=Automatic`, `CODE_SIGN_IDENTITY=-` and
 `ONLY_ACTIVE_ARCH=YES`; this supplies the simulated linker section. Then run
-`node scripts/sign-codelight-simulator.mjs /absolute/path/Happydev.app`, then
+`node scripts/sign-codelync-simulator.mjs /absolute/path/Codelync.app`, then
 install only a verified result. This step never signs an original desktop app or
 a physical iPhone artifact and never reads credential values.
 
@@ -131,7 +131,7 @@ read-only, including Claude; task progress never makes it editable.
 An original native source with an explicit owner capability
 `capabilities.readOnly: true` also has a static composer, including an ordinary
 Claude parent. This capability is accepted only with verified original native
-source identity and the CodeLight bridge client. The composer preserves any
+source identity and the Codelync bridge client. The composer preserves any
 existing local draft, disables editing and exposes no Send or Stop action.
 An absent or false marker does not make a parent read-only. Temporary send/cancel
 unavailability, a disconnected owner and readonly model observation do not
@@ -196,7 +196,7 @@ or remote/cloud relationships. The UI does not infer those modes from a title.
   failed attempt into an endless spinner.
 - Connecting/loading is tied to a bounded active attempt. A completed read from
   an unavailable source shows unavailable; it does not imply empty history.
-- A missing CodeLight native catalog entry or retired namespace does not prove
+- A missing Codelync native catalog entry or retired namespace does not prove
   permanent deletion. The view says unavailable (or loading during discovery),
   retains known source context and local content, and offers read retry / return
   to the directory. No synthetic live session or control owner is created.

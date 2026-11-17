@@ -2,7 +2,7 @@ import { apiSocket } from './apiSocket';
 import { getServerUrl } from './serverConfig';
 import { storage } from './storage';
 import { NativeTaskLogPageSchema, NativeTaskReadReplySchema, NativeTaskOutputSchema, type NativeTaskScope } from './nativeTasks';
-import { captureCurrentNativeTaskScope, nativeTaskScopesEqual } from '@/utils/codeLightNativeTasks';
+import { captureCurrentNativeTaskScope, nativeTaskScopesEqual } from '@/utils/codelyncNativeTasks';
 import type { Session } from './storageTypes';
 
 type Context = { current(id: string): Session | undefined; authority(): string;

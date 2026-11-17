@@ -83,7 +83,7 @@ describe('session row press contract', () => {
         expect(mocks.preloadSession).not.toHaveBeenCalled();
     });
 
-    it('requests a fresh desktop switch for each A-B-A selection and skips it outside CodeLight', () => {
+    it('requests a fresh desktop switch for each A-B-A selection and skips it outside Codelync', () => {
         handlers.onPress();
         act(() => renderer.update(React.createElement(Harness, { id: 'b' })));
         handlers.onPress();
@@ -112,7 +112,7 @@ describe('session row press contract', () => {
         expect(mocks.router.push).toHaveBeenCalledWith('/session/a%2Fb%3Fc', { dangerouslySingular: singularSessionRoute });
     });
 
-    it('keeps one session route in CodeLight and web while preserving other native pushes', () => {
+    it('keeps one session route in Codelync and web while preserving other native pushes', () => {
         mocks.platform.OS = 'web';
         handlers.onPress();
         expect(mocks.router.push).toHaveBeenCalledWith('/session/a', {

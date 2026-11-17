@@ -5,7 +5,7 @@ import { NativeQuerySchema } from '@/utils/nativeQuery';
 import { NativeTaskSignalSchema, NativeTasksSchema } from './nativeTasks';
 import { NativeObservedModelSchema } from '@/utils/nativeObservedModel';
 import { NoninvasiveBridgeSchema } from './noninvasiveBridge';
-import { RigBotSchema } from '@slopus/happy-wire';
+import { RigBotSchema } from '@codelync/wire';
 import type { SessionAvatarDescriptor } from './sessionAvatarTypes';
 import type { ProjectAvatar } from './projectTypes';
 import { NativeSubagentSchema, NativeAggregateActivitySchema } from './nativeSubagents';
@@ -549,7 +549,7 @@ export interface DecryptedMessage {
 //
 
 export const MachineMetadataSchema = z.object({
-    codeLight: z.object({ codexOnly: z.boolean().optional(), projectActivityVersion: z.number().int().nonnegative().optional() }).passthrough().optional(),
+    codelync: z.object({ codexOnly: z.boolean().optional(), projectActivityVersion: z.number().int().nonnegative().optional() }).passthrough().optional(),
     host: z.string(),
     platform: z.string(),
     happyCliVersion: z.string(),

@@ -25,7 +25,7 @@ async function checkNetwork(settings) {
   const response = await fetch(`https://${settings.RELAY_DOMAIN}/relay/v1/info`, options);
   if (!response.ok) throw Error(`Relay discovery returned HTTP ${response.status}.`);
   const info = await response.json();
-  if (info.service !== 'codelight-network-relay' || info.version !== 1 || info.http !== true
+  if (info.service !== 'codelync-network-relay' || info.version !== 1 || info.http !== true
     || info.websocket !== true || info.requiresToken !== true) throw Error('Wrong relay service or protocol.');
   const health = await fetch(`https://${settings.RELAY_DOMAIN}/healthz`, { ...options, signal: AbortSignal.timeout(10_000) });
   if (!health.ok || (await health.text()).trim() !== 'ok') throw Error('Relay health check failed.');
@@ -35,7 +35,7 @@ try {
   const settings = await readSettings();
   /** @type {[string,()=>Promise<void>][]} */ const checks = [];
   if (settings.MEDIA_DOMAIN) checks.push(['LiveKit RoomService', () => checkMedia(settings)]);
-  if (settings.RELAY_DOMAIN) checks.push(['CodeLight Relay HTTP discovery', () => checkNetwork(settings)]);
+  if (settings.RELAY_DOMAIN) checks.push(['Codelync Relay HTTP discovery', () => checkNetwork(settings)]);
   const results = await Promise.allSettled(checks.map(async ([label, check]) => {
     await check(); process.stdout.write(`${label}: passed\n`);
   }));

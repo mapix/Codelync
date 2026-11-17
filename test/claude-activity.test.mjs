@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ClaudeActivityObserver } from '../src/adapters/claude-activity.mjs';
-import { NativeProjectActivityService } from '../src/happy/project-activity.mjs';
+import { NativeProjectActivityService } from '../src/codelync/project-activity.mjs';
 
 /** @typedef {Record<string,any>} Value */
 test('Claude foreground activity shares bounded header reads and never opens transcripts', async () => {

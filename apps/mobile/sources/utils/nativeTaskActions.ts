@@ -1,6 +1,6 @@
 import type { Session } from '@/sync/storageTypes';
 import type { NativeTasks, NativeTaskScope } from '@/sync/nativeTasks';
-import { captureCurrentNativeTaskScope, nativeTaskScopesEqual, projectCodeLightNativeTasks } from './codeLightNativeTasks';
+import { captureCurrentNativeTaskScope, nativeTaskScopesEqual, projectCodelyncNativeTasks } from './codelyncNativeTasks';
 import { nativeComposerInputReadOnly } from './nativeComposerInputReadOnly';
 
 export type NativeTaskAction = 'output' | 'stop';
@@ -11,7 +11,7 @@ export function nativeTaskActionAllowed(view: NativeTaskActionView, scope: Nativ
     const { session, native, active } = view, current = captureCurrentNativeTaskScope(session), capabilities = session?.metadata?.capabilities;
     if (!active || !session || !capabilities || !current || !nativeTaskScopesEqual(current, scope)
         || action === 'stop' && (capabilities.readOnly !== false || nativeComposerInputReadOnly(session))) return false;
-    const projected = projectCodeLightNativeTasks(session, native), controls = capabilities.nativeTaskControls;
+    const projected = projectCodelyncNativeTasks(session, native), controls = capabilities.nativeTaskControls;
     const row = projected.available ? projected.rows.find(row => row.nativeTaskId === taskId) : undefined;
     const method = action === 'output' ? 'native-task-output-read' : 'native-task-stop';
     const types = action === 'output' ? controls?.outputTaskTypes : controls?.stopTaskTypes;

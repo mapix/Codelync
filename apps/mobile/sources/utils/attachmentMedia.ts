@@ -32,7 +32,7 @@ export function attachmentMediaKind(value: AttachmentMediaMetadata): AttachmentM
 }
 
 export function safeAttachmentName(name: string): string {
-    return (name.split(/[\\/]/).pop() ?? '').replace(/[^\p{L}\p{N}._ -]/gu, '_').replace(/^\.+/, '').slice(0, 100) || 'CodeLight-file';
+    return (name.split(/[\\/]/).pop() ?? '').replace(/[^\p{L}\p{N}._ -]/gu, '_').replace(/^\.+/, '').slice(0, 100) || 'Codelync-file';
 }
 
 export function attachmentByteLabel(size?: number): string | null {

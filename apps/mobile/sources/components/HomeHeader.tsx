@@ -4,7 +4,7 @@ import { Platform, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useSegments } from 'expo-router';
 import { getServerInfo } from '@/sync/serverConfig';
-import { CodeLightMark } from './CodeLightMark';
+import { CodelyncMark } from './CodelyncMark';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { t } from '@/text';
 import { ShortcutHintBadge, useShortcutHints } from './ShortcutHints';
@@ -126,7 +126,7 @@ function HeaderLeft() {
     const { theme } = useUnistyles();
     return (
         <View style={styles.logoContainer}>
-            <CodeLightMark size={HEADER_LOGO_SIZE} />
+            <CodelyncMark size={HEADER_LOGO_SIZE} />
         </View>
     );
 }

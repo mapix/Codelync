@@ -10,7 +10,7 @@ operation and has no child follow-up branch. Owner discovery's
 input capability. The shipped v2 child view defaults to `canInteract: false`.
 Continuation belongs to the existing parent's model-side `followup_task` control.
 
-CodeLight recognizes the original child provenance from
+Codelync recognizes the original child provenance from
 `source.subAgent.thread_spawn.agent_path` and its recorded parent, with
 `threadSource: subagent`. It publishes a source/owner-bound `nativeInput` record
 with `available: false`, `reason: parent-owned-subagent`, the original parent ID

@@ -5,10 +5,10 @@ import { expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ select: vi.fn(), visible: vi.fn(), state: 'connecting', progress: 'idle', connected: true, recovering: false, revalidating:false, revalidationFailed:false, session: { id: 'test-session', metadata: { bridge: { sourceStatus: 'owner-unavailable' } } } }));
 vi.mock('react-native', () => ({ ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable', Text: 'Text', View: 'View' }));
 vi.mock('react-native-unistyles', () => ({ useUnistyles: () => ({ theme: { colors: { text: 'black', textSecondary: 'gray', groupped: { background: 'white' } } } }) }));
-vi.mock('@/sync/codeLightSessionSelection', () => ({ selectCodeLightSession: mocks.select, useCodeLightSelectionState: () => mocks.state }));
+vi.mock('@/sync/codelyncSessionSelection', () => ({ selectCodelyncSession: mocks.select, useCodelyncSelectionState: () => mocks.state }));
 vi.mock('@/sync/storage', () => ({ useSession: () => mocks.session, useSocketStatus: () => ({ status: mocks.connected ? 'connected' : mocks.recovering ? 'connecting' : 'error' }) }));
-vi.mock('@/sync/codeLightLoadingProgress', () => ({ useCodeLightMessageProgress: () => ({ phase: mocks.progress, revalidating:mocks.revalidating,revalidationFailed:mocks.revalidationFailed }) }));
-vi.mock('@/sync/sync', () => ({ sync: { retryCodeLightSession: mocks.visible } }));
+vi.mock('@/sync/codelyncLoadingProgress', () => ({ useCodelyncMessageProgress: () => ({ phase: mocks.progress, revalidating:mocks.revalidating,revalidationFailed:mocks.revalidationFailed }) }));
+vi.mock('@/sync/sync', () => ({ sync: { retryCodelyncSession: mocks.visible } }));
 vi.mock('@/constants/Typography', () => ({ Typography: { default: () => ({}) } }));
 vi.mock('@/text', () => ({ getCurrentLanguage: () => 'en', t: (value: string) => value }));
 vi.mock('./NativeParentControl', () => ({ NativeParentControl: 'ParentControl' }));
@@ -44,7 +44,7 @@ it('idle selection failure Retry only reads messages and coalesces repeated pres
     mocks.state = 'failed'; mocks.progress = 'idle'; mocks.connected = true; mocks.recovering = false;
     mocks.select.mockClear(); mocks.visible.mockClear();
     let renderer!: ReturnType<typeof create>; act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
-    const retry = renderer.root.findByProps({ testID: 'codelight-retry-session-sync' }).props.onPress;
+    const retry = renderer.root.findByProps({ testID: 'codelync-retry-session-sync' }).props.onPress;
     await act(async () => { retry(); retry(); });
     expect(mocks.visible).toHaveBeenCalledExactlyOnceWith('test-session'); expect(mocks.select).not.toHaveBeenCalled();
     act(() => renderer.unmount());
@@ -53,7 +53,7 @@ it('socket failure does not replace an in-flight source read with a connection e
     mocks.state = 'connecting'; mocks.progress = 'idle'; mocks.connected = false; mocks.recovering = false;
     let renderer!: ReturnType<typeof create>; act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
     expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(1);
-    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.messages');
+    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codelyncLoading.messages');
     act(() => renderer.unmount()); mocks.connected = true;
 });
 it('retries a failed message read without repeating a failed desktop selection', async () => {
@@ -61,7 +61,7 @@ it('retries a failed message read without repeating a failed desktop selection',
     let renderer!: ReturnType<typeof create>;
     act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
     const button = renderer.root.findByType('Pressable');
-    expect(button.props.testID).toBe('codelight-retry-session-sync'); expect(button.props.style.minHeight).toBe(44);
+    expect(button.props.testID).toBe('codelync-retry-session-sync'); expect(button.props.style.minHeight).toBe(44);
     expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('common.retry');
     await act(async () => { button.props.onPress(); }); expect(mocks.select).not.toHaveBeenCalled();
     expect(mocks.visible).toHaveBeenCalledWith('test-session');
@@ -72,7 +72,7 @@ it('cached disconnection and an older error show synchronization while a new rea
     let renderer!: ReturnType<typeof create>;
     act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
     expect(renderer.root.findAllByType('Pressable')).toHaveLength(0);
-    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.messages');
+    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codelyncLoading.messages');
     act(() => renderer.unmount());
 });
 it('a current fresh-read failure offers a read Retry without another desktop navigation', () => {
@@ -126,7 +126,7 @@ it('a new queued message read masks the previous completed unavailable source', 
     act(() => { renderer = create(React.createElement(NativeSourceBanner, { sessionId: 'test-session' })); });
     expect(renderer.root.findAllByType('Pressable')).toHaveLength(0);
     expect(renderer.root.findAllByType('ActivityIndicator')).toHaveLength(1);
-    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codeLightLoading.messages');
+    expect(renderer.root.findAllByType('Text').map((node: any) => node.props.children)).toContain('codelyncLoading.messages');
     act(() => renderer.unmount());
 });
 

@@ -3,7 +3,7 @@ const { getItem, setItem, deleteItem, origin } = vi.hoisted(() => ({ getItem: vi
 vi.mock('expo-secure-store', () => ({ getItemAsync: getItem, setItemAsync: setItem, deleteItemAsync: deleteItem, AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 6 }));
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' }, AppState: { currentState: 'active' } }));
 vi.mock('@/config', () => ({ config: { noninvasiveLocal: true } }));
-vi.mock('@/sync/codeLightBackgroundCache', () => ({ clearCodeLightBackgroundCache: vi.fn() }));
+vi.mock('@/sync/codelyncBackgroundCache', () => ({ clearCodelyncBackgroundCache: vi.fn() }));
 vi.mock('@/sync/serverConfig', () => ({ getServerUrl: () => origin.current }));
 import { TokenStorage } from './tokenStorage';
 afterEach(() => { getItem.mockReset(); setItem.mockReset(); deleteItem.mockReset(); origin.current = 'https://fixture.example'; });
@@ -15,7 +15,16 @@ it('does not return stored credentials bound to another selected server', async 
 it('stores credentials with the frozen selected server origin', async () => {
     setItem.mockResolvedValue(undefined);
     expect(await TokenStorage.setCredentials({ token: 'fixture-token', secret: 'fixture-secret' })).toBe(true);
+    expect(setItem.mock.calls[0][0]).toBe('codelync_auth_credentials_v1');
     expect(JSON.parse(setItem.mock.calls[0][1])).toMatchObject({ serverUrl: 'https://fixture.example' });
+});
+it('does not read or migrate credentials from the previous product namespace', async () => {
+    const previous = JSON.stringify({ token: 'fixture-token', secret: 'fixture-secret', serverUrl: origin.current });
+    getItem.mockImplementation(async (key: string) => key === 'auth_credentials' ? previous : null);
+    expect(await TokenStorage.readCredentials()).toEqual({ status: 'missing', credentials: null });
+    expect(getItem.mock.calls).toEqual([['codelync_auth_credentials_v1']]);
+    expect(setItem).not.toHaveBeenCalled();
+    expect(deleteItem).not.toHaveBeenCalled();
 });
 it('returns failure when native secure storage rejects the credential write', async () => {
     setItem.mockRejectedValue(Error('fixture Keychain unavailable'));

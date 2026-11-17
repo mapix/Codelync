@@ -1,7 +1,7 @@
 import nacl from 'tweetnacl';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { encodeCompactPeerPlaintext } from '@slopus/happy-wire/peer-codec';
+import { encodeCompactPeerPlaintext } from '@codelync/wire/peer-codec';
 const native = vi.hoisted(() => ({ available: true, decode: vi.fn() }));
 vi.mock('expo-crypto', () => ({ getRandomBytes: (count: number) => new Uint8Array(count).fill(9) }));
 vi.mock('@/encryption/nativePeerPayload', () => ({ nativePeerPayloadAvailable: () => native.available, decodeNativePeerPayload: native.decode }));

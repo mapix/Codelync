@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('axios', () => ({ default: { get, post } }));
 vi.mock('@/sync/serverConfig', () => ({ getServerUrl: () => 'https://fixture.example' }));
-vi.mock('@/sync/apiSocket', () => ({ getHappyClientId: () => 'fixture' }));
+vi.mock('@/sync/apiSocket', () => ({ getCodelyncClientId: () => 'fixture' }));
 import { authApprove } from './authApprove';
 afterEach(() => { get.mockReset(); post.mockReset(); });
 
-describe('CodeLight pairing request state', () => {
+describe('Codelync pairing request state', () => {
     it('does not report an absent or wrong-server link as success', async () => {
         get.mockResolvedValue({ data: { status: 'not_found', supportsV2: false } });
         await expect(authApprove('test-token', new Uint8Array(32), new Uint8Array(2), new Uint8Array(3))).rejects.toThrow('same server');

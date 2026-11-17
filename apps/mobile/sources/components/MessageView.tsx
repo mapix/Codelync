@@ -18,7 +18,7 @@ import { Typography } from '@/constants/Typography';
 import { parseLocalCommandMessage, isUserSlashCommandEcho } from './parseLocalCommandMessage';
 import { resolveUserMessageBubbleColor } from '@/utils/userMessageBubbleColor';
 import { LongPressCopyable } from './LongPressCopyable';
-import { CodeLightHandoff } from './CodeLightHandoff';
+import { CodelyncHandoff } from './CodelyncHandoff';
 import { nativeSubagentInputReadOnly } from '@/utils/nativeParentControl';
 import { nativeReadingControlsUnavailable, nativeReadingControlScope } from '@/utils/nativeReadingWindow';
 import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
@@ -303,7 +303,7 @@ function AgentTextBlock(props: {
       <MarkdownView markdown={props.message.text} onOptionPress={handleOptionPress} optionsDisabled={optionsDisabled} sessionId={props.sessionId} />
       <View style={styles.agentActions}>
         <MessageCopyButton text={props.message.text} />
-        <CodeLightHandoff sessionId={props.sessionId} metadata={props.metadata} message={props.message} />
+        <CodelyncHandoff sessionId={props.sessionId} metadata={props.metadata} message={props.message} />
       </View>
     </View>
   );

@@ -1,6 +1,6 @@
 # Native 输入回显与验收
 
-## 2026-10-29 CodeLight 验证
+## 2026-10-29 Codelync 验证
 
 XCTest 在点击发送前检查输入，发现高速输入 `Reply` 成为 `Rply`。未发送丢字内容。NativeTextField 的 native 文本由原 TextInput 拥有，但父组件较旧的 value 回显可能与较新的 native edit 同时到达；当前命令使用最新 eventCount，不能把旧回显当作用户的程序化修改覆盖新编辑。
 

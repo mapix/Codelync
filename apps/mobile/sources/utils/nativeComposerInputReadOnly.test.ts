@@ -6,7 +6,7 @@ import { nativeComposerInputReadOnly } from './nativeComposerInputReadOnly';
 function parent(readOnly: boolean | undefined = true) {
     return { draft: 'PRESERVED_LOCAL_DRAFT', metadata: MetadataSchema.parse({
         ...rigMetadataFixture,
-        client: { id: 'noninvasive-bridge', name: 'CodeLight', version: '0.6.0' },
+        client: { id: 'noninvasive-bridge', name: 'Codelync', version: '0.6.0' },
         bridge: { version: 1, controlMode: 'session', sourceStatus: 'connected', currentTurnId: null,
             source: { app: 'claude-desktop', id: 'native-parent', hostId: 'local:claude-desktop:' + 'a'.repeat(64),
                 kind: 'session', protocol: 'claude-desktop-native', appMode: 'code', nativeCollection: 'claude-code-sessions',

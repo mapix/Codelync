@@ -10,7 +10,7 @@ import { AuthCredentials, TokenStorage } from '@/auth/tokenStorage';
 import { retainedConnectionBootstrap } from '@/auth/retainedConnectionBootstrap';
 import { NativeStoredConnectionUnavailable } from '@/components/NativeStoredConnectionUnavailable';
 import { AuthProvider } from '@/auth/AuthContext';
-import { CodeLightPairingProvider } from '@/auth/CodeLightPairingProvider';
+import { CodelyncPairingProvider } from '@/auth/CodelyncPairingProvider';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { initialWindowMetrics, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -371,7 +371,8 @@ export default function RootLayout() {
                 '[PUSH ROUTING] notification.request.content.data:\n' +
                 stringifyNotificationPayload(response.notification.request.content.data)
             );
-            const route = getSessionRouteFromNotificationResponse(response, config.noninvasiveLocal ? getServerUrl() : undefined);
+            const credentials = config.noninvasiveLocal ? await TokenStorage.getCredentials() : null;
+            const route = getSessionRouteFromNotificationResponse(response, config.noninvasiveLocal ? getServerUrl() : undefined, credentials?.peer?.id);
             console.log(`[PUSH ROUTING] Computed route: ${route ?? 'null'}`);
             if (!route) {
                 console.log('[PUSH ROUTING] No session route found in notification.request.content.data');
@@ -468,7 +469,7 @@ export default function RootLayout() {
                         : { flex: 1, backgroundColor: theme.colors.groupped.background }}
                 >
                     <AuthProvider initialCredentials={initState.credentials}>
-                        <CodeLightPairingProvider>
+                        <CodelyncPairingProvider>
                         <ThemeProvider value={navigationTheme}>
                             <StatusBarProvider />
                             <ModalProvider>
@@ -482,7 +483,7 @@ export default function RootLayout() {
                                 </CommandPaletteProvider>
                             </ModalProvider>
                         </ThemeProvider>
-                        </CodeLightPairingProvider>
+                        </CodelyncPairingProvider>
                     </AuthProvider>
                 </GestureHandlerRootView>
             </KeyboardProvider>

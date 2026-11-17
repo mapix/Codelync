@@ -9,7 +9,7 @@ vi.mock('./serverConfig', () => ({
 
 // Mock apiSocket to avoid pulling React Native modules into this unit test.
 vi.mock('./apiSocket', () => ({
-    getHappyClientId: () => 'test-client'
+    getCodelyncClientId: () => 'test-client'
 }));
 
 // Mock backoff utility
@@ -51,7 +51,7 @@ describe('apiGithub', () => {
                     method: 'DELETE',
                     headers: {
                         'Authorization': 'Bearer test-token',
-                        'X-Happy-Client': 'test-client'
+                        'X-Codelync-Client': 'test-client'
                     }
                 }
             );

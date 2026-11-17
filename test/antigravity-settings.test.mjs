@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { AntigravitySettings } from '../src/adapters/antigravity-settings.mjs';
 import { AntigravityBackend, projectAntigravityTrajectory } from '../src/adapters/antigravity-backend.mjs';
 import { antigravityHostId } from '../src/adapters/antigravity-rpc.mjs';
-import { NativeHappyConnector } from '../src/happy/native-connector.mjs';
+import { NativeHappyConnector } from '../src/codelync/native-connector.mjs';
 import { CommandReceipts } from '../src/commands.mjs';
 
 /** @typedef {Record<string,any>} Value */

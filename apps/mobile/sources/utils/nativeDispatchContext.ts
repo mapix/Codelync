@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Session } from '../sync/storageTypes';
-import { isCodeLightSessionSource } from './codeLightSourceScope';
+import { isCodelyncSessionSource } from './codelyncSourceScope';
 
 export const NativeDispatchContextSchema = z.object({
     version: z.literal(1), app: z.enum(['codex', 'antigravity', 'claude-desktop']), nativeConversationId: z.string().min(1).max(512),
@@ -13,7 +13,7 @@ export type NativeDispatchContext = z.infer<typeof NativeDispatchContextSchema>;
 export function captureNativeDispatchContext(session: Pick<Session, 'metadata'> | null | undefined): NativeDispatchContext | null {
     const metadata = session?.metadata, bridge = metadata?.bridge, source = bridge?.source;
     if (metadata?.client?.id !== 'noninvasive-bridge' || bridge?.controlMode !== 'session' || bridge.sourceStatus !== 'connected'
-        || !isCodeLightSessionSource(source, bridge.controlMode)) return null;
+        || !isCodelyncSessionSource(source, bridge.controlMode)) return null;
     const parsed = NativeDispatchContextSchema.safeParse({ version: 1, app: source?.app, nativeConversationId: source?.id,
         hostId: source?.hostId, machineId: metadata.machineId, ownerGeneration: source?.runtimeGeneration,
         ...(source?.app === 'claude-desktop' ? { protocol: source.protocol, nativeCollection: source.nativeCollection } : {}) });

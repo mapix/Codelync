@@ -5,10 +5,42 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConnectionChannelsManager } from '../src/network/connection-channels.mjs';
-import { writeDurablePrivateJson } from '../src/happy/discovery-persistence.mjs';
+import { writeDurablePrivateJson } from '../src/codelync/discovery-persistence.mjs';
 
 /** @typedef {Record<string,any>} Value */
 function deferred() { let resolve = /** @type {(value:any)=>void} */ (() => {}), reject = /** @type {(error:Error)=>void} */ (() => {}); const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
+
+test('startup DNS propagation retries only the unverified Cloudflare proof and stops when ready', async t => {
+  let cloudflareProofs = 0;
+  const f = await fixture(t, { verify: (/** @type {string} */ kind) => {
+    if (kind === 'cloudflare' && ++cloudflareProofs === 1) throw Error('temporary-DNS-not-ready');
+  } });
+  f.manager.retryInitialMs = 2; f.manager.retryMaxMs = 8;
+  await f.manager.load();
+  await until(() => f.manager.snapshot().channels.some(row => row.kind === 'cloudflare' && row.state === 'ready'));
+  assert.equal(cloudflareProofs, 2);
+  assert.equal(f.manager.retryTimers.has('cloudflare'), false);
+  assert.equal(f.transports.filter(row => row.config.kind === 'cloudflare').length, 1);
+});
+
+test('a live Cloudflare process losing its last edge keeps its URL and rejects late proof readiness', async t => {
+  const slow = deferred(); let proofs = 0;
+  const f = await fixture(t, { verify: async (/** @type {string} */ kind) => {
+    if (kind === 'cloudflare' && ++proofs > 1) await slow.promise;
+  } });
+  await f.manager.load(); await until(() => f.manager.snapshot().channels.some(row => row.kind === 'cloudflare' && row.state === 'ready'));
+  const transport = f.transports.find(row => row.config.kind === 'cloudflare'); assert.ok(transport);
+  const origin = f.manager.candidates().find(row => row.kind === 'cloudflare')?.url;
+  transport.emit('reconnecting');
+  assert.equal(f.manager.snapshot().channels.find(row => row.kind === 'cloudflare')?.state, 'reconnecting');
+  transport.emit('connected'); await until(() => proofs === 2);
+  transport.emit('reconnecting'); slow.resolve(undefined); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.manager.snapshot().channels.find(row => row.kind === 'cloudflare')?.state, 'reconnecting');
+  assert.equal(f.manager.candidates().find(row => row.kind === 'cloudflare')?.url, origin);
+  assert.equal(transport.closed, false);
+  transport.emit('connected'); await until(() => f.manager.snapshot().channels.find(row => row.kind === 'cloudflare')?.state === 'ready');
+  assert.equal(f.transports.filter(row => row.config.kind === 'cloudflare').length, 1);
+});
 /** @param {()=>boolean} predicate */
 async function until(predicate) { for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.ok(predicate()); }
 class Transport extends EventEmitter {
@@ -21,7 +53,7 @@ class Transport extends EventEmitter {
 }
 /** @param {import('node:test').TestContext} t @param {Value} [controls] */
 async function fixture(t, controls = {}) {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-channels-')), transports = /** @type {Transport[]} */ ([]), local = { channels: [{ id: 'lan-fixture', kind: 'local', url: 'http://192.168.50.2:8080', label: 'Local network' }], closed: false, close() { this.closed = true; } };
+  const state = await mkdtemp(join(tmpdir(), 'codelync-channels-')), transports = /** @type {Transport[]} */ ([]), local = { channels: [{ id: 'lan-fixture', kind: 'local', url: 'http://192.168.50.2:8080', label: 'Local network' }], closed: false, close() { this.closed = true; } };
   const manager = new ConnectionChannelsManager({ state, cloudflared: 'unused', upstreamFor: kind => 'http://127.0.0.1:' + (kind === 'cloudflare' ? '1001' : '1002'),
     probesFor: kind => ({ verify: async (url, signal) => { if (signal?.aborted) throw Error('cancelled'); if (controls.verify) await controls.verify(kind, url); } }),
     startLocal: async signal => { if (signal.aborted) throw Error('cancelled'); return controls.localStart ? await controls.localStart : local; },

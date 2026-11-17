@@ -14,7 +14,7 @@ discovery display, source selection, observation activation and composer gates.
   source key. Repeated selection does not navigate or discard the current draft.
 - Antigravity submit/stop capability checks share the existing native composer
   and receipt seam. Unverified or disconnected owners cannot accept submissions.
-- CodeLight hides the retained CLI-backed worktree `+`; no model runner is
+- Codelync hides the retained CLI-backed worktree `+`; no model runner is
   created by the native conversation selector.
 - All ten supported languages identify both apps in current product copy.
   Source unavailable and unconfirmed-delivery copy refers to the selected original
@@ -93,7 +93,7 @@ acceptance is claimed here.
 
 The latest incremental simulator bundle retained build 1302 and the saved peer.
 With its gateway temporarily unreachable, the empty-search directory still
-rendered collapsed projects and accepted expansion/navigation. The codelight
+rendered collapsed projects and accepted expansion/navigation. The codelync
 project displayed two roots and the selected root's 12-child branch. Its existing
 local composer draft survived installation and cold launch; it was never sent.
 Measured AXe action round trips were 667 ms for expansion and 548 ms for opening
@@ -210,7 +210,7 @@ reverted to the old 35-character prefix. Native draft retention therefore failed
 on 1307; no Send or previous unknown child operation was replayed.
 
 The reproduced cause was that the shared Rig v1 source predicate also recognizes
-native CodeLight metadata. Draft synchronization followed that predicate and
+native Codelync metadata. Draft synchronization followed that predicate and
 accepted old remote composer metadata. The draft hook now excludes native
 sources from synchronized saving, flushing and clearing. Its tests explicitly
 model native metadata satisfying Rig v1 and assert that the Rig composer is not
@@ -258,11 +258,11 @@ helper runs privately against CoreSimulator for native accessibility and HID
 interaction; it does not require window screenshots or a browser substitute.
 
 The current Release simulator build succeeded with exit status 0 and was installed
-on the existing CodeLight Native Worker QA simulator (iOS 26.5). Native
-accessibility confirms the current CodeLight session browser and two-app copy;
+on the existing Codelync Native Worker QA simulator (iOS 26.5). Native
+accessibility confirms the current Codelync session browser and two-app copy;
 the retained old generic/window screen is no longer displayed. The final bundle
 includes source models/slash commands, provenance handoff and native subagent
 status. Live pairing and dual-source native UI acceptance are in progress.
 Private build logs, helper and captures stay outside the repository at
-`~/.codelight-antigravity-probe/mobile-qa/`. No private conversations or pairing
+`~/.codelync-antigravity-probe/mobile-qa/`. No private conversations or pairing
 credentials are included in this report.

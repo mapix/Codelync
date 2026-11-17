@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { recentCatalogPage, recentDescriptor, recentRowsPage, CodeLightRecentService } from '../src/happy/recent-data.mjs';
+import { recentCatalogPage, recentDescriptor, recentRowsPage, CodelyncRecentService } from '../src/codelync/recent-data.mjs';
 import { Worker } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -56,7 +56,7 @@ test('concurrent recent requests share one source activation/fresh read and expo
   let resolveCalls = 0, reads = 0, complete;
   const gate = new Promise(resolve => { complete = resolve; });
   const selected = entry('selected', NOW);
-  const service = new CodeLightRecentService({ sources: () => [selected], now: () => NOW,
+  const service = new CodelyncRecentService({ sources: () => [selected], now: () => NOW,
     resolveSource: async id => { resolveCalls++; assert.equal(id, 'selected'); await gate; return { ...selected, actor: { connector: { readRecent: async (/** @type {Record<string,any>} */ options) => { reads++; assert.equal(options.fresh, true); return { rows: [{ id: 'full', text: 'current' }] }; } } } }; } });
   const one = service.recent('selected'), two = service.recent('selected');
   await Promise.resolve(); assert.equal(resolveCalls, 1); assert.equal(reads, 0);
@@ -67,23 +67,23 @@ test('concurrent recent requests share one source activation/fresh read and expo
 });
 
 test('failed freshness and unavailable directory never publish cached success or invented empty state', async () => {
-  const service = new CodeLightRecentService({ sources: () => [], available: () => false, resolveSource: async () => { throw Error('must not activate'); } });
+  const service = new CodelyncRecentService({ sources: () => [], available: () => false, resolveSource: async () => { throw Error('must not activate'); } });
   assert.throws(() => service.catalog(), /unavailable/);
   assert.throws(() => service.recent('missing'), /unavailable/);
-  const failure = new CodeLightRecentService({ sources: () => [], resolveSource: async () => { throw Error('fresh owner unavailable'); } });
+  const failure = new CodelyncRecentService({ sources: () => [], resolveSource: async () => { throw Error('fresh owner unavailable'); } });
   await assert.rejects(failure.recent('missing'), /fresh owner unavailable/); assert.equal(failure.flights.size, 0);
   assert.throws(() => failure.history('missing', {}), /cursor is required/);
 });
 
 test('the real read-only index worker orders native millisecond recency and omits old previews', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-recent-index-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-recent-index-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const db = new DatabaseSync(join(directory, 'state_5.sqlite'));
   db.exec('CREATE TABLE threads (id TEXT,title TEXT,cwd TEXT,created_at INTEGER,updated_at INTEGER,updated_at_ms INTEGER,recency_at_ms INTEGER,model_provider TEXT,archived INTEGER,first_user_message TEXT)');
   const write = db.prepare('INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?)');
   write.run('old', 'Old title', '/fixture', 1, 999999, NOW - 73 * 60 * 60 * 1000, 0, 'fixture', 0, 'must not appear');
   write.run('recent', 'Recent title', '/fixture', 1, 1, NOW - 2000, NOW - 1000, 'fixture', 0, 'recent preview'); db.close();
   const rows = await new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('../src/happy/codex-index-worker.mjs', import.meta.url), { execArgv: [], workerData: { root: directory, offset: 0, now: NOW } });
+    const worker = new Worker(new URL('../src/codelync/codex-index-worker.mjs', import.meta.url), { execArgv: [], workerData: { root: directory, offset: 0, now: NOW } });
     worker.once('message', value => value.ok ? resolve(value.rows) : reject(Error('worker failed'))); worker.once('error', reject);
   });
   assert.deepEqual(/** @type {any[]} */ (rows).map(row => row.id), ['recent', 'old']);
@@ -108,7 +108,7 @@ test('cache-first returns readonly data before activation and shares its pinned 
     hasMore: true, nextCursor: null, freshness: { version: 1, mode: 'cached', capturedAt: NOW - 100, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true } };
   const actor = { transport: { peerSnapshot: () => ({ metadata: selected.binding.metadata, agentState: state }) }, status: () => ({ sourceStatus: 'connected' }),
     connector: { readCachedRecent: async () => structuredClone(cached), readRecent: async (/** @type {Value} */ options) => { nativeReads++; assert.equal(options.fresh, true); return { rows: [{ id: 'fresh-row', text: 'revalidated body' }], ownerGeneration: 'owner', status: 'idle', freshness: { mode: 'fresh' } }; } } };
-  const service = new CodeLightRecentService({ sources: () => [{ ...selected, actor }], now: () => NOW,
+  const service = new CodelyncRecentService({ sources: () => [{ ...selected, actor }], now: () => NOW,
     retainSource: async (_id, execute) => { pins++; try { return await execute(); } finally { pins--; } },
     resolveSource: async () => { resolveCalls++; await gate; return { ...selected, actor }; } });
   const warm = await service.recent('cached', { limit: 1, readPolicy: 'cache-first' });
@@ -129,7 +129,7 @@ test('cache-first falls back to fresh for cold/missing/foreign-owner caches and 
   for (const cache of [null, { rows: [{ ownerGeneration: 'foreign' }], ownerGeneration: 'owner', freshness: { mode: 'cached', ownerGeneration: 'owner', currentControlAuthority: false } }]) {
     const selected = entry('cold', NOW); let reads = 0;
     const actor = { connector: { readCachedRecent: async () => cache, readRecent: async (/** @type {Value} */ options) => { reads++; assert.equal(options.fresh, true); return { rows: [{ id: 'current', text: 'fresh' }] }; } } };
-    const service = new CodeLightRecentService({ sources: () => [{ ...selected, actor }], resolveSource: async () => ({ ...selected, actor }), now: () => NOW });
+    const service = new CodelyncRecentService({ sources: () => [{ ...selected, actor }], resolveSource: async () => ({ ...selected, actor }), now: () => NOW });
     const value = await service.recent('cold', { readPolicy: 'cache-first', limit: 1 }); assert.equal(value.rows[0].text, 'fresh'); assert.equal(reads, 1);
     assert.throws(() => service.recent('cold', { readPolicy: 'foreign' }), { code: 'invalid-recent-policy' });
     assert.throws(() => service.recent('cold', { readPolicy: 'cache-first', cursor: 'history' }), { code: 'invalid-recent-policy' });
@@ -142,7 +142,7 @@ test('failed background revalidation preserves readonly cached text without turn
   const actor = { transport: { peerSnapshot: () => ({ metadata: selected.binding.metadata }) },
     connector: { readCachedRecent: async () => ({ rows: [{ id: 'retained', text: 'retained text', ownerGeneration: 'owner' }], ownerGeneration: 'owner', status: 'unknown',
       freshness: { version: 1, mode: 'cached', capturedAt: NOW - 100, ownerGeneration: 'owner', currentControlAuthority: false, revalidationPending: true } }), readRecent: async () => { throw Error('Original native read failed'); } } };
-  const service = new CodeLightRecentService({ sources: () => [{ ...selected, actor }], resolveSource: async () => ({ ...selected, actor }), now: () => NOW });
+  const service = new CodelyncRecentService({ sources: () => [{ ...selected, actor }], resolveSource: async () => ({ ...selected, actor }), now: () => NOW });
   const cached = await service.recent('unconfirmed-cache', { readPolicy: 'cache-first' }); assert.equal(cached.rows[0].text, 'retained text'); assert.equal(cached.freshness.mode, 'cached');
   await Promise.all(service.revalidations.values()); assert.equal(service.revalidations.size, 0); assert.equal(cached.session.metadata.capabilities.readOnly, true);
   await assert.rejects(service.recent('unconfirmed-cache'), /Original native read failed/);

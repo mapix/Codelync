@@ -3,12 +3,12 @@ import { Session } from '@/sync/storageTypes';
 import { resolveSessionState } from '@/sync/sessionState';
 import type { SessionState } from '@/sync/sessionState';
 import { t, getCurrentLanguage } from '@/text';
-import { codeLightSubagentLabels } from '@/text/codeLightSubagentLabels';
+import { codelyncSubagentLabels } from '@/text/codelyncSubagentLabels';
 import { buildResumeCommand, buildResumeCommandBlock, ResumeCommandBlock } from './resumeCommand';
 import { isNoninvasiveBridge } from '@/sync/noninvasiveBridge';
 import { currentNativeAggregate } from './nativeAggregateActivity';
 import { readNativeQuery } from './nativeQuery';
-import { useCodeLightSessionActivityForSource } from '@/hooks/useCodeLightSessionActivity';
+import { useCodelyncSessionActivityForSource } from '@/hooks/useCodelyncSessionActivity';
 
 export type { SessionState } from '@/sync/sessionState';
 
@@ -39,13 +39,13 @@ export function useSessionStatus(session: Session): SessionStatus {
         isOnline,
     });
     const aggregate = native ? currentNativeAggregate(session) : null;
-    const activity = useCodeLightSessionActivityForSource(session);
+    const activity = useCodelyncSessionActivityForSource(session);
     const labelActivity = (value: SessionStatus): SessionStatus => {
         if (!native || session.metadata?.nativeSession?.isSubagent === true || activity.status !== 'ready' || !activity.known
             || value.state === 'permission_required' || value.state === 'input_required') return value;
         const status = activity.waiting ? 'waiting' : activity.active ? 'running' : 'idle';
         const color = activity.waiting ? '#FF9500' : activity.active ? '#007AFF' : '#34C759';
-        return { ...value, statusText: codeLightSubagentLabels[getCurrentLanguage()].status[status], shouldShowStatus: true,
+        return { ...value, statusText: codelyncSubagentLabels[getCurrentLanguage()].status[status], shouldShowStatus: true,
             statusColor: color, statusDotColor: color, isPulsing: activity.active || activity.waiting };
     };
 
@@ -56,15 +56,15 @@ export function useSessionStatus(session: Session): SessionStatus {
     if (query && state !== 'disconnected' && state !== 'permission_required' && state !== 'input_required' && query.status !== 'idle') {
         const waiting = query.status === 'waiting';
         return labelActivity({ state: waiting ? 'waiting' : 'thinking', isConnected: true, shouldShowStatus: true,
-            statusText: codeLightSubagentLabels[getCurrentLanguage()].status[waiting ? 'waiting' : 'running'],
+            statusText: codelyncSubagentLabels[getCurrentLanguage()].status[waiting ? 'waiting' : 'running'],
             statusColor: waiting ? '#FF9500' : '#007AFF', statusDotColor: waiting ? '#FF9500' : '#007AFF', isPulsing: true });
     }
 
     if (aggregate && state !== 'disconnected' && state !== 'permission_required' && state !== 'input_required') {
-        if (!aggregate.known) return labelActivity({ state: 'waiting', isConnected: true, statusText: t('codeLightSessionStatus.unknown'), shouldShowStatus: true,
+        if (!aggregate.known) return labelActivity({ state: 'waiting', isConnected: true, statusText: t('codelyncSessionStatus.unknown'), shouldShowStatus: true,
             statusColor: '#999', statusDotColor: '#999' });
         if (aggregate.active || aggregate.waiting) return labelActivity({ state: aggregate.active ? 'thinking' : 'waiting', isConnected: true,
-            statusText: codeLightSubagentLabels[getCurrentLanguage()].status[aggregate.waiting ? 'waiting' : 'running'], shouldShowStatus: true,
+            statusText: codelyncSubagentLabels[getCurrentLanguage()].status[aggregate.waiting ? 'waiting' : 'running'], shouldShowStatus: true,
             statusColor: aggregate.waiting ? '#FF9500' : '#007AFF', statusDotColor: aggregate.waiting ? '#FF9500' : '#007AFF', isPulsing: true });
     }
 
@@ -72,7 +72,7 @@ export function useSessionStatus(session: Session): SessionStatus {
         return labelActivity({
             state,
             isConnected: false,
-            statusText: isNoninvasiveBridge(session.metadata) ? t('codeLightSessionStatus.unknown') : t('status.lastSeen', { time: formatLastSeen(session.activeAt, false) }),
+            statusText: isNoninvasiveBridge(session.metadata) ? t('codelyncSessionStatus.unknown') : t('status.lastSeen', { time: formatLastSeen(session.activeAt, false) }),
             shouldShowStatus: true,
             statusColor: '#999',
             statusDotColor: '#999'
@@ -119,7 +119,7 @@ export function useSessionStatus(session: Session): SessionStatus {
     return labelActivity({
         state,
         isConnected: true,
-        statusText: executionUnknown ? t('codeLightSessionStatus.unknown') : t('status.online'),
+        statusText: executionUnknown ? t('codelyncSessionStatus.unknown') : t('status.online'),
         shouldShowStatus: executionUnknown,
         statusColor: executionUnknown ? '#999' : '#34C759',
         statusDotColor: executionUnknown ? '#999' : '#34C759'

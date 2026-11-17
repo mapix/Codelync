@@ -8,10 +8,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import nacl from 'tweetnacl';
-import { MacConnectionService, privateLANAddresses } from '../src/happy/mac-connection-service.mjs';
+import { MacConnectionService, privateLANAddresses } from '../src/codelync/mac-connection-service.mjs';
 import { ConnectionChannelsManager } from '../src/network/connection-channels.mjs';
-import { createPairingGateway, PairingInvitations } from '../src/happy/pairing-gateway.mjs';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
+import { createPairingGateway, PairingInvitations } from '../src/codelync/pairing-gateway.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const A = '192.168.50.2', B = '10.20.30.2', C = '192.168.60.2';
@@ -27,7 +27,7 @@ async function until(predicate) {
 }
 /** @param {import('node:test').TestContext} t @param {number} [networkWatchMs] */
 async function fixture(t, networkWatchMs = 0) {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-network-watch-'));
+  const state = await mkdtemp(join(tmpdir(), 'codelync-network-watch-'));
   const phone = nacl.box.keyPair(), mac = nacl.box.keyPair(), token = 'synthetic-network-watch-token';
   const account = { secret: randomBytes(32).toString('base64url') }, devices = new DeviceRegistry(join(state, 'devices.json'));
   await devices.approve(Buffer.from(phone.publicKey).toString('base64url'), 'Synthetic network phone', token);
@@ -62,7 +62,7 @@ async function manifest(f, channel, direct = false) {
   assert.ok(channel);
   const nonce = randomBytes(24), path = '/api/peer/channels';
   const request = Buffer.from(JSON.stringify({ version: 2, token: f.token, origin: channel.url, method: 'GET', path, at: Date.now() }));
-  const auth = 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
+  const auth = 'Codelync ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
     ciphertext: Buffer.from(nacl.box(request, nonce, f.mac.publicKey, f.phone.secretKey)).toString('base64url') })).toString('base64url');
   const url = (direct ? channel.url : 'http://127.0.0.1:' + new URL(channel.url).port) + path;
   const packet = direct ? await new Promise((resolve, reject) => {
@@ -121,7 +121,7 @@ test('a failed new-interface bind retries without changing retained routes or tr
   f.failedHosts.delete(C); await f.service.refreshNetwork();
   assert.ok(local(f.service, C)); assert.equal(local(f.service, B)?.url, before.url); assert.equal(f.binds.filter(row => row.host === B).length, 1);
   f.setHosts([]); await f.service.refreshNetwork();
-  let occupantReads = 0; const occupant = createServer((_req, res) => { occupantReads++; res.end('not-CodeLight'); });
+  let occupantReads = 0; const occupant = createServer((_req, res) => { occupantReads++; res.end('not-Codelync'); });
   occupant.listen(Number(new URL(before.url).port), '127.0.0.1'); await once(occupant, 'listening');
   t.after(async () => { occupant.closeAllConnections(); await new Promise(resolve => occupant.close(resolve)); });
   f.setHosts([B]); await f.service.refreshNetwork(); const fallback = local(f.service, B); assert.ok(fallback);
@@ -168,10 +168,10 @@ test('[N06] a closed owned LAN listener is withdrawn immediately and repaired wi
   assert.equal(f.devices.list().length, 1); assert.equal(f.devices.list()[0].revoked, false);
 });
 
-test('live current private interfaces retire an owned route and authenticate the new same-peer LAN without service restart', { skip: process.env.CODELIGHT_LAN_LIVE_INTEGRATION !== '1' }, async t => {
+test('live current private interfaces retire an owned route and authenticate the new same-peer LAN without service restart', { skip: process.env.CODELYNC_LAN_LIVE_INTEGRATION !== '1' }, async t => {
   const hosts = privateLANAddresses(networkInterfaces()); assert.ok(hosts.length >= 2, 'Live acceptance requires two current private interfaces');
   const oldHost = hosts.at(-2), nextHost = hosts.at(-1); assert.ok(oldHost && nextHost);
-  const state = await mkdtemp(join(tmpdir(), 'codelight-lan-live-'));
+  const state = await mkdtemp(join(tmpdir(), 'codelync-lan-live-'));
   const phone = nacl.box.keyPair(), mac = nacl.box.keyPair(), token = 'synthetic-live-lan-token';
   const account = { secret: randomBytes(32).toString('base64url') }, devices = new DeviceRegistry(join(state, 'devices.json'));
   await devices.approve(Buffer.from(phone.publicKey).toString('base64url'), 'Synthetic live LAN device', token);

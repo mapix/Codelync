@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { CodexIpcAdapter } from '../src/adapters/codex-ipc.mjs';
-import { NativeProjectActivityService } from '../src/happy/project-activity.mjs';
+import { NativeProjectActivityService } from '../src/codelync/project-activity.mjs';
 import { CodexActivityObserver } from '../src/adapters/codex-activity.mjs';
 
 /** @typedef {Record<string, any>} Frame */

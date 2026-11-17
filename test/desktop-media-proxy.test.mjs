@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { WebSocket, WebSocketServer } from 'ws';
 import nacl from 'tweetnacl';
-import { createPairingGateway, PairingInvitations } from '../src/happy/pairing-gateway.mjs';
+import { createPairingGateway, PairingInvitations } from '../src/codelync/pairing-gateway.mjs';
 
 test('desktop media uses its token gate, preserves v0/v1 signaling and rejects unrelated upgrades', async t => {
   const upstream = createServer(), media = new WebSocketServer({ noServer: true });

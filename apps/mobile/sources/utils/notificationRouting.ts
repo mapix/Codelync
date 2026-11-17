@@ -75,10 +75,16 @@ export function getSessionRouteFromNotificationData(data: unknown): `/session/${
     return `/session/${encodeURIComponent(trimmedSessionId)}`;
 }
 
-export function getSessionRouteFromNotificationResponse(response: unknown, expectedOrigin?: string): `/session/${string}` | null {
+export function getSessionRouteFromNotificationResponse(response: unknown, expectedOrigin?: string, expectedPeerId?: string): `/session/${string}` | null {
     const contentData = getObjectValue(getObjectValue(getObjectValue(response, 'notification'), 'request'), 'content');
     const data = getObjectValue(contentData, 'data');
     const origin = getObjectValue(data, 'origin');
-    if (expectedOrigin && typeof origin === 'string' && origin !== expectedOrigin) return null;
+    const peerId = getObjectValue(data, 'peerId');
+    if (typeof peerId === 'string' && expectedPeerId) {
+        if (peerId !== expectedPeerId) return null;
+        return getSessionRouteFromNotificationData(data);
+    }
+    if (typeof peerId === 'string' && expectedOrigin) return null;
+    if (expectedOrigin && origin !== expectedOrigin) return null;
     return getSessionRouteFromNotificationData(data);
 }

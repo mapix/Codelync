@@ -68,12 +68,12 @@ export function antigravityHostId(runtime) {
 }
 
 /** Connect-compatible JSON unary RPC on the owner's loopback listener. The
- * CodeLight sealed transport is the only phone-facing transport.
+ * Codelync sealed transport is the only phone-facing transport.
  */
 export class AntigravityRpcClient {
   /** @param {{runtimePath?:string,readRuntime?:()=>Promise<Value>,fetch?:typeof fetch,timeoutMs?:number}} [options] */
   constructor(options = {}) {
-    const path = options.runtimePath ?? process.env.CODELIGHT_ANTIGRAVITY_RUNTIME;
+    const path = options.runtimePath ?? process.env.CODELYNC_ANTIGRAVITY_RUNTIME;
     this.readRuntime = options.readRuntime ?? (path ? () => readAntigravityRuntime(path) : async () => {
       const cached = this.latestRuntime;
       if (cached) {
@@ -109,7 +109,7 @@ export class AntigravityRpcClient {
       const body = Buffer.from('{}'), framed = Buffer.alloc(7); framed.writeUInt32BE(2, 1); body.copy(framed, 5);
       response = await this.fetch(runtime.origin + ANTIGRAVITY_SERVICE + 'JetboxSubscribeToSummaries', { method: 'POST', redirect: 'error', signal: controller.signal,
         headers: { 'Content-Type': 'application/connect+json', 'Connect-Protocol-Version': '1', 'X-Codeium-Csrf-Token': runtime.csrfToken,
-          'X-Jetski-Via-Remote-Control': 'true', 'X-Jetski-Remote-Control-Transport': 'codelight' }, body: framed });
+          'X-Jetski-Via-Remote-Control': 'true', 'X-Jetski-Remote-Control-Transport': 'codelync' }, body: framed });
       if (!response.ok || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/connect+json' || !response.body?.getReader) throw unavailable('antigravity-summary-stream-unavailable');
       const after = await this.runtime();
       if (after.generation !== runtime.generation || antigravityHostId(after) !== hostId) throw new BridgeError('source-epoch-changed', 'The native summary owner changed during observation.', 409);
@@ -132,7 +132,7 @@ export class AntigravityRpcClient {
     try {
       const response = await this.fetch(runtime.origin + ANTIGRAVITY_SERVICE + method, { method: 'POST', redirect: 'error',
         headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1', 'X-Codeium-Csrf-Token': runtime.csrfToken,
-          'X-Jetski-Via-Remote-Control': 'true', 'X-Jetski-Remote-Control-Transport': 'codelight' },
+          'X-Jetski-Via-Remote-Control': 'true', 'X-Jetski-Remote-Control-Transport': 'codelync' },
         body: JSON.stringify(body), signal: AbortSignal.timeout(this.timeoutMs) });
       const length = Number(response.headers.get('content-length') ?? 0);
       if (length > MAX_RESPONSE) { await response.body?.cancel().catch(() => {}); throw unavailable('antigravity-response-too-large'); }

@@ -46,7 +46,7 @@ export function NativeWindowPanel({ sessionId, topInset = 100 }: { sessionId: st
     const label = (c: NativeControl) => c.title || c.label || c.description || c.text?.title || c.text?.description || c.value || c.role || t('windowControl.control');
     const buttonStyle = { padding: 12, borderRadius: 12, backgroundColor: theme.colors.surface, opacity: busy ? 0.6 : 1 };
     const font = { color: theme.colors.text, ...Typography.default() };
-    return <ScrollView testID="codelight-window-panel" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: topInset + 16, gap: 14 }}>
+    return <ScrollView testID="codelync-window-panel" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: topInset + 16, gap: 14 }}>
         {!connected && <NativeSourceBanner sessionId={sessionId} />}
         <Text style={{ color: theme.colors.textSecondary, ...Typography.default() }}>{t('windowControl.sharedWindow')}</Text>
         {uri && ref ? <Pressable accessibilityRole="button" accessibilityLabel={t('imagePreview.open')} onPress={() => Modal.show({ component: NativeWindowViewer, props: { sessionId } })}>
@@ -57,8 +57,8 @@ export function NativeWindowPanel({ sessionId, topInset = 100 }: { sessionId: st
         {observation.textInputAvailable === true && <>
             <Text style={font}>{t('windowControl.chooseInput')}</Text>
             {editable.map(c => <Pressable key={c.nodeId} onPress={() => setSelected(c.nodeId)} disabled={!canControl || busy || c.enabled === false} style={{ ...buttonStyle, borderWidth: selected === c.nodeId ? 1 : 0, borderColor: theme.colors.text }}><Text numberOfLines={2} style={font}>{label(c)}</Text></Pressable>)}
-            <TextInput testID="codelight-window-draft" multiline value={text} onChangeText={onChangeText} placeholder={t('windowControl.draft')} placeholderTextColor={theme.colors.textSecondary} style={{ ...buttonStyle, ...font, minHeight: 80 }} />
-            <Pressable accessibilityRole="button" testID="codelight-fill-input" disabled={!canControl || busy || !selected || !text.trim()} onPress={() => action('type', { nodeId: selected, text })} style={buttonStyle}><Text style={font}>{t('windowControl.fillInput')}</Text></Pressable>
+            <TextInput testID="codelync-window-draft" multiline value={text} onChangeText={onChangeText} placeholder={t('windowControl.draft')} placeholderTextColor={theme.colors.textSecondary} style={{ ...buttonStyle, ...font, minHeight: 80 }} />
+            <Pressable accessibilityRole="button" testID="codelync-fill-input" disabled={!canControl || busy || !selected || !text.trim()} onPress={() => action('type', { nodeId: selected, text })} style={buttonStyle}><Text style={font}>{t('windowControl.fillInput')}</Text></Pressable>
         </>}
         <Text style={font}>{t('windowControl.controls')}</Text>
         {actionable.slice(0, 80).map(c => <Pressable accessibilityRole="button" key={c.nodeId} disabled={!canControl || busy || c.enabled === false} onPress={() => action('press', { nodeId: c.nodeId })} style={buttonStyle}><Text numberOfLines={2} style={font}>{label(c)}</Text></Pressable>)}

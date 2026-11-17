@@ -27,23 +27,23 @@ await run('go', ['build', '-trimpath', '-ldflags=-s -w', '-o', join(target, 'liv
 const swiftRoot = join(root, 'native/remote-desktop');
 // SwiftPM emits a literal build-directory fallback in its resource accessor.
 // Keep that generated path neutral as well as mapping compiler source metadata.
-const swiftScratch = await mkdtemp('/private/tmp/codelight-desktop-build-');
+const swiftScratch = await mkdtemp('/private/tmp/codelync-desktop-build-');
 const swiftBuild = ['build', '-c', 'release', '--build-system', 'native', '--scratch-path', swiftScratch];
-const prefixMaps = [`${root}=/codelight-build/source`, `${homedir()}=/codelight-build/home`];
+const prefixMaps = [`${root}=/codelync-build/source`, `${homedir()}=/codelync-build/home`];
 const swiftFlags = prefixMaps.flatMap(map => ['-Xswiftc', '-file-prefix-map', '-Xswiftc', map,
   '-Xswiftc', '-debug-prefix-map', '-Xswiftc', map, '-Xcc', `-ffile-prefix-map=${map}`, '-Xcc', `-fdebug-prefix-map=${map}`]);
 await run('swift', [...swiftBuild, '--disable-index-store', ...swiftFlags,
-  '-Xswiftc', '-file-compilation-dir', '-Xswiftc', '/codelight-build', '-Xcc', '-fdebug-compilation-dir=/codelight-build',
+  '-Xswiftc', '-file-compilation-dir', '-Xswiftc', '/codelync-build', '-Xcc', '-fdebug-compilation-dir=/codelync-build',
   '-Xlinker', '-rpath', '-Xlinker', '@executable_path/../../../../Frameworks'], swiftRoot);
 const swiftBin = (await inspect('swift', [...swiftBuild, '--show-bin-path'], { cwd: swiftRoot })).stdout.trim();
-await cp(join(swiftBin, 'CodeLightDesktopHost'), join(target, 'CodeLightDesktopHost'));
-await run('xcrun', ['strip', '-S', join(target, 'CodeLightDesktopHost')], root);
+await cp(join(swiftBin, 'CodelyncDesktopHost'), join(target, 'CodelyncDesktopHost'));
+await run('xcrun', ['strip', '-S', join(target, 'CodelyncDesktopHost')], root);
 for (const name of ['LiveKitWebRTC.framework', 'RustLiveKitFFI.framework', 'LiveKit_LiveKit.bundle']) {
   await cp(join(swiftBin, name), join(target, name), { recursive: true, verbatimSymlinks: true });
 }
 const licenses = join(target, 'desktop-licenses'); await mkdir(licenses, { recursive: true });
 await cp(join(source, 'LICENSE'), join(licenses, 'livekit-server.txt'));
 await cp(join(swiftScratch, 'checkouts/client-sdk-swift/LICENSE'), join(licenses, 'livekit-swift.txt'));
-const hashes = Object.fromEntries(await Promise.all(['CodeLightDesktopHost', 'livekit-server'].map(async name => [name, createHash('sha256').update(await readFile(join(target, name))).digest('hex')])));
+const hashes = Object.fromEntries(await Promise.all(['CodelyncDesktopHost', 'livekit-server'].map(async name => [name, createHash('sha256').update(await readFile(join(target, name))).digest('hex')])));
 await writeFile(join(target, 'desktop-runtime.json'), JSON.stringify({ version: 1, server: '1.13.11', serverCommit, swiftSDK: '2.19.0', hashes }) + '\n');
-console.log(JSON.stringify({ built: ['CodeLightDesktopHost', 'livekit-server'], serverCommit, swiftSDK: '2.19.0' }));
+console.log(JSON.stringify({ built: ['CodelyncDesktopHost', 'livekit-server'], serverCommit, swiftSDK: '2.19.0' }));

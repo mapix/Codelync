@@ -1,8 +1,8 @@
 # Public Mac release and static website
 
-Source: <https://github.com/mapix/CodeLight>
+Source: <https://github.com/mapix/Codelync>
 
-Website: <https://codelight.novarock.io/>
+Website: <https://codelync.novarock.io/>
 
 The website serves static introduction/download files only. The Mac App keeps
 hosting its own relay, keys, native observers and pairing. Do not deploy that
@@ -19,7 +19,7 @@ Do not push the original local history or upload the complete workspace.
 
 ```sh
 pnpm package:source
-node scripts/verify-codelight-source.mjs --install
+node scripts/verify-codelync-source.mjs --install
 ```
 
 Scan the fresh extracted snapshot with the repository's `.gitleaks.toml`, then
@@ -33,7 +33,21 @@ public checkout and retain its public history. Remove public files absent from
 the new selection, inspect the diff, then run source/privacy/history scans before
 committing. Never merge or push the original private development history.
 
-## Current preview 0.7.2
+## Codelync 1.0.0 beta preparation
+
+Mac and iPhone use version `1.0.0`, build `2026111705`, with the Codelync
+application identifiers. The distribution targets existing Gateway setups in
+Codex, Antigravity Desktop and Claude Desktop. English, Chinese and Japanese
+follow the system language by default. Remote Desktop is hidden on iPhone until
+its feature switch is enabled in Settings.
+
+Publish only after source/privacy checks, Developer ID signing, Apple
+notarization, stapling and external download verification. TestFlight joining
+remains hidden until the exact external build is approved and its public group
+is enabled. The website publishes verified Apple status; older immutable Mac
+downloads remain available.
+
+## Prior preview 0.7.2
 
 Mac 0.7.2 and iPhone 1.9.2 share build `2026111702`. This preview corrects Spaces
 input-queue/readiness handoff and Codex fresh-owner read admission. Old history
@@ -110,13 +124,13 @@ pnpm install --frozen-lockfile
 pnpm typecheck:all
 pnpm lint
 pnpm build:native
-CODELIGHT_NODE_BINARY=/absolute/path/to/verified/node \
-CODELIGHT_NODE_LICENSE=/absolute/path/to/Node-LICENSE \
-CODELIGHT_CLOUDFLARED_BINARY=/absolute/path/to/verified/cloudflared \
-node scripts/build-mac-app.mjs /absolute/path/to/release/CodeLight.app
-node scripts/sign-mac-app.mjs /absolute/path/to/release/CodeLight.app \
+CODELYNC_NODE_BINARY=/absolute/path/to/verified/node \
+CODELYNC_NODE_LICENSE=/absolute/path/to/Node-LICENSE \
+CODELYNC_CLOUDFLARED_BINARY=/absolute/path/to/verified/cloudflared \
+node scripts/build-mac-app.mjs /absolute/path/to/release/Codelync.app
+node scripts/sign-mac-app.mjs /absolute/path/to/release/Codelync.app \
   'Developer ID Application: Your Name (TEAMID)'
-codesign --verify --deep --strict /absolute/path/to/release/CodeLight.app
+codesign --verify --deep --strict /absolute/path/to/release/Codelync.app
 ```
 
 Copy bundles with `ditto` or `verbatimSymlinks: true`. Rewriting relative symlinks
@@ -131,7 +145,7 @@ Connect API key or Apple ID/app-specific credentials. Keep credential values out
 of logs, shell history and source. A completed upload is not acceptance.
 
 ```sh
-ditto -c -k --keepParent /absolute/path/to/release/CodeLight.app candidate.zip
+ditto -c -k --keepParent /absolute/path/to/release/Codelync.app candidate.zip
 unzip -tq candidate.zip
 xcrun notarytool submit candidate.zip --keychain-profile YOUR_PROFILE --output-format json
 xcrun notarytool info SUBMISSION_ID --keychain-profile YOUR_PROFILE \
@@ -139,13 +153,13 @@ xcrun notarytool info SUBMISSION_ID --keychain-profile YOUR_PROFILE \
 ```
 
 Wait until the real status is `Accepted`; retrieve the Apple log if invalid.
-`prepare-mac-release.mjs` refuses other status, verifies the CodeLight identity,
+`prepare-mac-release.mjs` refuses other status, verifies the Codelync identity,
 Developer ID/team/timestamp, staples and validates the ticket, assesses Gatekeeper,
 then creates an immutable ZIP, SHA-256 file and public numeric release metadata.
 
 ```sh
 node scripts/prepare-mac-release.mjs \
-  --app /absolute/path/to/release/CodeLight.app \
+  --app /absolute/path/to/release/Codelync.app \
   --notary-status /private/path/notary-status.json \
   --output /absolute/path/to/public-release \
   --team YOUR_TEAM_ID
@@ -169,7 +183,7 @@ Docker build context. Pin the resolved nginx base-image digest for a release.
 
 ```sh
 docker build --build-arg NGINX_IMAGE=nginxinc/nginx-unprivileged@sha256:VERIFIED_DIGEST \
-  -t codelight-website:RELEASE_TAG /path/to/public/context
+  -t codelync-website:RELEASE_TAG /path/to/public/context
 ```
 
 When the cluster already holds a verified base image, inspect its architecture
@@ -180,7 +194,7 @@ Record the resulting website image ID, use a fresh release tag, and import only
 that exact image into the cluster's containerd store.
 
 The supplied manifest targets the existing nginx ingress / `letsencrypt-prod`
-issuer and a dedicated `codelight` namespace. Replace `RELEASE_TAG` with the
+issuer and a dedicated `codelync` namespace. Replace `RELEASE_TAG` with the
 immutable image tag. This cluster's single-node workflow imports the image into
 containerd and uses `imagePullPolicy: Never`; a multi-node deployment must publish
 the image to your registry and update that policy before scheduling elsewhere.
@@ -192,11 +206,11 @@ egress is denied. Existing cluster workloads and personal Codex owners remain
 independent of this deployment.
 
 ```sh
-kubectl create namespace codelight --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace codelync --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply --dry-run=server -f rendered-kubernetes.yaml
 kubectl apply -f rendered-kubernetes.yaml
-kubectl -n codelight rollout status deployment/codelight-website --timeout=180s
-kubectl -n codelight wait --for=condition=Ready certificate/codelight-tls --timeout=180s
+kubectl -n codelync rollout status deployment/codelync-website --timeout=180s
+kubectl -n codelync wait --for=condition=Ready certificate/codelync-tls --timeout=180s
 ```
 
 Verify HTTPS, security headers, language/FAQ controls, narrow layouts, the exact
@@ -220,15 +234,15 @@ their versioned URL. A website rollback does not change any user's Mac session.
 
 ### Website copy updates
 
-The existing site is `codelight.novarock.io`, served by
-`codelight/codelight-website`. A copy update does not publish a new app release.
+The existing site is `codelync.novarock.io`, served by
+`codelync/codelync-website`. A copy update does not publish a new app release.
 The 2026-11-16 Mac 0.6.1/build 2026111605 passed Apple Accepted, stapling and
 Gatekeeper. Publish its verified release metadata and archive after the final
 privacy check, retaining the immutable 0.5.8 archive and checksum. The private
 iPhone development package remains separate from public downloads.
 
-First update the website section of `spec/codelight-public-release.md`, using
-`spec/codelight-error-recovery.md` and the verified Desktop capability rules.
+First update the website section of `spec/codelync-public-release.md`, using
+`spec/codelync-error-recovery.md` and the verified Desktop capability rules.
 Keep Chinese and English meaning aligned, preserve the current layout, and use
 fictional examples. Check language switching, recovery FAQ, the current download
 link and a narrow phone layout before deployment.

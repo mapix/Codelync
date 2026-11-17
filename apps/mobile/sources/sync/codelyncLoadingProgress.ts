@@ -1,0 +1,36 @@
+import { useSyncExternalStore } from 'react';
+export type LoadingProgress = { generation: number; phase: 'idle' | 'loading' | 'complete' | 'error'; found: number; pages: number; queued?: boolean;
+    revalidating?: boolean; revalidationFailed?: boolean };
+const initial: LoadingProgress = { generation: 0, phase: 'idle', found: 0, pages: 0 };
+/** The sync runtime owns progress; obsolete fetches cannot finish a newer load. */
+export class CodelyncLoadingProgress {
+    private discovery = initial;
+    private sessions = new Map<string, LoadingProgress>();
+    private listeners = new Set<() => void>();
+    subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+    private changed() { for (const listener of this.listeners) listener(); }
+    getDiscovery = () => this.discovery;
+    getSession = (id: string) => this.sessions.get(id) ?? initial;
+    queueDiscovery() { const generation = this.discovery.generation + 1; this.discovery = { ...initial, generation, phase: 'loading', queued: true }; this.changed(); return generation; }
+    beginDiscovery() { const generation = this.discovery.queued ? this.discovery.generation : this.discovery.generation + 1; this.discovery = { ...initial, generation, phase: 'loading' }; this.changed(); return generation; }
+    updateDiscovery(generation: number, update: Partial<LoadingProgress>) {
+        if (generation !== this.discovery.generation) return;
+        this.discovery = { ...this.discovery, ...update, generation }; this.changed();
+    }
+    isCurrent(generation: number) { return generation === this.discovery.generation; }
+    queueSession(id: string) { const generation = this.getSession(id).generation + 1; this.sessions.set(id, { ...initial, generation, phase: 'loading', queued: true }); this.changed(); return generation; }
+    beginSession(id: string) { const current = this.getSession(id), generation = current.queued ? current.generation : current.generation + 1; this.sessions.set(id, { ...initial, generation, phase: 'loading' }); this.changed(); return generation; }
+    endSession(id: string, generation: number, failed = false) {
+        const state = this.getSession(id); if (state.generation !== generation) return;
+        this.sessions.set(id, { ...state, phase: failed ? 'error' : 'complete' }); this.changed();
+    }
+    revalidateSession(id: string, generation: number, pending: boolean, failed = false) {
+        const state = this.getSession(id); if (state.generation !== generation || state.phase !== 'complete') return;
+        this.sessions.set(id, { ...state, revalidating: pending, revalidationFailed: failed }); this.changed();
+    }
+}
+export const codelyncLoadingProgress = new CodelyncLoadingProgress();
+export const useCodelyncDiscoveryProgress = () => useSyncExternalStore(codelyncLoadingProgress.subscribe, codelyncLoadingProgress.getDiscovery);
+export function useCodelyncMessageProgress(id: string) {
+    return useSyncExternalStore(codelyncLoadingProgress.subscribe, () => codelyncLoadingProgress.getSession(id));
+}

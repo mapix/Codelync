@@ -13,7 +13,7 @@ without conversation text, tool outputs or files.
 
 Discovery, CLI, restored bindings and phone catalog are Codex-only. Removed index
 entries are hidden without erasing history; a failed index cannot remove the
-catalog. Ten languages cover current CodeLight flows, including row statuses,
+catalog. Ten languages cover current Codelync flows, including row statuses,
 with a home language entry, Chinese region/script resolution and English fallback.
 
 The paired Mac App defaults to Statistics. Statistics/Pairing switches the
@@ -57,7 +57,7 @@ from the device list.
   and bridge/mobile/production-relay typechecks in a fresh temporary workspace.
 - Current-source iPhone and Simulator Release builds 2026103110 passed. The
   physical phone installation and launch succeeded; inventory confirms
-  CodeLight 1.8.0 / 2026103110.
+  Codelync 1.8.0 / 2026103110.
 - Native Simulator 2026103110 visibly shows individual Active, Awaiting action,
   Idle and Unconfirmed badges. The earlier native menu acceptance selected item
   150 (`fixture-session-149`) and kept the long closed title within one row;
@@ -80,7 +80,7 @@ from the device list.
   received/sent counters. Phone synchronization was active during this sample,
   so its byte deltas are not attributed solely to the health requests.
 - Original Codex application process identity remained unchanged across the
-  CodeLight update. No replacement model runner or model test prompt was used.
+  Codelync update. No replacement model runner or model test prompt was used.
 
 ## Limits and deployment findings
 

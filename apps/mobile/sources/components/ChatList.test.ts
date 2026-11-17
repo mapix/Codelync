@@ -147,8 +147,8 @@ import { ChatList } from './ChatList';
 import { sync } from '@/sync/sync';
 import { Modal } from '@/modal';
 import { EmptyMessages } from './EmptyMessages';
-import { codeLightLoadingProgress } from '@/sync/codeLightLoadingProgress';
-import { requestCodeLightLatestViewport } from '@/utils/codeLightSubagentActivityIntent';
+import { codelyncLoadingProgress } from '@/sync/codelyncLoadingProgress';
+import { requestCodelyncLatestViewport } from '@/utils/codelyncSubagentActivityIntent';
 
 const renderers: ReturnType<typeof create>[] = [];
 
@@ -247,7 +247,7 @@ describe('native adjacent tool groups', () => {
         expect(messageIds(renderer)).toContain('original-final-text');
         act(() => group.props.onToggle());
         expect(messageIds(renderer)).toEqual(['original-final-text', 'tool-two', 'tool-one']);
-        act(() => requestCodeLightLatestViewport(state.session.id));
+        act(() => requestCodelyncLatestViewport(state.session.id));
         expect(messageIds(renderer)).toEqual(['original-final-text']);
         expect(state.messages.map(message => message.id)).toEqual(['original-final-text', 'tool-two', 'tool-one']);
         expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe('native adjacent tool groups', () => {
         state.native = true; state.session = { id: 'native-tool-group', metadata: { client: { id: 'noninvasive-bridge' } }, thinking: true };
         state.messages = [toolMessage('newest-tool', 3), toolMessage('middle-tool', 2), toolMessage('oldest-tool', 1)];
         state.hasMoreOlder = true;
-        const generation = codeLightLoadingProgress.beginSession(state.session.id); codeLightLoadingProgress.endSession(state.session.id, generation);
+        const generation = codelyncLoadingProgress.beginSession(state.session.id); codelyncLoadingProgress.endSession(state.session.id, generation);
         const renderer = renderChat(undefined);
         const summary = renderer.root.findByType('ToolsGroupHeader');
         expect(summary.props.expanded).toBe(false); expect(summary.props.group.messages).toHaveLength(3);
@@ -316,7 +316,7 @@ it('Messages and tools latest intent changes only the visible native window, wit
         list.props.onScroll({ nativeEvent: { contentOffset: { y: 60 }, contentSize: { height: 600 }, layoutMeasurement: { height: 600 } } }); list.props.onScrollEndDrag();
     });
     expect(messageIds(renderer).length).toBeGreaterThan(1);
-    act(() => requestCodeLightLatestViewport('activity-latest'));
+    act(() => requestCodelyncLatestViewport('activity-latest'));
     expect(messageIds(renderer)).toEqual(['activity-0']); expect(state.messages).toHaveLength(50);
     expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
 });
@@ -366,7 +366,7 @@ describe('ChatList automatic history', () => {
         state.session = { id: 'session', metadata: null, thinking: false, agentState: { requests: {} } };
         return renderChat(undefined);
     }
-    it('CodeLight layout cannot load older history and one gesture cannot walk further pages after settling', async () => {
+    it('Codelync layout cannot load older history and one gesture cannot walk further pages after settling', async () => {
         state.native = true;
         const renderer = open(history(1)); const page = pendingPage();
         layout(renderer); expect(page.started()).toBe(0);
@@ -388,7 +388,7 @@ describe('ChatList automatic history', () => {
     });
     it('native measured fill extends one complete row at a time and cannot continue on later layouts once a viewport is covered', () => {
         state.native = true;
-        const generation = codeLightLoadingProgress.beginSession('session'); codeLightLoadingProgress.endSession('session', generation);
+        const generation = codelyncLoadingProgress.beginSession('session'); codelyncLoadingProgress.endSession('session', generation);
         const renderer = open(history(600)); expect(renderer.root.findByType('FlashList').props.data).toHaveLength(1);
         layout(renderer, { content: 120, viewport: 600 }); expect(renderer.root.findByType('FlashList').props.data.length).toBeLessThanOrEqual(2);
         layout(renderer, { content: 350, viewport: 600 }); expect(renderer.root.findByType('FlashList').props.data.length).toBeLessThanOrEqual(3);
@@ -398,7 +398,7 @@ describe('ChatList automatic history', () => {
     });
     it('native first viewport fetches only one older row and a settled page cannot walk unseen history without measurement', async () => {
         state.native = true;
-        const generation = codeLightLoadingProgress.beginSession('session'); codeLightLoadingProgress.endSession('session', generation);
+        const generation = codelyncLoadingProgress.beginSession('session'); codelyncLoadingProgress.endSession('session', generation);
         const renderer = open(history(1)); const page = pendingPage(); layout(renderer, { content: 100, viewport: 600 });
         expect(page.started()).toBe(1); expect(vi.mocked(sync.loadOlderMessages)).toHaveBeenCalledWith('session', { limit: 1 });
         await settle(renderer, history(2), true, page.finish); expect(page.started()).toBe(1);
@@ -767,15 +767,15 @@ describe('ChatList automatic history', () => {
         expect(page.started()).toBe(0);
         expect(renderer.root.findAllByType('Text')).toHaveLength(0);
         act(() => {
-            const revision = codeLightLoadingProgress.beginSession(session.id);
-            codeLightLoadingProgress.endSession(session.id, revision, true);
+            const revision = codelyncLoadingProgress.beginSession(session.id);
+            codelyncLoadingProgress.endSession(session.id, revision, true);
         });
         expect(page.started()).toBe(0);
         expect(renderer.root.findAllByType('Text')).toHaveLength(0);
         state.hasMoreOlder = false;
         act(() => {
-            const revision = codeLightLoadingProgress.beginSession(session.id);
-            codeLightLoadingProgress.endSession(session.id, revision);
+            const revision = codelyncLoadingProgress.beginSession(session.id);
+            codelyncLoadingProgress.endSession(session.id, revision);
             renderer.update(React.createElement(EmptyMessages, { session }));
         });
         expect(renderer.root.findAllByType('Text').some((node: any) => node.props.children === 'No messages yet')).toBe(true);

@@ -34,7 +34,7 @@ metadata tests remain available.
   contain upstream sample history and its original opaque IDs/paths. Their Git
   blob hashes were checked against the public Happy reference commit
   `ee5ccff79b046570dc7e62eeec90e7c8a9d7027e` and match exactly. They are unmodified
-  public third-party test inputs, not CodeLight user's private histories. This
+  public third-party test inputs, not Codelync user's private histories. This
   provenance check is independent of Gitleaks; the secret scan alone does not
   establish privacy.
 - Bridge `pnpm typecheck` and `pnpm lint` passed. The earlier final candidate logs
@@ -70,11 +70,11 @@ Private numeric evidence is kept outside source exports.
 ## Static deployment preparation
 
 The separate public-only website build context contains three local page files,
-the CodeLight icon and the Nginx Docker/configuration files. It contains no
+the Codelync icon and the Nginx Docker/configuration files. It contains no
 release yet. The release owner must add only the verified final ZIP, checksum
 and validated `release.json` before building.
 
-The existing cluster Docker image `codelight-nginx-base:verified` is amd64 with
+The existing cluster Docker image `codelync-nginx-base:verified` is amd64 with
 content ID `sha256:c243855693784bcf526c53692c4f82e9763d29a2467a3d90f4b22eb58cecd79b`.
 Reuse the already verified image with `--pull=false` after checking its content
 ID; no registry pull or Docker daemon change is needed. The website manifest

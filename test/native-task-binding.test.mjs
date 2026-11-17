@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SourceImageAdapter } from '../src/happy/bound-source.mjs';
+import { SourceImageAdapter } from '../src/codelync/bound-source.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const source = { app: 'claude-desktop', id: 'parent', hostId: 'host-code', nativeCollection: 'claude-code-sessions' };

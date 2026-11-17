@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LocalSourceDiscovery } from '../src/happy/discovery.mjs';
+import { LocalSourceDiscovery } from '../src/codelync/discovery.mjs';
 
 /** @typedef {Record<string,any>} Value */
 function fixture(allowDeferredSources = false, failIndex = false) {

@@ -28,7 +28,7 @@ receipt identities retain their recorded outcomes.
 - A fresh read-only native snapshot also reports zero current pending questions
   and preserves four older unanswered questions. No model test input was sent.
 - The public tunnel health check passed. Its temporary address changed when
-  CodeLight restarted; the phone must scan the new Mac QR to reconnect.
+  Codelync restarted; the phone must scan the new Mac QR to reconnect.
 - This fix is in the Mac bridge; iPhone build 2026103108 requires no reinstall.
 - The user confirmed on the physical phone that the old questions disappeared
   after reconnection. The bottom-banner removal is accepted by user observation.
@@ -44,7 +44,7 @@ The original Codex process from the earlier checkpoint is no longer running.
 The resumed run sees a Codex process started before its first tool call, so
 uninterrupted Codex process continuity across that checkpoint is not certified.
 The other recorded application PIDs still match. The resumed deployment started
-only CodeLight and issued no original-owner restart, stop or answer command.
+only Codelync and issued no original-owner restart, stop or answer command.
 
 Private conversation, device and credential evidence remains outside Git and
 source exports.

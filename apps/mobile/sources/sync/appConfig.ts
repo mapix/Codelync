@@ -5,7 +5,7 @@ import { resolveNativeSourceMode } from './appDistribution';
 
 export interface AppConfig {
     noninvasiveLocal?: boolean;
-    codeLightPushEnvironment?: 'development' | 'production';
+    codelyncPushEnvironment?: 'development' | 'production';
     postHogKey?: string;
     revenueCatAppleKey?: string;
     revenueCatGoogleKey?: string;

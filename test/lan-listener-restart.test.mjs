@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import nacl from 'tweetnacl';
-import { MacConnectionService } from '../src/happy/mac-connection-service.mjs';
-import { createPairingGateway, PairingInvitations } from '../src/happy/pairing-gateway.mjs';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
-import { parseLanListenerPorts, readLanListenerPorts } from '../src/happy/lan-listener-ports.mjs';
+import { MacConnectionService } from '../src/codelync/mac-connection-service.mjs';
+import { createPairingGateway, PairingInvitations } from '../src/codelync/pairing-gateway.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
+import { parseLanListenerPorts, readLanListenerPorts } from '../src/codelync/lan-listener-ports.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const HOST = '192.168.50.2';
@@ -18,7 +18,7 @@ const interfaces = { en0: [{ address: HOST, family: 'IPv4', internal: false }] }
 
 /** @param {import('node:test').TestContext} t */
 async function context(t) {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-listener-restart-'));
+  const state = await mkdtemp(join(tmpdir(), 'codelync-listener-restart-'));
   const phone = nacl.box.keyPair(), mac = nacl.box.keyPair(), token = 'synthetic-listener-device-token';
   const account = { secret: randomBytes(32).toString('base64url') }, devices = new DeviceRegistry(join(state, 'devices.json'));
   const deviceId = await devices.approve(Buffer.from(phone.publicKey).toString('base64url'), 'Synthetic listener phone', token);
@@ -50,7 +50,7 @@ async function context(t) {
 /** @param {Value} f @param {Value} channel */
 function proof(f, channel) {
   const nonce = randomBytes(24), payload = { version: 2, token: f.token, origin: channel.url, method: 'GET', path: '/api/peer/channels', at: Date.now() };
-  return 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
+  return 'Codelync ' + Buffer.from(JSON.stringify({ publicKey: Buffer.from(f.phone.publicKey).toString('base64url'), nonce: nonce.toString('base64url'),
     ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(payload)), nonce, f.mac.publicKey, f.phone.secretKey)).toString('base64url') })).toString('base64url');
 }
 
@@ -78,7 +78,7 @@ test('closing and restarting a profile preserves its private URL, peer and proof
 test('an occupied saved port falls back to a new owned listener without using its occupant', async t => {
   const f = await context(t), first = await f.make(), before = first.candidates()[0]; await first.close();
   let occupantRequests = 0;
-  const occupant = createServer((_req, res) => { occupantRequests++; res.end('not-CodeLight'); });
+  const occupant = createServer((_req, res) => { occupantRequests++; res.end('not-Codelync'); });
   occupant.listen(Number(new URL(before.url).port), '127.0.0.1'); await once(occupant, 'listening');
   t.after(async () => { occupant.closeAllConnections(); await new Promise(resolve => occupant.close(resolve)); });
   const second = await f.make(), after = second.candidates()[0];

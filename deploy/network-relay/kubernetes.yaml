@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: codelight-network-relay
-  namespace: codelight
+  name: codelync-network-relay
+  namespace: codelync
 spec:
   # Connection routing is intentionally ephemeral and local to this one instance.
   replicas: 1
   strategy: {type: Recreate}
-  selector: {matchLabels: {app: codelight-network-relay}}
+  selector: {matchLabels: {app: codelync-network-relay}}
   template:
-    metadata: {labels: {app: codelight-network-relay}}
+    metadata: {labels: {app: codelync-network-relay}}
     spec:
       automountServiceAccountToken: false
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: network
-          image: docker.io/library/codelight-network-relay:RELEASE_TAG
+          image: docker.io/library/codelync-network-relay:RELEASE_TAG
           imagePullPolicy: Never
           env:
             - name: REGISTRATION_TOKEN
-              valueFrom: {secretKeyRef: {name: codelight-network-registration, key: token}}
+              valueFrom: {secretKeyRef: {name: codelync-network-registration, key: token}}
           ports: [{name: http, containerPort: 8081}]
           resources:
             requests: {cpu: 50m, memory: 64Mi}
@@ -30,17 +30,17 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: codelight-network-relay, namespace: codelight}
+metadata: {name: codelync-network-relay, namespace: codelync}
 spec:
   type: ClusterIP
-  selector: {app: codelight-network-relay}
+  selector: {app: codelync-network-relay}
   ports: [{name: http, port: 80, targetPort: http}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: codelight-network-relay
-  namespace: codelight
+  name: codelync-network-relay
+  namespace: codelync
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
@@ -51,20 +51,20 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
 spec:
   ingressClassName: nginx
-  tls: [{hosts: [relay.example.com], secretName: codelight-network-tls}]
+  tls: [{hosts: [relay.example.com], secretName: codelync-network-tls}]
   rules:
     - host: relay.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
-            backend: {service: {name: codelight-network-relay, port: {name: http}}}
+            backend: {service: {name: codelync-network-relay, port: {name: http}}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: network-relay-only, namespace: codelight}
+metadata: {name: network-relay-only, namespace: codelync}
 spec:
-  podSelector: {matchLabels: {app: codelight-network-relay}}
+  podSelector: {matchLabels: {app: codelync-network-relay}}
   policyTypes: [Ingress, Egress]
   ingress:
     - from:

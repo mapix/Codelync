@@ -6,7 +6,7 @@
   immediately. The bounded mirror page could therefore finish before native
   observation provided a fresh latest view.
 - A later visit used forward sync from its cached sequence, and touch preload
-  could satisfy an entry before that fresh observation. CodeLight now coalesces
+  could satisfy an entry before that fresh observation. Codelync now coalesces
   tap/focus entry and uses a fresh latest native window for peer entries.
 - The last 50 mirror protocol records may be text suffixes or tool results whose
   seed records lie outside the page. They are not necessarily 50 complete visible
@@ -21,7 +21,7 @@
 
 ## Implementation and owners
 
-`CodeLightRecentService` reads the Mac's already-owned index/bindings without
+`CodelyncRecentService` reads the Mac's already-owned index/bindings without
 activating directory sources. It orders native update time and publishes an
 initial 200 entries, then pages up to 1000 (hard limit 2000). Entries older than
 72 hours contain basic title/identity/project/time metadata, no preview, heavy
@@ -40,21 +40,21 @@ Complete native text rows replace their known mirror fragment IDs. Tool rows
 seed the original call and current result through guarded native upserts. An
 older running seed cannot reopen an actually completed approved tool; the new
 regression reproduced that failure before the fix. Seed versions are owned by the
-CodeLight projection and advance with changed native content stamps, including
+Codelync projection and advance with changed native content stamps, including
 silent content changes at the same native revision. Stream correction counters
 remain separate, so a large seed version cannot suppress a later stream fix.
 Equal native times retain original row order without changing displayed time.
 Per-turn item order stays stable when complete history prepends older turns.
 The real Codex factory mirrors only its latest 100 public rows, while command
 reconciliation, current requests and explicit history reads retain the full view.
-CodeLight layout/content-size events cannot fetch older pages before a real
+Codelync layout/content-size events cannot fetch older pages before a real
 reading gesture, and a settled page cannot walk more pages without continued
 scrolling. Explicit incomplete history uses the original owner's complete-history
 read and reports completion only after the original flag confirms it.
 
 Phone entry captures the credential owner and selected session. A superseded
 selection or replaced credentials cannot publish a late recent window. Hover
-preload and background history prefetch do not load older CodeLight pages.
+preload and background history prefetch do not load older Codelync pages.
 Unopened basic entries do not fetch per-session keys merely to decrypt transient
 heavy state; their directory fields refresh on the next peer catalog read.
 
@@ -71,7 +71,7 @@ heavy state; their directory fields refresh on the next peer catalog read.
   text at an unchanged native revision advances the seed version, keeps its
   fragment identities, and sends no native command. The accompanying two index
   cache tests passed again.
-- 30 mobile tests passed in the initial `codeLightRecent.test.ts` and `sync.preload.test.ts` run.
+- 30 mobile tests passed in the initial `codelyncRecent.test.ts` and `sync.preload.test.ts` run.
   They exercise complete text/tool seeds without earlier protocol dependencies,
   later stream corrections, tap/focus coalescing, observation-before-fetch,
   no hover/history prefetch, explicit older cursor advance, superseded responses,
@@ -91,7 +91,7 @@ claims are fixture evidence, not physical-phone RTT or rendering measurements.
 
 ## Integrated interfaces and native acceptance remaining
 
-`CodeLightRecentService` integrates with the authenticated peer HTTP route. Its options
+`CodelyncRecentService` integrates with the authenticated peer HTTP route. Its options
 are `sources()`, `resolveSource(happySessionId)`, `available()` and optional `now()`.
 `resolveSource` must prepare and await the existing observer under the daemon's
 source-use boundary; it must not navigate or start another native runtime.
@@ -120,7 +120,7 @@ current state and measured latency. It accepts no address/key and reports
 failures with localized text without exposing raw errors. Ten languages and the
 dedicated English mirror include its strings.
 
-`codelight://dev/peer-channel` is a native layout fixture for the sheet, automatic
+`codelync://dev/peer-channel` is a native layout fixture for the sheet, automatic
 selection, manual Cloudflare selection and Relay failure. Its documentation IP
 and example hostnames are not probed. Production channel selection uses the
 authenticated connection owner. Sync's machines/account/settings/profile requests

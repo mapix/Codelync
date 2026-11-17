@@ -13,7 +13,7 @@ import {
     EffortLevel,
 } from '@/components/modelModeOptions';
 import { getSuggestions } from '@/components/autocomplete/suggestions';
-import { handleCodeLightSlashSubmission } from '@/utils/codeLightNativeCommands';
+import { handleCodelyncSlashSubmission } from '@/utils/codelyncNativeCommands';
 import { runNoninvasiveRpc } from '@/sync/noninvasiveRpc';
 import { ChatHeaderView } from '@/components/ChatHeaderView';
 import { PendingChatPlaceholder } from '@/components/PendingChatPlaceholder';
@@ -27,9 +27,9 @@ import { apiSocket } from '@/sync/apiSocket';
 import { NativeSessionUnavailable } from '@/components/NativeSessionUnavailable';
 import { nativeSessionAvailability } from '@/utils/nativeSessionAvailability';
 import { nativeSessionAvailabilityLabels } from '@/text/nativeSessionAvailabilityLabels';
-import { useCodeLightDiscoveryProgress } from '@/sync/codeLightLoadingProgress';
-import { useCodeLightMessageProgress } from '@/sync/codeLightLoadingProgress';
-import { codeLightSubagentKindLabels } from '@/text/codeLightSubagentLabels';
+import { useCodelyncDiscoveryProgress } from '@/sync/codelyncLoadingProgress';
+import { useCodelyncMessageProgress } from '@/sync/codelyncLoadingProgress';
+import { codelyncSubagentKindLabels } from '@/text/codelyncSubagentLabels';
 import { getCurrentLanguage } from '@/text';
 import { nativeParentControl } from '@/utils/nativeParentControl';
 import { nativeComposerInputReadOnly } from '@/utils/nativeComposerInputReadOnly';
@@ -37,14 +37,14 @@ import { nativeReadingControlsUnavailable } from '@/utils/nativeReadingWindow';
 import { NativeReadonlyModelCatalog } from '@/components/NativeReadonlyModelCatalog';
 import { readNativeModelControlScope, nativeModelControlScopesEqual } from '@/utils/nativeModelControls';
 import type { NativeModelControlScope } from '@/sync/storageTypes';
-import { codeLightSavedHistory } from '@/utils/nativeSavedHistory';
-import { CodeLightSubagents } from '@/components/CodeLightSubagents';
-import { useCodeLightSubagents } from '@/hooks/useCodeLightSubagents';
-import { codeLightSourceAppName, codeLightSourceLabel } from '@/utils/codeLightSourceScope';
+import { codelyncSavedHistory } from '@/utils/nativeSavedHistory';
+import { CodelyncSubagents } from '@/components/CodelyncSubagents';
+import { useCodelyncSubagents } from '@/hooks/useCodelyncSubagents';
+import { codelyncSourceAppName, codelyncSourceLabel } from '@/utils/codelyncSourceScope';
 import { readNativeQuery } from '@/utils/nativeQuery';
-import { CodeLightSessionLoading } from '@/components/CodeLightSessionLoading';
-import { useCodeLightModelControls } from '@/hooks/useCodeLightModelControls';
-import { useCodeLightSelectedSessionActivity } from '@/hooks/useCodeLightProjectActivity';
+import { CodelyncSessionLoading } from '@/components/CodelyncSessionLoading';
+import { useCodelyncModelControls } from '@/hooks/useCodelyncModelControls';
+import { useCodelyncSelectedSessionActivity } from '@/hooks/useCodelyncProjectActivity';
 import { NativeWindowPanel } from '@/components/NativeWindowPanel';
 import { EmptyMessages } from '@/components/EmptyMessages';
 import { Avatar } from '@/components/Avatar';
@@ -106,6 +106,7 @@ import {
     rigCanUseAttachments,
     rigCanUseShell,
 } from '@/sync/rig';
+import { useCodelyncConnectionState } from '@/hooks/useCodelyncConnectionState';
 import { isNoninvasiveBridge, canReadFromNoninvasiveSource, canSendToNoninvasiveSource } from '@/sync/noninvasiveBridge';
 import { RigActivityBar } from '@/components/RigActivityBar';
 import { AnimatedFade } from '@/components/AnimatedOverlay';
@@ -147,8 +148,8 @@ export const SessionView = React.memo((props: { id: string }) => {
         [headerSession?.metadata, gitStatus],
     );
     const isDataReady = useIsDataReady();
-    const nativeDiscovery = useCodeLightDiscoveryProgress();
-    const unavailableRead = useCodeLightMessageProgress(sessionId ?? routeId);
+    const nativeDiscovery = useCodelyncDiscoveryProgress();
+    const unavailableRead = useCodelyncMessageProgress(sessionId ?? routeId);
     const availability = nativeSessionAvailability({ nativeProduct: !!config.noninvasiveLocal, ready: isDataReady,
         pending: !!pendingChat, directoryPhase: nativeDiscovery.phase, session });
     // Grouped by project, a chat is one tab of its checkout: the header names
@@ -167,7 +168,7 @@ export const SessionView = React.memo((props: { id: string }) => {
     // Keep Android's compact landscape header: it owns the session info and
     // Changes navigation even when a small tablet uses the phone layout.
     const hidesLandscapeHeader = isLandscape && !isTablet && Platform.OS === 'ios';
-    const nativeSubagents = useCodeLightSubagents(session ?? null, undefined, false, isFocused);
+    const nativeSubagents = useCodelyncSubagents(session ?? null, undefined, false, isFocused);
     const [subagentPanelHeight, setSubagentPanelHeight] = React.useState(44);
     const showSubagentPanel = !hidesLandscapeHeader && isDataReady && availability === 'available' && nativeSubagents.present;
     const headerAccessoryHeight = tabStripHeight + (showSubagentPanel ? subagentPanelHeight : 0);
@@ -540,7 +541,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                             ? safeArea.top + mobileHeaderHeight + headerAccessoryHeight + (!isTablet && realtimeStatus !== 'disconnected' ? VOICE_PILL_TOTAL_HEIGHT : 0) : 0}
                         onBack={() => router.replace('/')}
                         onRetry={async () => {
-                            if (config.noninvasiveLocal) { await sync.retryCodeLightSession(sessionId ?? routeId); return; }
+                            if (config.noninvasiveLocal) { await sync.retryCodelyncSession(sessionId ?? routeId); return; }
                             await sync.refreshSessions();
                             const current = storage.getState().sessions[sessionId ?? routeId];
                             if (current && isNoninvasiveBridge(current.metadata) && current.metadata?.nativeSession?.catalogueAvailable !== false) sync.onSessionVisible(current.id);
@@ -584,11 +585,11 @@ export const SessionView = React.memo((props: { id: string }) => {
                 }}>
                     <ChatHeaderView
                         title={session?.metadata?.nativeSession?.isSubagent === true && isNoninvasiveBridge(session.metadata)
-                            ? `${codeLightSourceAppName(session.metadata.bridge?.source.app)} · ${codeLightSubagentKindLabels[getCurrentLanguage()]} · ${session.metadata.nativeSession.agentName || session.metadata.nativeSession.title || headerProps.title}`
+                            ? `${codelyncSourceAppName(session.metadata.bridge?.source.app)} · ${codelyncSubagentKindLabels[getCurrentLanguage()]} · ${session.metadata.nativeSession.agentName || session.metadata.nativeSession.title || headerProps.title}`
                             : showTabStrip
                             ? worktree.workspaceName ?? headerGit.subtitle ?? worktree.projectName
-                            : isNoninvasiveBridge(session?.metadata) && codeLightSourceAppName(session?.metadata?.bridge?.source.app)
-                                ? `${codeLightSourceLabel(session?.metadata?.bridge?.source)} · ${headerProps.title}`
+                            : isNoninvasiveBridge(session?.metadata) && codelyncSourceAppName(session?.metadata?.bridge?.source.app)
+                                ? `${codelyncSourceLabel(session?.metadata?.bridge?.source)} · ${headerProps.title}`
                                 : headerProps.title}
                         subtitle={showTabStrip
                             ? Platform.OS === 'web'
@@ -608,7 +609,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                     {showSubagentPanel ? <View onLayout={event => {
                         const height = Math.ceil(event.nativeEvent.layout.height);
                         setSubagentPanelHeight(previous => Math.abs(previous - height) < 1 ? previous : height);
-                    }}><CodeLightSubagents session={session ?? null} active={isFocused} /></View> : null}
+                    }}><CodelyncSubagents session={session ?? null} active={isFocused} /></View> : null}
                     {/* Voice status bar below header - not on tablet (shown in sidebar) */}
                     {!isTablet && realtimeStatus !== 'disconnected' && (
                         <VoiceAssistantStatusBar variant="full" />
@@ -899,10 +900,11 @@ export function SessionViewLoaded({
 
     const realtimeStatus = useRealtimeStatus();
     const { messages, isLoaded, isLoadingOlder } = useSessionMessages(sessionId ?? '');
-    const nativeMessageProgress = useCodeLightMessageProgress(sessionId ?? '');
-    const nativeModels = useCodeLightModelControls(session ?? null);
-    useCodeLightSelectedSessionActivity(session ?? null, active);
-    const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected();
+    const nativeMessageProgress = useCodelyncMessageProgress(sessionId ?? '');
+    const nativeModels = useCodelyncModelControls(session ?? null);
+    useCodelyncSelectedSessionActivity(session ?? null, active);
+    const routeState = useCodelyncConnectionState();
+    const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected() && routeState.snapshot.writable !== false;
     const nativeWritesBlocked = nativeWriteConnectionBlocked(session?.metadata, socketConnected);
     const pendingCommunications = useSessionPendingCommunications(sessionId ?? '');
     const acknowledgedCliVersions = useLocalSetting('acknowledgedCliVersions');
@@ -994,13 +996,13 @@ export function SessionViewLoaded({
 
     // Function to update permission mode
     const updatePermissionMode = React.useCallback((mode: PermissionMode) => {
-        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
         if (sessionId) sessionSetAgentModes(sessionId, { permissionMode: mode.key });
     }, [sessionId, session?.metadata]);
 
     const updateModelMode = React.useCallback((mode: ModelMode) => {
         if (!session || !sessionId) return;
-        if (nativeWriteConnectionBlocked(session.metadata, apiSocket.peerConnected())) return;
+        if (nativeWriteConnectionBlocked(session.metadata, apiSocket.peerWritable())) return;
         const nextEffortLevels = getEffortLevelsForModel(flavor, mode.key, session.metadata);
         const currentEffortSupported = session.effortLevel
             ? nextEffortLevels.some((level) => level.key === session.effortLevel)
@@ -1012,7 +1014,7 @@ export function SessionViewLoaded({
     }, [sessionId, flavor, session]);
 
     const updateEffortLevel = React.useCallback((level: EffortLevel) => {
-        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
         if (sessionId) sessionSetAgentModes(sessionId, { effortLevel: level.key });
     }, [sessionId, session?.metadata]);
 
@@ -1041,25 +1043,25 @@ export function SessionViewLoaded({
             return;
         }
         if (sendingSessionsRef.current.has(sessionId)) return;
-        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
         // 描述符/机器在线不等于原 runtime 已激活；按钮和最终 Sync 都必须用实时 metadata 阻止提前发送。
         if (nativeComposerInputReadOnly(storage.getState().sessions[sessionId])
             || !canSendToNoninvasiveSource(storage.getState().sessions[sessionId]?.metadata, storage.getState().sessions[sessionId]?.agentState)) return;
         const liveMessage = composer?.getMessage() ?? '';
         const draftUpdatedAt = storage.getState().sessions[sessionId]?.draftUpdatedAt;
-        if (handleCodeLightSlashSubmission(storage.getState().sessions[sessionId]?.metadata, liveMessage, {
+        if (handleCodelyncSlashSubmission(storage.getState().sessions[sessionId]?.metadata, liveMessage, {
             nativeAction: sourceCommand => {
-                if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+                if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
                 if (selectedImages.length) return;
                 sendingSessionsRef.current.add(sessionId);
                 void runNoninvasiveRpc(sessionId, 'source-command', sourceCommand).then(() => {
                     const latest = storage.getState().sessions[sessionId];
                     if (currentSessionIdRef.current === sessionId && latest?.draftUpdatedAt === draftUpdatedAt && composerHandleRef.current === composer && composer?.getMessage() === liveMessage) composer.clearMessage();
-                }).catch(() => { Modal.alert(t('common.error'), t('codeLightCommands.unconfirmed')); })
+                }).catch(() => { Modal.alert(t('common.error'), t('codelyncCommands.unconfirmed')); })
                     .finally(() => sendingSessionsRef.current.delete(sessionId));
             },
-            modelPicker: () => { Modal.alert(t('agentInput.model.title'), t('codeLightCommands.modelMenu')); },
-            blocked: reason => { Modal.alert(t('common.error'), t(reason === 'busy' ? 'codeLightCommands.busy' : 'codeLightCommands.unsupported')); },
+            modelPicker: () => { Modal.alert(t('agentInput.model.title'), t('codelyncCommands.modelMenu')); },
+            blocked: reason => { Modal.alert(t('common.error'), t(reason === 'busy' ? 'codelyncCommands.busy' : 'codelyncCommands.unsupported')); },
         })) return;
         if (liveMessage.trim() || selectedImages.length > 0) {
             const attachments = selectedImages.length > 0 ? selectedImages : undefined;
@@ -1089,7 +1091,7 @@ export function SessionViewLoaded({
                         },
                     });
                     if (!accepted) return;
-                    if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+                    if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
                     const dismissals = await Promise.allSettled(communicationsToDismiss.map(communication => (
                         sessionCancelCommunication(sessionId, communication.id, communication.kind)
                     )));
@@ -1111,7 +1113,7 @@ export function SessionViewLoaded({
     const handleAbort = React.useCallback(() => {
         // Stop cancels only the active turn. Permission, model, and effort are
         // session choices and must remain sticky for the next message.
-        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
         if (sessionId && !nativeComposerInputReadOnly(storage.getState().sessions[sessionId])) sessionAbort(sessionId, nativeQuery);
     }, [sessionId, session?.metadata, nativeQuery?.nativeConversationId, nativeQuery?.hostId, nativeQuery?.ownerGeneration, nativeQuery?.queryToken]);
 
@@ -1154,8 +1156,8 @@ export function SessionViewLoaded({
     ]);
     const [goalActionInFlight, setGoalActionInFlight] = React.useState<AgentGoalAction | null>(null);
     const handleGoalAction = React.useCallback(async (action: AgentGoalAction) => {
-        if (!sessionId || codeLightSavedHistory(storage.getState().sessions[sessionId])) return;
-        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected())) return;
+        if (!sessionId || codelyncSavedHistory(storage.getState().sessions[sessionId])) return;
+        if (nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable())) return;
         await performAgentGoalAction({
             action,
             currentGoalText: visibleAgentGoal?.text ?? '',
@@ -1165,7 +1167,7 @@ export function SessionViewLoaded({
                 cancelText: t('common.cancel'),
                 confirmText: t('common.save'),
             }),
-            dispatchGoalAction: (nextAction, objective) => nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerConnected()) ? Promise.resolve(undefined) : sessionGoalAction(sessionId!, nextAction, objective),
+            dispatchGoalAction: (nextAction, objective) => nativeWriteConnectionBlocked(session?.metadata, apiSocket.peerWritable()) ? Promise.resolve(undefined) : sessionGoalAction(sessionId!, nextAction, objective),
             setInFlight: setGoalActionInFlight,
             onError: (error) => console.error('Failed to perform goal action', error),
         });
@@ -1228,7 +1230,7 @@ export function SessionViewLoaded({
     const isWindowSource = !!session && !!sessionId && isNoninvasiveBridge(session.metadata) && session.metadata?.bridge?.controlMode === 'window';
     const sourceActivationRequired = !!session && !!sessionId && isNoninvasiveBridge(session.metadata)
         && session.metadata?.bridge?.controlMode === 'session' && (!canReadFromNoninvasiveSource(session.metadata) || nativeMessageProgress.phase === 'error');
-    const savedHistoryOnly = !!codeLightSavedHistory(session);
+    const savedHistoryOnly = !!codelyncSavedHistory(session);
     const nativeInputReadOnly = nativeComposerInputReadOnly(session) || nativeReadingControlsUnavailable(session?.metadata);
     const [modelCatalogScope, setModelCatalogScope] = React.useState<NativeModelControlScope | null>(null);
     const closeModelCatalog = React.useCallback(() => setModelCatalogScope(null), []);
@@ -1242,11 +1244,11 @@ export function SessionViewLoaded({
         : session ? (
         <>
             {sourceActivationRequired && !isLoaded && <NativeSourceBanner sessionId={sessionId} topInset={chatListTopContentInset ?? 0} />}
-            {embedded || Platform.OS === 'ios' && isLandscape && !isTablet ? <CodeLightSubagents session={session} active={active} /> : null}
-            {isNoninvasiveBridge(session.metadata) && (!isLoaded || isLoadingOlder) && (!sourceActivationRequired || savedHistoryOnly || nativeParentControl(session)) && <CodeLightSessionLoading sessionId={session.id} initial={!isLoaded} older={isLoadingOlder} topInset={chatListTopContentInset ?? 0} />}
+            {embedded || Platform.OS === 'ios' && isLandscape && !isTablet ? <CodelyncSubagents session={session} active={active} /> : null}
+            {isNoninvasiveBridge(session.metadata) && (!isLoaded || isLoadingOlder) && (!sourceActivationRequired || savedHistoryOnly || nativeParentControl(session)) && <CodelyncSessionLoading sessionId={session.id} initial={!isLoaded} older={isLoadingOlder} topInset={chatListTopContentInset ?? 0} />}
             {nativeModels.message ? <View accessibilityLiveRegion="polite" style={{ position: 'absolute', top: (chatListTopContentInset ?? 0) + 4, left: 14, right: 14, zIndex: 12, padding: 12, borderRadius: 12, backgroundColor: theme.colors.groupped.background }}>
                 <Text style={{ color: theme.colors.textSecondary }}>{nativeModels.message}</Text>
-                {nativeModels.status !== 'saving' && nativeModels.canRefresh ? <Pressable accessibilityRole="button" testID="codelight-check-model-settings" onPress={() => { void nativeModels.refresh().catch(() => {}); }} style={{ paddingTop: 8, minHeight: 44 }}><Text style={{ color: theme.colors.text }}>{t('codeLightModels.check')}</Text></Pressable> : null}
+                {nativeModels.status !== 'saving' && nativeModels.canRefresh ? <Pressable accessibilityRole="button" testID="codelync-check-model-settings" onPress={() => { void nativeModels.refresh().catch(() => {}); }} style={{ paddingTop: 8, minHeight: 44 }}><Text style={{ color: theme.colors.text }}>{t('codelyncModels.check')}</Text></Pressable> : null}
             </View> : null}
             <Deferred>
                 {messages.length > 0 && (

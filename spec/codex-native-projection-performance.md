@@ -101,5 +101,5 @@ measurements.
 Run the benchmark explicitly with an archived previous backend source:
 
 ```sh
-CODELIGHT_NATIVE_BENCHMARK=1 CODELIGHT_NATIVE_BASELINE=/path/to/previous-codex-backend.mjs node --expose-gc --test --test-name-pattern='synthetic complete' test/codex-backend-performance.test.mjs
+CODELYNC_NATIVE_BENCHMARK=1 CODELYNC_NATIVE_BASELINE=/path/to/previous-codex-backend.mjs node --expose-gc --test --test-name-pattern='synthetic complete' test/codex-backend-performance.test.mjs
 ```

@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, createHash } from 'node:crypto';
 import nacl from 'tweetnacl';
-import { channelList, channelOrigin, channelPath } from '../packages/wire/codelight.js';
+import { channelList, channelOrigin, channelPath } from '../packages/wire/codelync.js';
 import { DeviceProofVerifier } from '../src/network/device-proof.mjs';
-import { PairingInvitations } from '../src/happy/pairing-gateway.mjs';
+import { PairingInvitations } from '../src/codelync/pairing-gateway.mjs';
 
 test('channel sets are bounded, unique and retain private/public transport boundaries', () => {
   assert.equal(channelOrigin('http://192.168.1.2:8800/', 'local'), 'http://192.168.1.2:8800');
@@ -21,7 +21,7 @@ test('device proofs hide bearer tokens, bind approved key/path/time, and cannot 
   const verifier = new DeviceProofVerifier({ key: mac.secretKey, devices: { authorize: value => value === token && !revoked ? createHash('sha256').update(publicKey).digest('hex').slice(0, 24) : null }, origins: () => [origin], now: () => now });
   const proof = (changes = {}) => {
     const nonce = randomBytes(24), payload = { version: 2, token, origin, method: 'GET', path: '/v1/updates', at: now, ...changes };
-    return 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey, nonce: nonce.toString('base64url'), ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(payload)), nonce, mac.publicKey, phone.secretKey)).toString('base64url') })).toString('base64url');
+    return 'Codelync ' + Buffer.from(JSON.stringify({ publicKey, nonce: nonce.toString('base64url'), ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(payload)), nonce, mac.publicKey, phone.secretKey)).toString('base64url') })).toString('base64url');
   };
   const header = proof(); assert.equal(header.includes(token), false);
   assert.equal(verifier.authorize(header, 'GET', '/v1/updates?EIO=4')?.token, token);

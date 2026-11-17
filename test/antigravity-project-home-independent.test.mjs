@@ -11,7 +11,7 @@ import { AntigravityBackend } from '../src/adapters/antigravity-backend.mjs';
 const summary = workspace => ({ status: 'CASCADE_RUN_STATUS_IDLE', workspaces: [{ workspaceFolderAbsoluteUri: pathToFileURL(workspace).href }] });
 
 test('resident and durable Antigravity projects use only the native runtime managed home', async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'codelight-agy-project-home-'));
+  const temporary = await mkdtemp(join(tmpdir(), 'codelync-agy-project-home-'));
   let backend;
   try {
     const root = await realpath(temporary), home = join(root, 'native-home'), main = join(root, 'projects', 'fixture-repository');

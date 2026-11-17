@@ -12,15 +12,15 @@
         "type": "CORTEX_STEP_TYPE_VIEW_FILE",
         "status": "CORTEX_STEP_STATUS_DONE",
         "metadata": {
-          "toolCall": { "id": "fixture-read-call", "name": "read_file", "argumentsJson": "{\"Path\":\"/isolated/codelight-qa/input.json\"}" }
+          "toolCall": { "id": "fixture-read-call", "name": "read_file", "argumentsJson": "{\"Path\":\"/isolated/codelync-qa/input.json\"}" }
         },
-        "viewFile": { "absolutePathUri": "file:///isolated/codelight-qa/input.json", "content": "{\"a\":17,\"b\":25}" }
+        "viewFile": { "absolutePathUri": "file:///isolated/codelync-qa/input.json", "content": "{\"a\":17,\"b\":25}" }
       },
       {
         "type": "CORTEX_STEP_TYPE_CODE_ACTION",
         "status": "CORTEX_STEP_STATUS_DONE",
         "metadata": {
-          "toolCall": { "id": "fixture-write-call", "name": "write_file", "argumentsJson": "{\"Path\":\"/isolated/codelight-qa/result.json\",\"Content\":\"{\\\"sum\\\":42}\\n\",\"Overwrite\":true}" }
+          "toolCall": { "id": "fixture-write-call", "name": "write_file", "argumentsJson": "{\"Path\":\"/isolated/codelync-qa/result.json\",\"Content\":\"{\\\"sum\\\":42}\\n\",\"Overwrite\":true}" }
         },
         "codeAction": { "diffStats": { "additions": 2 } }
       }

@@ -5,7 +5,7 @@ import { isSameServerEndpoint } from '@/utils/serverOrigin';
  * module only transports opaque values and never exposes a public image URL.
  */
 import type { AuthCredentials } from '@/auth/tokenStorage';
-import { getHappyClientId } from './apiSocket';
+import { getCodelyncClientId } from './apiSocket';
 import { getServerUrl, rewriteLoopbackHost } from './serverConfig';
 import type { ApiProjectAvatar, ApiProjectRecord } from './projectTypes';
 import { credentialHeaders } from './peerNetwork';
@@ -16,7 +16,7 @@ function authHeaders(credentials: AuthCredentials, contentType = true, url = get
     return {
         ...credentialHeaders(credentials,url,method,getServerUrl()),
         ...(contentType ? { 'Content-Type': 'application/json' } : {}),
-        'X-Happy-Client': getHappyClientId(),
+        'X-Codelync-Client': getCodelyncClientId(),
     };
 }
 
@@ -139,7 +139,7 @@ export async function downloadProjectAvatar(
     const serverUrl = getServerUrl();
     const downloadUrl = await requestProjectAvatarDownload(credentials, projectId);
     const headers = isServerHostedUrl(downloadUrl, serverUrl) || credentials.peer
-        ? { ...credentialHeaders(credentials,downloadUrl,'GET',serverUrl), 'X-Happy-Client': getHappyClientId() }
+        ? { ...credentialHeaders(credentials,downloadUrl,'GET',serverUrl), 'X-Codelync-Client': getCodelyncClientId() }
         : undefined;
     const response = await fetch(downloadUrl, headers ? { headers } : undefined);
     if (!response.ok) {

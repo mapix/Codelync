@@ -44,7 +44,7 @@ test('a native guarded branch is not accepted on the guard first end; the traili
   const connecting = client.connect(); f.child.stdout.write('%begin 10 317 0\n%end 10 317 0\n'); await connecting;
   let resolved = false; const pending = client.run('if-shell -F 1 "display-message OK"').then(value => { resolved = true; return value; });
   await new Promise(resolve => setImmediate(resolve));
-  const marker = /CODELIGHT_TMUX_DONE_[a-f0-9]+/u.exec(f.chunks[0])?.[0]; assert.ok(marker);
+  const marker = /CODELYNC_TMUX_DONE_[a-f0-9]+/u.exec(f.chunks[0])?.[0]; assert.ok(marker);
   f.child.stdout.write('%begin 10 320 1\n%end 10 320 1\n%begin 10 321 1\nOK\n%end 10 321 1\n');
   await new Promise(resolve => setImmediate(resolve)); assert.equal(resolved, false);
   f.child.stdout.write(`%begin 10 322 1\n${marker}\n%end 10 322 1\n`);

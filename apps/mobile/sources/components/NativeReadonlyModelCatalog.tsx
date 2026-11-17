@@ -5,7 +5,7 @@ import type { Session, NativeModelControlScope } from '@/sync/storageTypes';
 import { readNativeModelControlScope, nativeModelControlScopesEqual } from '@/utils/nativeModelControls';
 import { getCurrentAppState } from '@/sync/apiSocket';
 import { getCurrentLanguage, t } from '@/text';
-import { codeLightTaskLabels } from '@/text/codeLightTaskLabels';
+import { codelyncTaskLabels } from '@/text/codelyncTaskLabels';
 import { Typography } from '@/constants/Typography';
 
 export function NativeReadonlyModelCatalog({ session, captured, active, onClose }: {
@@ -18,16 +18,16 @@ export function NativeReadonlyModelCatalog({ session, captured, active, onClose 
         && model?.catalogAvailable === true && !!model.models.length;
     React.useEffect(() => { if (!visible) onClose(); }, [visible, onClose]);
     const { theme } = useUnistyles();
-    const closeLabel = codeLightTaskLabels[getCurrentLanguage()].close;
+    const closeLabel = codelyncTaskLabels[getCurrentLanguage()].close;
     if (!visible || !model) return null;
     return <Modal visible transparent animationType="fade" onRequestClose={onClose}>
         <View style={styles.overlay}>
             <Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel={closeLabel} onPress={onClose} />
-            <View testID="codelight-native-model-catalog" style={styles.sheet}>
+            <View testID="codelync-native-model-catalog" style={styles.sheet}>
                 <View style={styles.header}><Text style={styles.title}>{t('agentInput.model.title')}</Text>
-                    <Pressable testID="codelight-native-model-catalog-close" accessibilityRole="button" accessibilityLabel={closeLabel} onPress={onClose} style={styles.close}>
+                    <Pressable testID="codelync-native-model-catalog-close" accessibilityRole="button" accessibilityLabel={closeLabel} onPress={onClose} style={styles.close}>
                         <Text style={styles.link}>{closeLabel}</Text></Pressable></View>
-                <ScrollView>{model.models.map(option => <Pressable key={option.id} testID={'codelight-native-model-catalog:' + option.id}
+                <ScrollView>{model.models.map(option => <Pressable key={option.id} testID={'codelync-native-model-catalog:' + option.id}
                     accessibilityRole="button" accessibilityLabel={option.label} accessibilityState={{ disabled: true }} disabled style={styles.row}>
                     <Text style={styles.text}>{option.label}</Text></Pressable>)}</ScrollView>
                 <Text style={styles.readonly}>{t('agentInput.codexPermissionMode.readOnly')}</Text>

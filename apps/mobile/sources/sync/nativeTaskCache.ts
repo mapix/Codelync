@@ -1,6 +1,6 @@
 import { NativeTasksSchema, type NativeTasks, type NativeTaskScope, type NativeTaskSignal } from './nativeTasks';
-import { nativeTaskScopesEqual } from '@/utils/codeLightNativeTasks';
-import { nativeTaskSignal, NATIVE_TASK_SNAPSHOT_MAX_BYTES } from '@slopus/happy-wire/native-tasks';
+import { nativeTaskScopesEqual } from '@/utils/codelyncNativeTasks';
+import { nativeTaskSignal, NATIVE_TASK_SNAPSHOT_MAX_BYTES } from '@codelync/wire/native-tasks';
 
 export type NativeTaskCacheContext = { peerId: string; sessionId: string; scope: NativeTaskScope; desiredDigest: string | null; signal?: NativeTaskSignal | null };
 export type NativeTaskCacheView = Readonly<{ native: NativeTasks | null; loading: boolean; failed: boolean }>;

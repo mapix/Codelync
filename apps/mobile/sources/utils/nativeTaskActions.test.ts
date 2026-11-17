@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Session } from '@/sync/storageTypes';
-import { rpcTarget } from '@slopus/happy-wire/codelight';
+import { rpcTarget } from '@codelync/wire/codelync';
 import { NoninvasiveRpcJournal, BridgeRpcUnconfirmedError } from '@/sync/noninvasiveRpcJournal';
 import { createNativeTaskActions, nativeTaskActionAllowed } from './nativeTaskActions';
 

@@ -4,9 +4,9 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { NativeHappyConnector } from '../src/happy/native-connector.mjs';
+import { NativeHappyConnector } from '../src/codelync/native-connector.mjs';
 import { CommandReceipts } from '../src/commands.mjs';
-import { confirmedNativeSettingsEvidence } from '../src/happy/native-settings-scope.mjs';
+import { confirmedNativeSettingsEvidence } from '../src/codelync/native-settings-scope.mjs';
 
 /** @typedef {Record<string, any>} Value */
 /** @typedef {(params:Value)=>Promise<Value>} RpcHandler */
@@ -75,7 +75,7 @@ class SyntheticTransport extends EventEmitter {
 
 /** @param {import('node:test').TestContext} t @returns {Promise<Fixture>} */
 async function createFixture(t) {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-settings-independent-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-settings-independent-'));
   const transport = new SyntheticTransport();
   const receipts = await CommandReceipts.load(join(directory, 'receipts.json'));
   /** @type {FixtureState} */

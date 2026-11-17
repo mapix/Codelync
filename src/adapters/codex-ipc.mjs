@@ -189,7 +189,7 @@ export class CodexIpcAdapter {
         throw new BridgeError('codex-protocol-error', 'Codex IPC request identity or method was invalid.', 502);
       }
       // 原生客户端会明确拒绝转发来的未处理请求；静默丢弃会让请求方一直等到超时。
-      // CodeLight 不注册 owner handler，所以合法版本也只能拒绝，不能借此承认或执行原会话操作。
+      // Codelync 不注册 owner handler，所以合法版本也只能拒绝，不能借此承认或执行原会话操作。
       this.write({ type: 'response', requestId: frame.requestId, resultType: 'error',
         error: matchesNativeRequestVersion(frame) ? 'no-handler-for-request' : 'request-version-mismatch' });
       return;

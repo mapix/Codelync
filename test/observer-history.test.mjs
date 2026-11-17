@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { archiveObserverCheckpointPayload, readArchivedObserverRows, readObserverHistoryArchives } from '../src/happy/observer-history.mjs';
+import { archiveObserverCheckpointPayload, readArchivedObserverRows, readObserverHistoryArchives } from '../src/codelync/observer-history.mjs';
 import { BridgeError } from '../src/errors.mjs';
 
 const key = new Uint8Array(32).fill(4);
@@ -15,7 +15,7 @@ function fixtureState() {
 }
 
 test('interrupted archive-before-checkpoint migration is idempotent and retains pending bodies, aliases and commands', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-history-')), path = join(directory, 'projection.json'), original = fixtureState();
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-history-')), path = join(directory, 'projection.json'), original = fixtureState();
   try {
     const first = structuredClone(original); await archiveObserverCheckpointPayload(first, path, key, 0);
     const files = await readdir(path + '.history'), before = await readFile(join(path + '.history', files[0]), 'utf8');
@@ -32,7 +32,7 @@ test('interrupted archive-before-checkpoint migration is idempotent and retains 
 });
 
 test('an archive write failure preserves every active body and operation', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-history-failure-')), path = join(directory, 'projection.json'), state = fixtureState(), before = structuredClone(state);
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-history-failure-')), path = join(directory, 'projection.json'), state = fixtureState(), before = structuredClone(state);
   try {
     await writeFile(path + '.history', 'blocking file');
     await assert.rejects(archiveObserverCheckpointPayload(state, path, key, 0)); assert.deepEqual(state, before);

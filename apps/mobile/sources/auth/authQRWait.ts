@@ -3,7 +3,7 @@ import { decodeBase64, encodeBase64 } from '../encryption/base64';
 import { getServerUrl } from '@/sync/serverConfig';
 import { QRAuthKeyPair } from './authQRStart';
 import { decryptBox } from '@/encryption/libsodium';
-import { getHappyClientId } from '@/sync/apiSocket';
+import { getCodelyncClientId } from '@/sync/apiSocket';
 
 export interface AuthCredentials {
     secret: Uint8Array;
@@ -23,7 +23,7 @@ export async function authQRWait(keypair: QRAuthKeyPair, onProgress?: (dots: num
                 publicKey: encodeBase64(keypair.publicKey),
             }, {
                 timeout: 15000, headers: {
-                    'X-Happy-Client': getHappyClientId(),
+                    'X-Codelync-Client': getCodelyncClientId(),
                 }
             });
 

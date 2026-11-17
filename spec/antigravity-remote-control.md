@@ -2,7 +2,7 @@
 
 Status: implementation and isolated protocol investigation, 2026-11-13.
 
-The user has authorized extending CodeLight from Codex to Codex plus Antigravity
+The user has authorized extending Codelync from Codex to Codex plus Antigravity
 Desktop. Other historical harnesses and window/AX adapters remain deferred.
 
 ## Owners and isolation
@@ -14,14 +14,14 @@ Desktop. Other historical harnesses and window/AX adapters remain deferred.
 - Initial probes use a copied Antigravity application, separate HOME, config,
   application data and workspace. Credentials are copied privately only as needed;
   conversation history and active original tasks are not copied into probes.
-- Native CodeLight QA can set `CODELIGHT_STATE_DIR` to a separate private Mac
-  application state directory and `CODELIGHT_ANTIGRAVITY_RUNTIME` to the probe
+- Native Codelync QA can set `CODELYNC_STATE_DIR` to a separate private Mac
+  application state directory and `CODELYNC_ANTIGRAVITY_RUNTIME` to the probe
   endpoint manifest. Normal launches retain their existing application state.
-- With that explicit isolated state, `CODELIGHT_PAIRING_EXPORT=1` writes the
+- With that explicit isolated state, `CODELYNC_PAIRING_EXPORT=1` writes the
   current v2 invitation to private `qa-pairing.json` for native simulator QA.
   This is opt-in, never a public API or an ordinary log, and is excluded from Git.
-- Mac QA builds can set `CODELIGHT_MAC_BUNDLE_ID` to a separate bundle identity,
-  `CODELIGHT_BACKEND_PORT` to a separate loopback port and `CODELIGHT_LEASE_DIR`
+- Mac QA builds can set `CODELYNC_MAC_BUNDLE_ID` to a separate bundle identity,
+  `CODELYNC_BACKEND_PORT` to a separate loopback port and `CODELYNC_LEASE_DIR`
   to private observer leases. Default distribution values remain unchanged.
 - A configured endpoint must prove its owner identity before discovery advertises
   Antigravity. Missing, stale or unverified owners produce unavailable state.
@@ -46,13 +46,16 @@ are enabled only for actions the adapter explicitly supports. Project activity
 uses a reduced status response from the Antigravity owner; full conversation rows
 are never loaded to calculate foreground counts.
 
+Antigravity session integration does not require model Gateway mode. Gateway
+and non-Gateway model routing are independent of the native Language Server
+connection; native owner/session/protocol verification remains required.
 Antigravity model Gateway authentication is independent of remote control
 authentication. The shipped `proxy_server_url` parameter and remote control gates
 require runtime verification; a successful model request does not prove remote
 control support. Protocol findings must distinguish the local native service from
-the official WebChannel relay and document which path CodeLight actually uses.
+the official WebChannel relay and document which path Codelync actually uses.
 
-Phone traffic uses the existing sealed CodeLight transport. Local Antigravity
+Phone traffic uses the existing sealed Codelync transport. Local Antigravity
 credentials stay on the Mac. No unauthenticated native service is exposed publicly.
 Registration, selected-conversation snapshots, tool/status streaming and commands
 must retain the source application, host, owner generation and conversation ID.
@@ -60,7 +63,7 @@ must retain the source application, host, owner generation and conversation ID.
 Each mutation is journaled under its original command ID before native dispatch.
 Unknown outcomes are queried, never automatically replayed. If the native service
 does not provide durable command correlation, the adapter must report that limit
-and retain CodeLight's dispatch record across reconnects. Unsupported actions stay
+and retain Codelync's dispatch record across reconnects. Unsupported actions stay
 unavailable; no guessed approval or model-setting payloads.
 
 `SendUserCascadeMessage.clientMessageId` is carried into the original native
@@ -69,7 +72,7 @@ including an acknowledged native queue entry. A successful empty JSON response
 alone does not establish admission.
 
 `CancelCascadeInvocation` accepts a conversation ID but has no native
-expected-turn or execution CAS field. CodeLight checks the displayed invocation
+expected-turn or execution CAS field. Codelync checks the displayed invocation
 immediately before dispatch and reads owner state afterwards. Its receipt says
 `cancelRequested`, not that an empty response proved a turn stopped. The native
 stop remains scoped to the current invocation of that exact conversation; a
@@ -145,7 +148,7 @@ Git-verified repository alias. Equal basenames from independent repositories
 remain separate. This grouping does not add discovery of other CLI sessions or
 search unrelated computer directories.
 
-CodeLight offers both proven session sources, identifies each application in the
+Codelync offers both proven session sources, identifies each application in the
 conversation picker, and preserves drafts independently. Foreground status
 synchronization stays separate from selected conversation history loading.
 Tool activity, terminal errors and pending requests are projected from native state.
@@ -167,9 +170,10 @@ native protocol/capability contract; an app version alone cannot enable controls
 Unknown contracts remain visible as unsupported without a fallback runner.
 
 Each source owns its model catalogue and current conversation configuration.
-Antigravity models come from its native Gateway catalogue and retain their native
-model identities. Codex models/effort retain the existing original-owner CAS
-controls. Selecting an Antigravity model must be confirmed by its original owner,
+Antigravity models come from its original desktop catalogue via
+`GetCascadeModelConfigData` and retain their native model identities. This
+catalogue read does not require Gateway model routing. Codex models/effort retain
+the existing original-owner CAS controls. Selecting an Antigravity model must be confirmed by its original owner,
 or be clearly staged for the next explicit message if its protocol only supports
 per-message configuration. A local preference is never labelled as an applied
 native model update. No test prompt is sent merely to change a setting.
@@ -190,7 +194,7 @@ are not evidence of successful collaboration.
 ## Acceptance
 
 The user additionally authorized installing the verified update on the iPhone
-connected to this Mac. The device update keeps `com.learnings.codelight`, the
+connected to this Mac. The device update keeps `com.learnings.codelync`, the
 existing signing team, app data, secure-store credentials and paired Mac identity.
 It must not uninstall the app or reset the user's phone. Native simulator
 acceptance precedes the physical install; the installed build number, signed
@@ -199,7 +203,7 @@ artifact and post-install connected source/session checks are recorded separatel
 1. Reproducible isolated app setup, recorded version/checksums and protocol evidence.
 2. Real Antigravity conversation discover/read/send/stop and tool/state updates.
 3. Existing Codex discovery, state, native controls and receipt regression gates.
-4. Both source applications in the native CodeLight UI with correct selection,
+4. Both source applications in the native Codelync UI with correct selection,
    input, stop, pending request, reconnection and unavailable behavior.
 5. A bounded real cross-application task with observable artifact/result handoff.
 6. Typecheck, lint, targeted protocol tests and native builds. Fixture verification

@@ -9,7 +9,7 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { useAttachmentImage } from '@/hooks/useAttachmentImage';
 import { previewImagePoint } from '@/utils/windowControlGeometry';
 import { getCurrentLanguage, t } from '@/text';
-import { codeLightMediaLabels } from '@/text/codeLightMediaLabels';
+import { codelyncMediaLabels } from '@/text/codelyncMediaLabels';
 import { savePreviewImage } from '@/utils/savePreviewImage';
 import { Modal } from '@/modal';
 import { noteNativeImageStage } from '@/sync/nativeImageDiagnostics';
@@ -33,7 +33,7 @@ function UnavailableImagePreview({ name, onClose, onRetry }: { name: string; onC
             <Pressable testID="happy-image-close" accessibilityRole="button" accessibilityLabel={t('imagePreview.close')} onPress={onClose} style={styles.button}><Ionicons name="close" size={24} color={theme.colors.text} /></Pressable>
         </View>
         <View style={[styles.imageArea, { flex: 1 }]}><Text style={styles.statusText}>{t('imagePreview.loadFailed')}</Text>
-            <Pressable testID="codelight-image-retry" accessibilityRole="button" onPress={onRetry} style={styles.button}><Text style={styles.statusText}>{t('common.retry')}</Text></Pressable>
+            <Pressable testID="codelync-image-retry" accessibilityRole="button" onPress={onRetry} style={styles.button}><Text style={styles.statusText}>{t('common.retry')}</Text></Pressable>
         </View>
     </View>;
 }
@@ -78,7 +78,7 @@ function ImagePreviewBody({ sessionId, refValue, name, width, height, onClose, o
         if (!uri || failed || saving || !imageReady || !isScopeCurrent()) return;
         setSaving(true);
         try { await assertScopeCurrent(); await savePreviewImage(uri, name, assertScopeCurrent); }
-        catch { Modal.alert(t('common.error'), codeLightMediaLabels[getCurrentLanguage()].saveFailed); }
+        catch { Modal.alert(t('common.error'), codelyncMediaLabels[getCurrentLanguage()].saveFailed); }
         finally { setSaving(false); }
     };
     const point = onPoint;
@@ -94,7 +94,7 @@ function ImagePreviewBody({ sessionId, refValue, name, width, height, onClose, o
             <Pressable testID="happy-image-download" accessibilityRole="button" accessibilityLabel={t('imagePreview.download')} disabled={!uri || failed || saving || !imageReady} onPress={download} style={styles.button}>
                 {saving ? <ActivityIndicator size="small" color={theme.colors.text} /> : <Ionicons name="download-outline" size={24} color={!uri || failed || !imageReady ? theme.colors.textSecondary : theme.colors.text} />}
             </Pressable>
-            {onPoint && <Pressable accessibilityRole="button" testID="codelight-window-control-mode" disabled={!interactionEnabled} onPress={() => setControl(value => !value)} style={styles.button}><Text style={styles.statusText}>{control ? t('windowControl.controlling') : t('windowControl.viewOnly')}</Text></Pressable>}
+            {onPoint && <Pressable accessibilityRole="button" testID="codelync-window-control-mode" disabled={!interactionEnabled} onPress={() => setControl(value => !value)} style={styles.button}><Text style={styles.statusText}>{control ? t('windowControl.controlling') : t('windowControl.viewOnly')}</Text></Pressable>}
             <Pressable testID="happy-image-close" accessibilityRole="button" accessibilityLabel={t('imagePreview.close')} onPress={onClose} style={styles.button}><Ionicons name="close" size={24} color={theme.colors.text} /></Pressable>
         </View>
         <View style={[styles.imageArea, { height: areaHeight }]}>

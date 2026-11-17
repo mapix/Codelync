@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DesktopSourceSubscriptions } from '../src/happy/source-subscriptions.mjs';
-import { SourceSubscriptionCommands } from '../src/happy/source-subscription-commands.mjs';
+import { DesktopSourceSubscriptions } from '../src/codelync/source-subscriptions.mjs';
+import { SourceSubscriptionCommands } from '../src/codelync/source-subscription-commands.mjs';
 import { BridgeError } from '../src/errors.mjs';
 /** @typedef {Record<string,any>} Value */
 

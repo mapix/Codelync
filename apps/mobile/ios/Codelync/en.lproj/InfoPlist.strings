@@ -1,0 +1,13 @@
+"NSCalendarsFullAccessUsageDescription" = "Allow $(PRODUCT_NAME) to access your calendar to improve AI quality.";
+"NSCalendarsUsageDescription" = "Allow $(PRODUCT_NAME) to access your calendar to improve AI quality.";
+"NSCameraUsageDescription" = "Allow $(PRODUCT_NAME) to access your camera to scan QR codes and share photos with AI.";
+"NSFaceIDUsageDescription" = "Allow $(PRODUCT_NAME) to use Face ID";
+"NSLocalNetworkUsageDescription" = "Allow $(PRODUCT_NAME) to find and connect to local devices on your network.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Allow $(PRODUCT_NAME) to improve AI quality by using your location.";
+"NSLocationAlwaysUsageDescription" = "Allow $(PRODUCT_NAME) to improve AI quality by using your location.";
+"NSLocationWhenInUseUsageDescription" = "Allow $(PRODUCT_NAME) to improve AI quality by using your location.";
+"NSMicrophoneUsageDescription" = "Allow $(PRODUCT_NAME) to access your microphone for voice conversations.";
+"NSMotionUsageDescription" = "Allow $(PRODUCT_NAME) to access your device motion";
+"NSPhotoLibraryUsageDescription" = "Allow $(PRODUCT_NAME) to access your photos";
+"NSRemindersFullAccessUsageDescription" = "Allow $(PRODUCT_NAME) to access your reminders";
+"NSRemindersUsageDescription" = "Allow $(PRODUCT_NAME) to access your reminders";

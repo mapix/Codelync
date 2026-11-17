@@ -20,9 +20,9 @@ export function NativeImagePreview({ sessionId, imageId, name, onClose }: Props)
         return () => { cancelled = true; };
     }, [sessionId, imageId, attempt]);
     if (attachment) return <AttachmentImagePreview sessionId={sessionId} refValue={attachment.ref} name={attachment.name} width={attachment.image?.width} height={attachment.image?.height} onClose={onClose} />;
-    return <View testID="codelight-native-image-loading" style={[styles.container, { width: screen.width, height: screen.height, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    return <View testID="codelync-native-image-loading" style={[styles.container, { width: screen.width, height: screen.height, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.header}><Text style={styles.name} numberOfLines={1}>{name}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('imagePreview.close')} onPress={onClose} style={styles.button}><Ionicons name="close" size={24} color={theme.colors.text} /></Pressable></View>
-        <View style={styles.status}>{failed ? <><Text style={styles.text}>{t('imagePreview.loadFailed')}</Text><Pressable testID="codelight-native-image-retry" accessibilityRole="button" onPress={() => setAttempt(value => value + 1)} style={styles.button}><Text style={styles.text}>{t('common.retry')}</Text></Pressable></> : <><ActivityIndicator /><Text style={styles.text}>{t('common.loading')}</Text></>}</View>
+        <View style={styles.status}>{failed ? <><Text style={styles.text}>{t('imagePreview.loadFailed')}</Text><Pressable testID="codelync-native-image-retry" accessibilityRole="button" onPress={() => setAttempt(value => value + 1)} style={styles.button}><Text style={styles.text}>{t('common.retry')}</Text></Pressable></> : <><ActivityIndicator /><Text style={styles.text}>{t('common.loading')}</Text></>}</View>
     </View>;
 }
 const styles = StyleSheet.create(theme => ({

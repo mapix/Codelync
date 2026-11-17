@@ -14,19 +14,19 @@ export class Encryption {
     static async create(masterSecret: Uint8Array) {
 
         // Derive content data key to open session and machine records
-        const contentDataKey = await deriveKey(masterSecret, 'Happy EnCoder', ['content']);
+        const contentDataKey = await deriveKey(masterSecret, 'Codelync EnCoder', ['content']);
 
         // Derive content data key keypair
         const contentKeyPair = sodium.crypto_box_seed_keypair(contentDataKey);
 
         // Derive anonymous ID
-        const anonID = encodeHex((await deriveKey(masterSecret, 'Happy Coder', ['analytics', 'id']))).slice(0, 16).toLowerCase();
+        const anonID = encodeHex((await deriveKey(masterSecret, 'Codelync Coder', ['analytics', 'id']))).slice(0, 16).toLowerCase();
 
         // Derive the key that hashes provider account ids for analytics
-        const providerAccountKey = await deriveKey(masterSecret, 'Happy Coder', ['analytics', 'provider-account']);
+        const providerAccountKey = await deriveKey(masterSecret, 'Codelync Coder', ['analytics', 'provider-account']);
 
         // Derive master blob key for legacy sessions (those with no per-session dataKey)
-        const masterBlobKey = await deriveKey(masterSecret, 'Happy Blobs', ['master']);
+        const masterBlobKey = await deriveKey(masterSecret, 'Codelync Blobs', ['master']);
 
         // Create encryption
         return new Encryption(anonID, providerAccountKey, masterSecret, contentKeyPair, masterBlobKey);
@@ -98,7 +98,7 @@ export class Encryption {
             // Newer sessions derive a subkey from their own dataKey so blobs
             // are cryptographically isolated from message encryption.
             const blobKey = dataKey
-                ? await deriveKey(dataKey, 'Happy Blobs', ['session'])
+                ? await deriveKey(dataKey, 'Codelync Blobs', ['session'])
                 : this.masterBlobKey;
             this.sessionBlobKeys.set(sessionId, blobKey);
 
@@ -152,7 +152,7 @@ export class Encryption {
     /** Return the domain-separated blob key used by project avatar blobs. */
     async getProjectBlobKey(dataKey: Uint8Array | null): Promise<Uint8Array> {
         return dataKey
-            ? deriveKey(dataKey, 'Happy Blobs', ['session'])
+            ? deriveKey(dataKey, 'Codelync Blobs', ['session'])
             : this.masterBlobKey;
     }
 

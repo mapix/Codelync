@@ -2198,7 +2198,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     accessibilityState={{ disabled: agentInputPrimaryActionDisabled(primaryAction, canPressSendButton, props.editable === false), busy: isAborting }}
                                     accessibilityLabel={agentInputPrimaryActionLabel(primaryAction, isSendBlocked, props.editable === false, {
                                         send: 'Send', stop: 'Stop', voice: 'Voice',
-                                        readOnly: t('agentInput.codexPermissionMode.readOnly'), unavailable: t('codeLightLoading.unavailable'),
+                                        readOnly: t('agentInput.codexPermissionMode.readOnly'), unavailable: t('codelyncLoading.unavailable'),
                                     })}
                                 >
                                     {isAborting ? (

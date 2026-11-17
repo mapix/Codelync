@@ -1,8 +1,8 @@
 import { MMKV } from 'react-native-mmkv';
 
-const mmkv = new MMKV();
+const mmkv = new MMKV({ id: 'codelync-app-state-v1' });
 
-const LAST_VIEWED_KEY = 'changelog-last-viewed-title';
+const LAST_VIEWED_KEY = 'codelync-changelog-last-viewed-title';
 
 export function getLastViewedTitle(): string {
     return mmkv.getString(LAST_VIEWED_KEY) ?? '';

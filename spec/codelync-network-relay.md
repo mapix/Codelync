@@ -1,0 +1,419 @@
+# Local and public connection channels
+
+## Fast network probe
+
+Every enabled Mac gateway serves `GET /network-probe`. It authenticates the
+existing paired device proof and returns a sealed `{version:1}` payload with
+the pinned Mac's existing response context. It does not load the directory,
+session history, native status or capabilities, and never forwards to the
+embedded database. Only GET without query or body is supported, and responses
+are non-cacheable. A plain health response cannot prove a paired Mac.
+
+The phone races all known candidate paths concurrently with short per-path
+deadlines and a bounded overall attempt. A successful fast proof selects a
+usable transport; the authenticated channel manifest is fetched separately.
+Manual intent restricts which kind may become the active write route. Other
+kinds can help discover a fresh manifest without authorizing command fallback.
+Cancelled or late candidates cannot overwrite a newer peer, preference or route.
+Older Mac endpoints may receive one bounded compatibility probe for their
+existing sealed channel manifest; no bearer-only fallback is permitted.
+
+## Saved-peer cold startup
+
+Peer authentication owns nonce generation and uses the native system
+cryptographic random source before pairing UI providers mount. Saved v2
+credentials must cold-start/reconnect without UI-installed global PRNG state.
+No weak randomness or key deletion is a recovery path. Acceptance covers QR
+exchange/reload, stored v2 cold launch, and a distinct nonce on reconnect.
+
+## Same-peer channel transitions
+
+Read-only activity delivery can use the paired sealed HTTP endpoint without a
+live WebSocket. The WebSocket remains the existing event/control transport;
+HTTP success does not confirm that a native mutation was delivered. Activity
+interest tokens and semantic group watermarks reduce repeated public-network
+payloads without changing peer authentication or native owner checks.
+
+Channel probes use the native AbortController instance API; DOM-only static
+AbortSignal.any/timeout methods are not assumed. A verified same-peer transition
+updates both the persisted and active runtime endpoint, while changing account
+or peer retains the existing reload boundary. A failed switch restores the old
+endpoint and credentials. Old peer read requests are cancelled on channel change
+and cannot publish into the new route. Catalog/recent reads have explicit network
+budgets and publish a visible retry state on failure.
+The sealed WebSocket proof signs the exact Engine.IO path, including its trailing
+slash. A strict receiver is not relaxed to accept a differently signed path.
+
+### LAN listener continuity
+
+VPN/point-to-point tunnel interfaces (`utun`, `tun`, `tap`, `ppp`, `ipsec`) are
+not LAN advertisements. A private tunnel address can bind successfully yet
+route traffic away from the Mac; it must not become the phone's preferred local
+entry. Codelync filters those interface names without modifying the VPN,
+system routes, DNS or other applications. Physical private interfaces continue
+to use their existing bounded listener and port-hint rules.
+
+The running Mac connection owner checks its current private IPv4 interface set
+every three seconds. Only an interface change or a missing owned listener triggers
+local reconciliation. Existing listeners on retained interfaces keep their URLs
+and ports; removed interfaces are closed and omitted from the authenticated
+manifest, and new interfaces receive new owned listeners. Local reconciliation
+does not restart the daemon, account, Cloudflare/Relay tunnels or original desktop
+owners. An unavailable local bind is retried while the channel remains enabled.
+Disable and shutdown cancel late refresh results and close their listeners.
+
+Changed channels are published through the existing Mac channel events and sealed
+`/api/peer/channels` response. A phone can recover through any surviving paired
+channel, prove the new same-peer candidate and retain its credential/cache/command
+identity. If every previously known route is unreachable, same-peer USB bootstrap
+or a new location scan is still required; no new account or key is a recovery step.
+Acceptance changes the live interface inventory without restarting the connection
+service and verifies retained ports, retired sockets, fresh proof on new routes,
+same peer identity and fallback from an occupied saved port.
+
+The Mac connection owner saves the actual listener port for each currently bound
+private IPv4 interface in private `lan-listeners.json`. The file is a bounded
+port hint for the same profile, not an authentication or routing authority. On
+restart or a local-channel re-enable, the owner first tries that host's saved
+port so a paired phone can authenticate and reconnect through its existing URL.
+Invalid state is ignored; public, loopback and absent interfaces are never bound
+or advertised from saved data. At most three current private hosts are used.
+
+If another process owns the saved port, Codelync binds a new available port and
+publishes the new authenticated channel manifest. It never dials, trusts or
+proxies the occupying process. Cancellation closes late listeners, and a failed
+state write does not retire a working entry. Saved ports contain no account,
+device, invitation or credential data. Existing device proof, peer identity and
+unknown-operation receipt rules are unchanged.
+
+## Desktop connection recovery and cleanup
+
+An enabled Cloudflare address whose first forwarding proof fails remains
+available as an unverified candidate and retries its small read-only proof with
+bounded exponential delay. DNS propagation after startup must not leave a live
+address permanently unverified. Proof success, authenticated paired confirmation,
+disable, transport replacement and shutdown cancel the pending verification.
+Healthy routes are not periodically polled for this recovery.
+
+An owned Cloudflare process can lose its edge connections while remaining alive.
+Its bounded stderr lifecycle parser tracks registered connection slots. Losing
+the last slot marks the existing address reconnecting and cancels its old proof;
+the first restored slot triggers a fresh forwarding proof. A single lost slot
+cannot mark other healthy slots offline. Only an actual process exit retires
+the URL and schedules a replacement process. These signals never touch native
+Desktop owners or replay business requests.
+
+The connection owner retries a failed enabled transport without requiring a
+checkbox change or restarting the desktop service. Each kind owns at most one
+retry timer and one candidate; startup failures use exponential delays from one
+to thirty seconds. Disable, explicit replacement and shutdown cancel that kind's
+queued recovery. A successful ready proof resets its delay. A stopped Cloudflare
+process retires its dead route before a new owned process can publish a URL;
+local probe failure on a still-running tunnel retains an unverified candidate.
+Retries establish network routes only, with the existing signing identity. They
+never load native histories, replay HTTP/WS streams, or resubmit commands.
+
+Concurrent Relay replacements fence both configuration and reconnect suspension.
+A superseded candidate cannot resume the old same-server route while a newer
+candidate still requires it paused. Failed replacement retains the old saved
+configuration; a replacement is committed only after the existing entry proof.
+Reaffirming the current working configuration cancels an older pending replacement
+instead of letting that older intent overwrite the user's latest choice.
+
+A transport generation owns one current read-only reconnect probe. Another
+connection event, disconnect, paired confirmation, disable or close cancels its
+previous probe. Synchronous probe failures are contained as unavailable proof,
+and a late result cannot promote a superseded or disconnected generation.
+
+Repeated close calls await the same cleanup flight. Cloudflare shutdown clears
+its grace deadline when the owned child exits; no losing deadline may keep the
+service event loop alive. A child that exceeds the five-second SIGTERM grace
+period is killed and its exit is awaited. Failed spawn has no live child to wait
+for. Closing an owned LAN socket
+withdraws that socket's route immediately, retaining other listeners and the
+stable peer identity; the existing interface watcher then repairs missing binds.
+No route may be advertised after its owned listener is closed.
+
+LAN binding requires a syntactically valid numeric private IPv4 address matching
+the reported family. Hostnames, abbreviated/empty IPv4 components, IPv6 rows and
+loopback are excluded before binding, even if a malformed interface record
+claims IPv4. IPv6-only networks continue through proven public channels; this
+change does not advertise unverified IPv6 LAN support. Saved port hints are read
+through a single no-follow file descriptor, checked as a private owned regular
+file and limited to 4 KiB even if it grows during the read. Invalid hints remain
+optional and cannot prevent a new owned listener.
+
+Acceptance uses isolated connection helpers, local HTTP/WS listeners and
+explicitly synthetic tunnel/upstream fixtures. It covers failed startup,
+Cloudflare process loss, overlapping replacement, cancelled/stale reconnect
+proofs, concurrent cleanup, live listener retirement, address validation and
+bounded port-hint reads. It does not exercise original desktop model actions or
+replace the paired proof and original operation-receipt acceptance.
+
+## Embedded mirror shutdown and recovery
+
+The embedded PGlite process owns its database. Shutdown drains the Prisma client
+and then closes PGlite explicitly so its checkpoint reaches disk. A Prisma
+disconnect alone cannot stand in for database close. The Mac pipe's EOF and a
+broken output pipe stop the owned service; cleanup errors cannot skip terminating
+its owned children. The service lease is released after child termination.
+Recovery preserves the original directory, account keys, command IDs and receipt
+journals. Rebuilding encrypted mirror rows from acknowledged projection journals
+must retain their original IDs, sequences and timestamps; it never replays native
+commands. Recovery coverage and any unconfirmed tail are recorded separately.
+
+```mermaid
+sequenceDiagram
+    participant Mac as Mac UI pipe owner
+    participant Service as Owned service and lease
+    participant DB as Embedded PGlite process
+    Mac-->>Service: Pipe EOF / termination
+    Service->>Service: Stop timers and close gateway/observer resources
+    Service->>DB: SIGTERM
+    DB->>DB: Drain Prisma, close PGlite, persist checkpoint
+    DB-->>Service: Process exit
+    Service->>Service: Release service lease
+```
+
+## Accepted multi-channel iteration (2026-11-01)
+
+Mac owns one account, encrypted backend, source registry and operation receipt
+store. Its local LAN, Cloudflare and configured Relay entries may run at the
+same time. First configuration/migration defaults to all available checkboxes;
+later explicit checkbox changes persist. Relay's checkbox is absent until a
+server is configured. A failed or disabled entry affects only that entry.
+Local entries advertise actual private LAN addresses, not loopback or public
+interfaces. Settings, startup generation and route retirement have one owner.
+
+A v2 QR conveys the pinned Mac key, expiring invitation and bounded channel
+list. Pairing authenticates one peer and returns the same account/session
+identity plus an authenticated endpoint manifest. The phone automatically
+chooses a proven available route and exposes manual switching in its connection
+sheet. It does not ask for server/account setup for each route. Endpoint updates
+are accepted only from the paired Mac, never from an untrusted URL list.
+
+The phone connection control subscribes to the single connection owner. A compact
+button opens the existing native picker sheet with Automatic and the paired
+local/Cloudflare/Relay routes, showing only a local IP or hostname, current
+state, and measured latency when known. It does not accept addresses or keys.
+Selection calls the owner's `selectConnection`; pending selection disables
+repeat taps, and failure keeps the existing route with visible retry feedback.
+An old peer's completion cannot change the new peer's sheet state. Closing the
+sheet does not disconnect the current route or submit a session operation.
+The control is inline in the directory action area and the chat input dock above
+the question banner. It remains reachable while reading older history, with no
+floating global overlay over the header or pending question. Its independent
+subscription does not invalidate the message list or regroup the directory.
+All Sync account/machine/settings/profile HTTP requests use the peer-aware
+transport on v2 connections. Every client-facing gateway, including Cloudflare
+and Relay, requires a sealed device proof for authenticated HTTP requests and
+WebSocket upgrades. Legacy raw bearer tokens are no longer accepted, even when
+the token belongs to an approved device; missing or invalid proof verification
+fails closed. Legacy phones must upgrade and pair through the v2 flow.
+
+The Codelync distribution uses the exact `Codelync ` authorization prefix.
+Decode the sealed packet after that complete prefix; legacy product prefixes
+remain rejected. Packet, nonce, replay and approved-device checks are unchanged.
+
+Local HTTP must retain encrypted content and must not send reusable bearer
+tokens in cleartext. V2 phones retain their device box key in native secure
+storage and use key-bound, short-lived sealed authorization for every channel.
+The Mac validates nonce/time/request scope and approved-device identity, then
+supplies its backend token only on the owned loopback link. Public channels keep
+HTTPS/WSS certificate validation. Device revocation applies across all entries.
+
+Phone account/cache/operation identity is the authenticated peer and entity,
+not the selected URL. Switching channels keeps session/message state and
+original command IDs. Uncertain operations recover by receipt-only queries on
+a proven channel of the same peer; channel changes never automatically replay
+mutations. Legacy records without enough peer proof stay isolated and preserved.
+Request encryption and socket callbacks are fenced against connection or peer
+changes. Automatic route changes happen on initial connection, foreground
+recovery or failure; there is no continuous all-route polling loop.
+
+### Mac connection owner and native controls
+
+`ConnectionChannelsManager` is the sole writer of private
+`connection-channels.json` version 2. It reuses `network-identity.json` and reads
+the old single-entry `network-access.json` only on first migration. The v2 file
+contains enabled channel kinds and the configured Relay address/key; emitted
+configuration exposes only `enabledChannels`, `relayConfigured`, `serverUrl`
+and `hasToken`. First migration enables local LAN and Cloudflare plus Relay if
+configured. Configuring Relay for the first time enables its newly available
+checkbox; replacing an existing disabled Relay preserves that explicit choice.
+
+Configuration writes serialize, while channel startup and probes run separately.
+`load` and checkbox changes do not wait for every network channel. The owner
+keeps per-channel generation/cancellation fences and closes late startup results
+after a disable or shutdown. Failed Relay replacements retain the prior saved
+configuration and entry. Keys may be reused only for the same canonical server.
+Local entries advertise at most six distinct actual private LAN URLs; loopback
+and public host addresses are rejected. The two public entries complete the
+bounded eight-channel QR contract.
+
+Channel snapshots expose `starting`, `ready`, `unverified`, `reconnecting` or
+`unavailable` states with known URLs. A Cloudflare process URL is advertised as
+unverified until the Mac's read-only HTTP/WebSocket probes or an authenticated
+paired-device confirmation prove it. A local DNS/probe failure does not close
+that candidate or block LAN/Relay. Relay startup and replacement require service
+identity plus both owned gateway probes. An authenticated confirmation can mark
+only an existing enabled kind/URL ready; it cannot inject a new endpoint.
+
+The native Mac connection section shows independent checkboxes for Local
+network and Cloudflare, and a Relay checkbox only after successful configuration.
+Relay address/key settings remain available under a separate disclosure, with
+explicit validation feedback. It sends `set-enabled-channels` and
+`configure-relay` requests carrying request IDs and consumes sanitized
+`access-configuration`, `access-channels` and `access-result` events. Statistics,
+manual Statistics/Pairing selection and hidden QR image caching retain their
+owners. The pairing hint explains that address changes may require a new scan;
+it does not describe every connection as temporary.
+Native service output is accepted only from the current Process instance.
+Service restart/failure clears connection observations and pending UI request
+flags; old process callbacks cannot restore a stale ready state or pairing QR.
+
+The Mac service composes these entries through one connection service. Cloudflare
+and Relay each receive a separate loopback gateway. Enabled LAN binds use at
+most three unique actual private IPv4 interface addresses; no wildcard, public
+or loopback listener is advertised as LAN. All gateways share one invitation
+issuer, approved-device registry, nonce verifier, traffic metrics, account and
+Codex daemon. LAN requires sealed device proof; public HTTPS retains the legacy
+approved-device compatibility path. Every proof is bound to that gateway's
+advertised origin, and disabled/unknown origins cannot confirm readiness.
+
+Authenticated `/api/peer/channels` returns the current enabled candidate list.
+`/api/peer/catalog` reads the index without starting history observers. Selected
+`/api/peer/sessions/:id/recent` and explicit-cursor `/history` use the existing
+daemon source owner and retain its source-use pin through preparation, startup
+and the full native read. They never navigate the desktop or create a model
+runner. Replies remain sealed to the approved phone and bound to the stable
+Mac/account peer identity. Repeated channel confirmations do not rotate the QR;
+only changed route sets/primary origin, explicit refresh or scheduled expiry
+renewal create another invitation.
+
+```mermaid
+sequenceDiagram
+    participant Mac as Mac connection owner
+    participant LAN as Private LAN entry
+    participant CF as Cloudflare entry
+    participant Relay as Configured Relay entry
+    participant Phone as Phone peer/transport owner
+    participant Runtime as Original Codex owner
+    par Enabled startup
+        Mac->>LAN: Start owned private entry
+    and
+        Mac->>CF: Start outbound tunnel
+    and
+        Mac->>Relay: Start authenticated outbound tunnel
+    end
+    Mac-->>Phone: QR + pinned key + enabled channel list
+    Phone->>Mac: Key-bound pairing on available candidates
+    Mac-->>Phone: Authenticated peer/account/channel manifest
+    Phone->>Phone: Prefer available route; retain manual choice
+    Phone->>Mac: Original operation ID through selected entry
+    Mac->>Runtime: Existing owner/lease/admission
+    Note over Phone,Mac: Same peer/session across routes; lost replies query original receipts
+```
+
+## Existing single-entry protocol baseline
+
+## Product rule and owners
+
+Mac offers Cloudflare or Relay public access. In Relay mode the user supplies a
+compatible HTTPS relay server address and, when required, an access key. Validate
+service identity, authenticated outbound tunnel registration and actual HTTP plus
+WebSocket reachability before saving or replacing the current public entry.
+Failure preserves the previous working entry. Phone users still scan the same
+Codelync QR and use the native app; they do not select or configure a provider.
+
+The public relay is a network service. It owns authenticated connection bindings,
+ephemeral stream buffers, heartbeat and forwarding only. It must not hold agent
+runtimes, session catalogs, snapshots, question queues, commands or account keys.
+Mac continues to own its encrypted local relay/gateway and original Codex routing.
+This public-access mode is separate from the required gateway connection mode of
+desktop Codex itself.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Mac as Mac public-access owner
+    participant Public as Public network relay
+    participant Gateway as Existing Mac gateway
+    participant Phone as Native phone
+    participant Codex as Original Codex owner
+    User->>Mac: Relay address / optional access key
+    Mac->>Public: HTTPS service validation
+    Mac->>Public: Authenticated outbound WSS connection
+    Public-->>Mac: Fresh registration challenge
+    Mac->>Public: Independent network identity signature
+    Public-->>Mac: Deterministic public route binding
+    Mac->>Gateway: Issue short-lived independent HTTP/WS probes
+    Mac->>Public: Probe through the public route
+    Public->>Mac: Forward opaque HTTP / WebSocket bytes
+    Mac->>Gateway: Fixed loopback gateway only
+    Gateway-->>Mac: Correct probe responses
+    Mac->>Mac: Save configuration, retire previous entry
+    Mac-->>Phone: QR with the validated public base URL
+    Phone->>Public: Existing encrypted pairing and session protocol
+    Public->>Mac: Forward bytes without business interpretation
+    Mac->>Codex: Existing owner/lease/admission routing
+```
+
+## Routing and phone transparency
+
+The Mac's Configure Relay fields include a localized Deployment guide link to
+the canonical GitHub main-branch Markdown preview. The guide and
+`deploy/self-host/` templates cover both this network service and the separate
+LiveKit desktop media service. Network-relay image builds use the repository
+root as context, copy only the deployment package manifest and `src/network/`,
+and exclude private state/dependencies through a Dockerfile-specific ignore file.
+The Compose network service is optional, single-replica and bound to loopback
+behind HTTPS/WSS. Its registration key is independent from LiveKit credentials.
+Endpoint checks do not substitute for the Mac's authenticated HTTP/WS validation.
+
+One TLS hostname can serve multiple Macs through `/r/<network-public-id>` base
+paths. Network identity is independent from the account encryption key; its public
+route is derived from an authenticated signing key and stays stable across
+reconnections. Another authorized client cannot claim that route without its key.
+Use one server replica until distributed connection routing is explicitly built.
+
+QR version and encrypted key exchange remain the same. Its `origin` field is the
+canonical server base URL and may contain the validated relay prefix. Phone REST,
+Socket.IO, background refresh and local-file URL rewriting must retain that prefix.
+Socket.IO uses the URL's origin plus a prefix-aware updates path, never a pathname
+mistaken for its namespace. Authorization headers must not attach to a different
+Mac's prefix on the same hostname. The phone UI does not gain relay settings.
+
+## Security and resource bounds
+
+- HTTPS/WSS certificate validation remains enabled. Permit plain HTTP only for
+  loopback tests; reject credentials, query and fragments in a server address.
+- Production registration requires a high-entropy access token, sent only to the
+  selected server. Reuse a saved key only for the same canonical server address.
+  Never put it in the phone QR, logs, bundle, source or public website.
+- Fresh challenge signing binds the independent Mac network identity. Handover
+  and old-connection cleanup must be generation-fenced.
+- Public requests route only to an existing authenticated binding. The Mac client
+  forwards only to its owned loopback gateway, with no caller-controlled target
+  URL, arbitrary destination dial, CONNECT or open forward-proxy behavior.
+- Stream opaque bodies in bounded binary chunks. Per-stream credit and channel
+  backpressure bound buffering; cap peers, active streams, headers, frame sizes,
+  body bytes and handshake/request time. Do not buffer whole message histories.
+- Network reconnect re-establishes the route only. It never replays requests or
+  commands. Lost HTTP/WS connections fail visibly; original command receipts and
+  unknown outcomes remain authoritative on Mac.
+- A trusted public relay sees transit headers, ciphertext, routing and timing;
+  it does not receive account encryption keys. No payload/header persistence or
+  ordinary logs. Current owned-gateway metrics keep the same byte definition.
+
+## Acceptance
+
+Cover wrong address/version/key, redirect/TLS refusal, challenge replay, foreign
+route claims, old-close races, unknown bindings, malformed envelopes and bounds.
+Verify streamed HTTP content and headers, upgrade traffic, flow-control credit,
+connection cleanup and stable reconnect without replay. Validate failure preserving
+an existing entry and saving only a fully proven entry. Check native Mac selection,
+address/key entry, validation feedback and QR; verify prefixed phone REST/WS,
+pairing, file authorization scope and root Cloudflare compatibility. Update public
+docs/website, re-build the final Mac and obtain fresh accepted notarization before
+publishing this version.

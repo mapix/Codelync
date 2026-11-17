@@ -39,7 +39,7 @@ const postURL = '/v1/sessions/s1/attachments/request-download';
 const getURL = '/v1/sessions/s1/attachments/video.enc';
 const fixturePath = () => join(state.directory, ref);
 beforeEach(async () => {
-    state.directory = await mkdtemp(join(tmpdir(), 'codelight-capped-attachment-'));
+    state.directory = await mkdtemp(join(tmpdir(), 'codelync-capped-attachment-'));
     await mkdir(join(state.directory, 'sessions/s1/attachments'), { recursive: true });
     state.local = true; state.reads = 0; state.readBudget = 0; state.opens = 0; state.afterRead = null;
     presign.mockClear();

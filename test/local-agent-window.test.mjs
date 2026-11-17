@@ -8,7 +8,7 @@ import { discoverLocalAgents, inspectLocalAgents } from '../src/adapters/local-a
 
 /** @typedef {Record<string,any>} Value */
 async function fixture(/** @type {string} */ app) {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-agent-window-'));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-agent-window-'));
   /** @type {Value[]} */ const calls = [];
   const bounds = { x: 20, y: 20, width: 1000, height: 700 };
   const stamp = { runtimeGeneration: 'app-runtime', windowGeneration: 'app-window', layoutGeneration: 'controls', imageLayoutHash: 'layout', bounds };
@@ -58,7 +58,7 @@ test('a running app without a real window does not advertise capture or control'
 });
 
 test('installed helper processes are not a running app and full argv is never requested', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-agent-install-'));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-agent-install-'));
   const app = join(dir, 'Claude.app'); await mkdir(join(app, 'Contents'), { recursive: true }); await writeFile(join(app, 'Contents', 'Info.plist'), 'fixture');
   try {
     const inventory = await inspectLocalAgents({ applicationsDirectories: [dir], processes: async () => [{ pid: 2, parentPid: 1, executable: join(app, 'Contents/Frameworks/Helper') }],

@@ -1,6 +1,6 @@
 # Happy 纯 Session Transport
 
-> **当前发行范围（2026-10-31）**：本共享加密传输用于 CodeLight 的 Codex 原生会话投影。其他 source 或 window 的兼容示例保留为研究接口，不计入当前发行支持；当前范围见 [产品合同](codelight-product.md)。
+> **当前发行范围（2026-10-31）**：本共享加密传输用于 Codelync 的 Codex 原生会话投影。其他 source 或 window 的兼容示例保留为研究接口，不计入当前发行支持；当前范围见 [产品合同](codelync-product.md)。
 
 ## 所有者与范围
 
@@ -68,4 +68,4 @@ await transport.publish(stableLocalId, plaintextRawRecord); // 内部加密；�
 
 Root自建57070真实隔离test-only Happy session验证通过：Socket/v3密文去重与完整outer、bridge-receipt/receipt加密RPC、错误code保留、并发metadata CAS、agentState、68-byte PNG密文上传/解密、checkpoint reopen无record自动回放。测试Happy记录/附件已清理；original native动作0、model调用0。没有读原用户SDK/账号、没有Mac动作或App重启。
 
-运行：`HAPPY_TRANSPORT_INTEGRATION=1 HAPPY_TRANSPORT_TEST_ACCOUNT=<explicit isolated account path> node --test test/happy-session-transport.integration.test.mjs`。普通tests不隐式读取测试凭据或启动服务；live test须显式opt-in。
+运行：`CODELYNC_TRANSPORT_INTEGRATION=1 CODELYNC_TRANSPORT_TEST_ACCOUNT=<explicit isolated account path> node --test test/happy-session-transport.integration.test.mjs`。普通tests不隐式读取测试凭据或启动服务；live test须显式opt-in。

@@ -3,10 +3,10 @@ import {
     VoiceUsageResponseSchema,
     type VoiceConversationResponse,
     type VoiceUsageResponse,
-} from '@slopus/happy-wire';
+} from '@codelync/wire';
 import { AuthCredentials } from '@/auth/tokenStorage';
 import { getServerUrl, getVoiceServerUrl } from './serverConfig';
-import { getHappyClientId } from './apiSocket';
+import { getCodelyncClientId } from './apiSocket';
 import { config } from '@/config';
 import { authGetToken } from '@/auth/authGetToken';
 import { decodeBase64 } from '@/encryption/base64';
@@ -41,7 +41,7 @@ export async function fetchVoiceCredentials(
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            'X-Happy-Client': getHappyClientId(),
+            'X-Codelync-Client': getCodelyncClientId(),
         },
         body: JSON.stringify({
             agentId
@@ -64,7 +64,7 @@ export async function fetchVoiceUsage(
         method: 'GET',
         headers: {
             'Authorization': `Bearer ${token}`,
-            'X-Happy-Client': getHappyClientId(),
+            'X-Codelync-Client': getCodelyncClientId(),
         },
     });
 

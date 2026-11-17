@@ -16,7 +16,7 @@ if (!flags.has('--app') || !flags.has('--notary-status') || !flags.has('--output
 const app = resolve(flags.get('--app')), directory = resolve(flags.get('--output')), team = flags.get('--team');
 const plist = join(app, 'Contents/Info.plist');
 const identifier = (await run('/usr/libexec/PlistBuddy', ['-c', 'Print CFBundleIdentifier', plist])).stdout.trim();
-if (identifier !== 'com.learnings.codelight.mac') throw Error('Release operations are restricted to the CodeLight Mac bundle.');
+if (identifier !== 'com.learnings.codelync.mac') throw Error('Release operations are restricted to the Codelync Mac bundle.');
 const version = (await run('/usr/libexec/PlistBuddy', ['-c', 'Print CFBundleShortVersionString', plist])).stdout.trim();
 await run('codesign', ['--verify', '--deep', '--strict', app]);
 const details = (await run('codesign', ['--display', '--verbose=4', app])).stderr;
@@ -28,7 +28,7 @@ await run('xcrun', ['stapler', 'validate', app]);
 await run('codesign', ['--verify', '--deep', '--strict', app]);
 await run('spctl', ['--assess', '--type', 'execute', '--verbose=2', app]);
 await mkdir(directory, { recursive: true });
-const filename = `CodeLight-${version}-macos-arm64.zip`, archive = join(directory, filename);
+const filename = `Codelync-${version}-macos-arm64.zip`, archive = join(directory, filename);
 await access(archive).then(() => { throw Error('An immutable release archive already exists.'); }, () => {});
 await run('ditto', ['-c', '-k', '--keepParent', '--sequesterRsrc', app, archive]);
 await run('unzip', ['-tq', archive]);

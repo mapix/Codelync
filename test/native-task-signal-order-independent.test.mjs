@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { NativeHappyConnector } from '../src/happy/native-connector.mjs';
+import { NativeHappyConnector } from '../src/codelync/native-connector.mjs';
 import { CommandReceipts } from '../src/commands.mjs';
 
 /** @typedef {Record<string,any>} Value */

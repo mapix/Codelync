@@ -4,12 +4,12 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SourceRegistry } from '../src/happy/source-registry.mjs';
+import { SourceRegistry } from '../src/codelync/source-registry.mjs';
 /** @typedef {Record<string,any>} Value */
 
 /** @param {import('node:test').TestContext} t @param {boolean|undefined} available */
 async function fixture(t, available) {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-source-metadata-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-source-metadata-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const source = { app: 'codex', hostId: 'local', id: 'fixture-native', kind: 'session', runtimeGeneration: 'fixture-owner' };
   const metadata = /** @type {Value} */ ({ client: { id: 'noninvasive-bridge' }, nativeSession: { archived: true, ...(available === undefined ? {} : { catalogueAvailable: available }) },
     bridge: { source, controlMode: 'session', sourceStatus: 'connected', currentTurnId: 'fixture-turn' },

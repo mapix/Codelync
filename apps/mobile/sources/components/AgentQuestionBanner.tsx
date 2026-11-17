@@ -127,7 +127,7 @@ export function AgentQuestionBannerView({ pending, onPress, onDismiss, dismissDi
     const remaining = pending.questions.length - 1;
 
     return (
-        <Pressable style={styles.container} onPress={onPress} accessibilityRole="button" testID="codelight-question-open">
+        <Pressable style={styles.container} onPress={onPress} accessibilityRole="button" testID="codelync-question-open">
             <View style={styles.icon}>
                 <Ionicons name="help-circle-outline" size={20} color={theme.colors.textLink} />
             </View>

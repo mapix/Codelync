@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BridgeError } from '../errors.mjs';
-import { nativeSettingsScope } from '../happy/native-settings-scope.mjs';
+import { nativeSettingsScope } from '../codelync/native-settings-scope.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const exec = promisify(execFile), MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -100,7 +100,7 @@ export async function readClaudeDesktopRuntime(path, identity = claudeDesktopPro
 export class ClaudeDesktopRpcClient {
   /** @param {{runtimePath?:string,readRuntime?:()=>Promise<Value>,fetch?:typeof fetch,timeoutMs?:number}} [options] */
   constructor(options = {}) {
-    this.runtimePath = options.runtimePath ?? process.env.CODELIGHT_CLAUDE_DESKTOP_RUNTIME;
+    this.runtimePath = options.runtimePath ?? process.env.CODELYNC_CLAUDE_DESKTOP_RUNTIME;
     this.readRuntime = options.readRuntime ?? (() => this.runtimePath ? readClaudeDesktopRuntime(this.runtimePath) : Promise.reject(fail()));
     this.fetch = options.fetch ?? fetch; this.timeoutMs = options.timeoutMs ?? 15000;
     /** @type {Value|null} */ this.latestRuntime = null;

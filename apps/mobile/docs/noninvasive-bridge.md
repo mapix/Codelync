@@ -41,7 +41,7 @@ The shipped original client flows continue unchanged for other Happy sources.
 
 ## Local native development
 
-Only command-scoped `HAPPY_NONINVASIVE_LOCAL=1`, APP_ENV=development selects a
+Only command-scoped `CODELYNC_NONINVASIVE_LOCAL=1`, APP_ENV=development selects a
 separate native bundle identifier and disables OTA. Use the existing debug
 harness on an explicit loopback Happy self-host server and isolated test
 credentials. Do not use public Happy accounts, modify existing configuration,

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AntigravityHistoryCatalog, pageAntigravityHistory } from '../src/adapters/antigravity-history.mjs';
 import { AntigravityBackend } from '../src/adapters/antigravity-backend.mjs';
-import { LocalSourceDiscovery } from '../src/happy/discovery.mjs';
+import { LocalSourceDiscovery } from '../src/codelync/discovery.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const runtime = { binary: '/fixture/Antigravity.app/Contents/Resources/bin/language_server', home: '/fixture/home', appDataDir: 'antigravity' };

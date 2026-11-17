@@ -1,7 +1,7 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
-import { getHappyClientId } from './apiSocket';
+import { getCodelyncClientId } from './apiSocket';
 
 export interface GitHubOAuthParams {
     url: string;
@@ -33,7 +33,7 @@ export async function getGitHubOAuthParams(credentials: AuthCredentials): Promis
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'Content-Type': 'application/json',
-                'X-Happy-Client': getHappyClientId(),
+                'X-Codelync-Client': getCodelyncClientId(),
             }
         });
 
@@ -62,7 +62,7 @@ export async function getAccountProfile(credentials: AuthCredentials): Promise<A
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'Content-Type': 'application/json',
-                'X-Happy-Client': getHappyClientId(),
+                'X-Codelync-Client': getCodelyncClientId(),
             }
         });
 
@@ -86,7 +86,7 @@ export async function disconnectGitHub(credentials: AuthCredentials): Promise<vo
             method: 'DELETE',
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
-                'X-Happy-Client': getHappyClientId(),
+                'X-Codelync-Client': getCodelyncClientId(),
             }
         });
 

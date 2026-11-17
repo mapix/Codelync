@@ -15,7 +15,7 @@ reconfigured for this work.
   configuration with shared credentials or reserved example domains.
 - Optional TURN configuration generation using distinct TLS/UDP ports and mounted
   certificate paths; no live TURN certificate or allocation was tested.
-- Endpoint checker against real isolated local LiveKit and CodeLight network
+- Endpoint checker against real isolated local LiveKit and Codelync network
   service processes. The checker used synthetic loopback URL routing; this
   confirms RoomService token/response compatibility and network discovery,
   without establishing public TLS, ICE or TURN reachability.

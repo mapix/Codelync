@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nativeSettingsScope, sameNativeSettingsScope, confirmedNativeSettingsEvidence } from '../src/happy/native-settings-scope.mjs';
+import { nativeSettingsScope, sameNativeSettingsScope, confirmedNativeSettingsEvidence } from '../src/codelync/native-settings-scope.mjs';
 
 const scope = { app: 'claude-desktop', appMode: 'code', nativeCollection: 'claude-code-sessions', nativeConversationId: 'session', hostId: 'host',
   ownerGeneration: 'session-owner', runtimeGeneration: 'main-owner', queryToken: 'held-query', cliSessionId: 'native-cli', settingsToken: 'a'.repeat(64) };

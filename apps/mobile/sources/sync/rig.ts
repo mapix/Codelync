@@ -193,7 +193,7 @@ export function rigHasRpcMethod(metadata: Metadata | null | undefined, method: s
  * receipt that will never come would leave it looking unsent forever.
  */
 export function rigSendsMessageReceipts(metadata: Metadata | null | undefined): boolean {
-    // CodeLight 的接纳语义不会随 online/capability 改变；HTTP ACK 不能替代原生回执。
+    // Codelync 的接纳语义不会随 online/capability 改变；HTTP ACK 不能替代原生回执。
     if (isNoninvasiveBridge(metadata)) return true;
     return isRigMetadataV1(metadata) && metadata?.capabilities?.messageReceipts === true;
 }

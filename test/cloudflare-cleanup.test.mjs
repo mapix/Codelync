@@ -12,7 +12,7 @@ const moduleUrl = pathToFileURL(join(import.meta.dirname, '../src/network/public
 /** Isolated actual child processes; no tunnel service, desktop app or model request.
  * @param {import('node:test').TestContext} t @param {'graceful'|'ignore-term'|'missing'} mode */
 async function cleanup(t, mode) {
-  const state = await mkdtemp(join(tmpdir(), 'codelight-cloudflare-cleanup-')), binary = join(state, 'synthetic-cloudflared.mjs');
+  const state = await mkdtemp(join(tmpdir(), 'codelync-cloudflare-cleanup-')), binary = join(state, 'synthetic-cloudflared.mjs');
   t.after(() => rm(state, { recursive: true, force: true }));
   if (mode !== 'missing') await writeFile(binary, `#!${process.execPath}\n${mode === 'ignore-term' ? "process.on('SIGTERM',()=>{});" : ''}process.stderr.write('https://synthetic.trycloudflare.com\\n');setInterval(()=>{},1000);\n`, { mode: 0o700 });
   const source = `import {CloudflareAccess} from ${JSON.stringify(moduleUrl)};

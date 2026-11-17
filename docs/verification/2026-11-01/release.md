@@ -1,11 +1,11 @@
-# CodeLight 0.4.0 public preview
+# Codelync 0.4.0 public preview
 
 ## Published artifacts
 
-- Source snapshot: `3010163abea4c0080908bcd140b59e9552b0c226` at <https://github.com/mapix/CodeLight>.
-- Release: <https://github.com/mapix/CodeLight/releases/tag/v0.4.0>.
-- Static download page: <https://codelight.novarock.io/>.
-- Mac archive: `CodeLight-0.4.0-macos-arm64.zip`, 110,291,784 bytes.
+- Source snapshot: `3010163abea4c0080908bcd140b59e9552b0c226` at <https://github.com/mapix/Codelync>.
+- Release: <https://github.com/mapix/Codelync/releases/tag/v0.4.0>.
+- Static download page: <https://codelync.novarock.io/>.
+- Mac archive: `Codelync-0.4.0-macos-arm64.zip`, 110,291,784 bytes.
 - SHA-256: `bc35659ac5452cb55d0afdfbf12620c1945d0f05eddd3fe4433516a600580494`.
 
 The public repository starts with the reviewed source snapshot. The original
@@ -32,7 +32,7 @@ cloudflared 2026.10.7. Its six bundled executables passed signature checks.
 Apple submission `c460aaf8-8c49-438c-807f-51dc4e891425` was `Accepted`. Ticket
 stapling/validation, strict signature verification and Gatekeeper assessment
 passed before the final ZIP was created. The installed application also passed
-strict signature and Gatekeeper checks. Only CodeLight was restarted; the
+strict signature and Gatekeeper checks. Only Codelync was restarted; the
 original Codex owner remained running, and no new model test input was sent.
 
 iPhone build `2026110102` and the dedicated simulator Release build succeeded.
@@ -56,7 +56,7 @@ See [the question investigation](phone-question.md) for the conditional cause.
 - The deployed network Relay passed authenticated synthetic HTTP and WebSocket
   tests, including exact 512 KiB/2 MiB upload hashes and a 64 KiB binary echo.
   One earlier 10-second timeout was not reproduced; its cause is unconfirmed.
-- The static image `codelight-website:0.4.0-dc52e46` uses the verified base image.
+- The static image `codelync-website:0.4.0-dc52e46` uses the verified base image.
   Server-side manifest validation, the two-replica rollout and TLS certificate
   readiness passed in the dedicated namespace.
 - Public HTTPS metadata matched the verified release. The full downloaded ZIP
@@ -73,7 +73,7 @@ See [the question investigation](phone-question.md) for the conditional cause.
 
 At the installation check, this Mac's system resolver returned `ENOTFOUND` for
 new Cloudflare Quick Tunnel hostnames, although a separate public DNS query
-resolved them. CodeLight correctly refused to commit an unverified public entry.
+resolved them. Codelync correctly refused to commit an unverified public entry.
 No system DNS settings or validation checks were changed. After the user chose
 the owned network Relay, the Mac's native Public access form was used to select
 Relay and validate its server/access key. Independent HTTP/WebSocket probes

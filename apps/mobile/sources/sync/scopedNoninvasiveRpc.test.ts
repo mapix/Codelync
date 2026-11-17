@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { ScopedNoninvasiveRpc } from './scopedNoninvasiveRpc';
 import type { BridgeRpcReply } from './noninvasiveRpcJournal';
-import { rpcTarget } from '@slopus/happy-wire/codelight';
+import { rpcTarget } from '@codelync/wire/codelync';
 
 function fixture(sourceContext?: ConstructorParameters<typeof ScopedNoninvasiveRpc>[0]['sourceContext']) {
     const values = new Map<string, string>();

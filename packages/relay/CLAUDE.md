@@ -37,7 +37,7 @@ pnpm standalone:dev
 This loads env from `.env.dev`, runs migrations with PGlite (embedded Postgres), and starts the server on port 3005. Data is stored in `./data/pglite/`.
 
 Only two env vars are required for standalone (both already in `.env.dev`):
-- `HANDY_MASTER_SECRET` - master secret for auth/encryption
+- `CODELYNC_MASTER_SECRET` - master secret for auth/encryption
 - `PORT` - server port (default: 3005)
 
 ### Commands
@@ -234,8 +234,8 @@ The project includes a multi-stage Dockerfile:
 #### Environment Variables
 - CLI: Use `pnpm dev:local-server` (NOT `pnpm dev`) to load `.env.dev-local-server`
 - Server: Use `pnpm dev` to start with proper env files
-- **Tell**: Wrong server URL = check `HAPPY_SERVER_URL` env var
-- **Tell**: Wrong home dir = check `HAPPY_HOME_DIR` (should be `~/.happy-dev` for local)
+- **Tell**: Wrong server URL = check `CODELYNC_SERVER_URL` env var
+- **Tell**: Wrong home dir = check `CODELYNC_HOME_DIR` (should be `~/.happy-dev` for local)
 
 ### Quick Diagnostic Commands
 

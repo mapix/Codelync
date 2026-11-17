@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeProjectActivityService } from '../src/happy/project-activity.mjs';
+import { NativeProjectActivityService } from '../src/codelync/project-activity.mjs';
 import { CodexActivityObserver } from '../src/adapters/codex-activity.mjs';
 
 /** @typedef {Record<string,any>} Value */

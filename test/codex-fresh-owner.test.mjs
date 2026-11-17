@@ -8,13 +8,13 @@ function fixture(lateOwner = false) {
   const id = 'fresh-owner-fixture';
   let owner = 'old-owner', revision = 0, refreshes = 0;
   /** @type {(frame:Value)=>void} */ let callback = () => {};
-  const frame = (client) => ({ type: 'broadcast', method: 'thread-stream-state-changed', version: 11, sourceClientId: client,
+  const frame = (/** @type {string} */ client) => ({ type: 'broadcast', method: 'thread-stream-state-changed', version: 11, sourceClientId: client,
     params: { conversationId: id, hostId: 'local', change: { type: 'snapshot', revision: ++revision,
       conversationState: { turns: [{ turnId: 'fixture-turn', status: 'inProgress', items: [{ id: 'fixture-row', type: 'agentMessage', text: client }] }] } } } });
   const ipc = {
     generation: () => `local:${owner}`,
-    subscribe: async (_id, fn) => { callback = fn; fn(frame(owner)); return () => {}; },
-    refreshSnapshot: async (_id, requested) => {
+    subscribe: async (/** @type {string} */ _id, /** @type {(frame:Value)=>void} */ fn) => { callback = fn; fn(frame(owner)); return () => {}; },
+    refreshSnapshot: async (/** @type {string} */ _id, /** @type {(()=>void)|undefined} */ requested) => {
       refreshes++; owner = 'new-owner';
       callback(frame('old-owner')); // In-flight data before actual request admission remains insufficient.
       requested?.();

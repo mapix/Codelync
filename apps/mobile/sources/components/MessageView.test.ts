@@ -32,7 +32,7 @@ vi.mock('@/utils/userMessageBubbleColor', () => ({ resolveUserMessageBubbleColor
 vi.mock('./layout', () => ({ layout: { maxWidth: 800 } }));
 vi.mock('./markdown/MarkdownView', () => ({ MarkdownView: 'MarkdownView' }));
 vi.mock('./tools/ToolView', () => ({ ToolView: 'ToolView' }));
-vi.mock('./CodeLightHandoff', () => ({ CodeLightHandoff: () => null }));
+vi.mock('./CodelyncHandoff', () => ({ CodelyncHandoff: () => null }));
 vi.mock('./LongPressCopyable', async () => {
     const ReactModule = await import('react');
     return { LongPressCopyable: (props: any) => ReactModule.createElement('LongPressCopyable', props, props.children) };

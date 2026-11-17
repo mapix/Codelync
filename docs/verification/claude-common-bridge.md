@@ -18,7 +18,7 @@ separate gates.
 
 ## Actual copied-owner reads
 
-The same SourceImageAdapter and NativeHappyConnector used by CodeLight read
+The same SourceImageAdapter and NativeHappyConnector used by Codelync read
 existing native sessions through the explicitly installed copied-owner manifest.
 The local verification transport is isolated; it is not an installed phone or
 production relay claim. No model input, cancellation or approval was submitted.

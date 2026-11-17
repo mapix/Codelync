@@ -6,9 +6,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import nacl from 'tweetnacl';
-import { openPeerActivityRequest, PEER_ACTIVITY_REQUEST_MAX_BYTES } from '../src/happy/peer-request-codec.mjs';
-import { createPairingGateway, PairingInvitations } from '../src/happy/pairing-gateway.mjs';
-import { DeviceRegistry } from '../src/happy/device-registry.mjs';
+import { openPeerActivityRequest, PEER_ACTIVITY_REQUEST_MAX_BYTES } from '../src/codelync/peer-request-codec.mjs';
+import { createPairingGateway, PairingInvitations } from '../src/codelync/pairing-gateway.mjs';
+import { DeviceRegistry } from '../src/codelync/device-registry.mjs';
 import { DeviceProofVerifier } from '../src/network/device-proof.mjs';
 
 /** @typedef {Record<string,any>} Value */
@@ -46,14 +46,14 @@ test('malformed or oversized carriers fail before activity payload admission; ol
 });
 
 test('real HTTP gateway opens activity only after existing device proof, and rejects a changed ciphertext before producer reads', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-request-codec-'));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-request-codec-'));
   const devices = new DeviceRegistry(join(directory, 'devices.json')), invitations = new PairingInvitations({ key: randomBytes(32), credentials: {} });
   const phone = nacl.box.keyPair(), publicKey = Buffer.from(phone.publicKey).toString('base64url'), token = 'synthetic-sealed-request-token';
   await devices.approve(publicKey, 'Synthetic phone', token);
   const proof = new DeviceProofVerifier({ key: invitations.pair.secretKey, devices, origins: () => ['https://fixture.example'] });
   function headers() {
     const nonce = randomBytes(24), frame = { version: 2, token, origin: 'https://fixture.example', method, path, at: Date.now() };
-    return { 'Content-Type': 'application/json', Authorization: 'CodeLight ' + Buffer.from(JSON.stringify({ publicKey, nonce: nonce.toString('base64url'),
+    return { 'Content-Type': 'application/json', Authorization: 'Codelync ' + Buffer.from(JSON.stringify({ publicKey, nonce: nonce.toString('base64url'),
       ciphertext: Buffer.from(nacl.box(Buffer.from(JSON.stringify(frame)), nonce, invitations.pair.publicKey, phone.secretKey)).toString('base64url') })).toString('base64url') };
   }
   let reads = 0;

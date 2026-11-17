@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import nacl from 'tweetnacl';
-import { nativeTaskDigestText, nativeTaskSignal, nativeTaskTransfer, nativeTaskTransferApply, nativeTaskScopesEqual, nativeTaskDispatchKey } from '@slopus/happy-wire/native-tasks';
-import { decodeCompactPeerPlaintext } from '@slopus/happy-wire/peer-codec';
-import { NativeTaskTransfers } from '../src/happy/native-task-transfers.mjs';
-import { sealPeerResponse } from '../src/happy/peer-response-codec.mjs';
+import { nativeTaskDigestText, nativeTaskSignal, nativeTaskTransfer, nativeTaskTransferApply, nativeTaskScopesEqual, nativeTaskDispatchKey } from '@codelync/wire/native-tasks';
+import { decodeCompactPeerPlaintext } from '@codelync/wire/peer-codec';
+import { NativeTaskTransfers } from '../src/codelync/native-task-transfers.mjs';
+import { sealPeerResponse } from '../src/codelync/peer-response-codec.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const FLAGS = ['tasksAvailable', 'tasksComplete', 'backgroundTasksComplete', 'tasksTruncated', 'dispatchChildrenAvailable', 'dispatchChildrenComplete', 'dispatchChildrenTruncated', 'partial'];

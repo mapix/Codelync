@@ -15,7 +15,7 @@ function fixture() {
     return { controller, used, counts: () => ({ generated, calls, loggedIn }), setStoreFails: (value: boolean) => { storeFails = value; }, setLoginFails: (value: boolean) => { loginFails = value; } };
 }
 
-describe('CodeLight anonymous identity', () => {
+describe('Codelync anonymous identity', () => {
     it('coalesces repeated clicks and never authenticates before the pending seed is saved', async () => {
         const f = fixture(); await Promise.all([f.controller.create('https://fixture'), f.controller.create('https://fixture')]);
         expect(f.counts()).toEqual({ generated: 1, calls: 1, loggedIn: 1 });

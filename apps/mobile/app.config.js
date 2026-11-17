@@ -1,18 +1,19 @@
 const { execFileSync } = require('node:child_process');
 
-const localBridge = process.env.HAPPY_NONINVASIVE_LOCAL !== '0';
+// Current distribution always uses the native Desktop/Gateway session owner.
+const localBridge = true;
 const variant = process.env.APP_ENV || 'development';
 const name = {
-    development: "Happy (dev)",
-    preview: "Happy (preview)",
-    production: "Happy"
+    development: "Codelync (dev)",
+    preview: "Codelync (preview)",
+    production: "Codelync"
 }[variant];
 const bundleId = {
-    development: "com.slopus.happy.dev",
-    preview: "com.slopus.happy.preview",
-    production: "com.ex3ndr.happy"
+    development: "com.learnings.codelync.dev",
+    preview: "com.learnings.codelync.preview",
+    production: "com.learnings.codelync"
 }[variant];
-const nativeBundleId = localBridge ? 'com.learnings.codelight' : bundleId;
+const nativeBundleId = localBridge ? 'com.learnings.codelync' : bundleId;
 // const stagingElevenLabsAgentId = 'agent_7801k2c0r5hjfraa1kdbytpvs6yt';
 const productionElevenLabsAgentId = 'agent_6701k211syvvegba4kt7m68nxjmw';
 const elevenLabsAgentId = {
@@ -39,12 +40,12 @@ function git(args) {
 
 function loadBuildMetadata() {
     const commitSha =
-        process.env.HAPPY_BUILD_COMMIT_SHA ||
+        process.env.CODELYNC_BUILD_COMMIT_SHA ||
         process.env.EAS_BUILD_GIT_COMMIT_HASH ||
         process.env.GITHUB_SHA ||
         git(['rev-parse', 'HEAD']);
     const commitTimestamp =
-        process.env.HAPPY_BUILD_COMMIT_TIMESTAMP ||
+        process.env.CODELYNC_BUILD_COMMIT_TIMESTAMP ||
         (commitSha
             ? git(['show', '-s', '--format=%cI', commitSha])
             : git(['show', '-s', '--format=%cI', 'HEAD']));
@@ -59,24 +60,26 @@ const buildMetadata = loadBuildMetadata();
 
 export default {
     expo: {
-        name: localBridge ? 'CodeLight' : name,
-        slug: localBridge ? 'codelight' : 'happy',
-        version: "1.9.2",
-        runtimeVersion: localBridge ? 'codelight-22' : '21',
+        name: localBridge ? 'Codelync' : name,
+        slug: 'codelync',
+        version: "1.0.0",
+        runtimeVersion: localBridge ? 'codelync-22' : '21',
         orientation: "default",
-        icon: localBridge ? './sources/assets/images/codelight-icon-v2.png' : './sources/assets/images/icon.png',
-        scheme: localBridge ? 'codelight' : 'happy',
+        icon: localBridge ? './sources/assets/images/codelync-icon-v2.png' : './sources/assets/images/icon.png',
+        scheme: 'codelync',
         userInterfaceStyle: "automatic",
         ios: {
-            ...(localBridge ? { buildNumber: '2026111702' } : {}),
+            ...(localBridge ? { buildNumber: '2026111705' } : {}),
             supportsTablet: true,
             bundleIdentifier: nativeBundleId,
             config: {
                 usesNonExemptEncryption: false
             },
             infoPlist: {
+                CFBundleDevelopmentRegion: 'en',
+                CFBundleLocalizations: ['en', 'zh-Hans', 'zh-Hant', 'ja'],
                 ...(localBridge ? {
-                    UIBackgroundModes: ['processing', ...(process.env.CODELIGHT_APNS_ENVIRONMENT ? ['remote-notification'] : [])],
+                    UIBackgroundModes: ['processing', ...(process.env.CODELYNC_APNS_ENVIRONMENT ? ['remote-notification'] : [])],
                     BGTaskSchedulerPermittedIdentifiers: ['com.expo.modules.backgroundtask.processing'],
                 } : {}),
                 NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone for voice conversations with AI.",
@@ -95,7 +98,7 @@ export default {
                     : { NSAllowsLocalNetworking: true, NSAllowsArbitraryLoads: true }
             },
             ...(variant === 'production'
-                ? { associatedDomains: ["applinks:app.happy.engineering"] }
+                ? { associatedDomains: ["applinks:codelync.novarock.io"] }
                 : {})
         },
         android: {
@@ -127,7 +130,7 @@ export default {
                     "data": [
                         {
                             "scheme": "https",
-                            "host": "app.happy.engineering",
+                            "host": "codelync.novarock.io",
                             "pathPrefix": "/"
                         }
                     ],
@@ -191,7 +194,7 @@ export default {
             [
                 "expo-notifications",
                 {
-                    "enableBackgroundRemoteNotifications": localBridge ? !!process.env.CODELIGHT_APNS_ENVIRONMENT : true,
+                    "enableBackgroundRemoteNotifications": localBridge ? !!process.env.CODELYNC_APNS_ENVIRONMENT : true,
                     "icon": "./sources/assets/images/icon-notification.png"
                 }
             ],
@@ -216,12 +219,7 @@ export default {
                 }
             ]
         ],
-        updates: localBridge ? { enabled: false } : {
-            url: "https://u.expo.dev/4558dd3d-cd5a-47cd-bad9-e591a241cc06",
-            requestHeaders: {
-                "expo-channel-name": "production"
-            }
-        },
+        updates: { enabled: false },
         experiments: {
             typedRoutes: true
         },
@@ -229,12 +227,10 @@ export default {
             router: {
                 root: "./sources/app"
             },
-            eas: localBridge ? undefined : {
-                projectId: "4558dd3d-cd5a-47cd-bad9-e591a241cc06"
-            },
+            eas: undefined,
             app: {
                 noninvasiveLocal: localBridge,
-                codeLightPushEnvironment: localBridge ? process.env.CODELIGHT_APNS_ENVIRONMENT : undefined,
+                codelyncPushEnvironment: localBridge ? process.env.CODELYNC_APNS_ENVIRONMENT : undefined,
                 postHogKey: localBridge ? undefined : process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
                 revenueCatAppleKey: localBridge ? undefined : process.env.EXPO_PUBLIC_REVENUE_CAT_APPLE,
                 revenueCatGoogleKey: localBridge ? undefined : process.env.EXPO_PUBLIC_REVENUE_CAT_GOOGLE,
@@ -244,7 +240,6 @@ export default {
                 buildCommitSha: buildMetadata.commitSha,
                 buildCommitTimestamp: buildMetadata.commitTimestamp,
             }
-        },
-        owner: "bulkacorp"
+        }
     }
 };

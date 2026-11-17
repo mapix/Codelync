@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 /**
- * Typography system for Happy Coder app
+ * Typography system for Codelync app
  * 
  * Default typography: IBM Plex Sans
  * Monospace typography: IBM Plex Mono  
@@ -113,4 +113,4 @@ export const Typography = {
       fontFamily: FontFamilies.legacy.systemMono,
     }),
   }
-}; 
+};

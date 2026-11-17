@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregateNativeActivity } from '../src/adapters/native-aggregate-activity.mjs';
-import { NativeCatalogDeltas } from '../src/happy/recent-data.mjs';
+import { NativeCatalogDeltas } from '../src/codelync/recent-data.mjs';
 
 const source = { app: 'codex', parentConversationId: 'parent', hostId: 'local', ownerGeneration: 'owner', ownStatus: 'idle', rosterAvailable: true, rosterComplete: true };
 /** @param {string} status @param {string} [id] */

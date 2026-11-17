@@ -1,4 +1,5 @@
 import { getCurrentLanguage } from './index';
+import type { SupportedLanguage } from './_all';
 
 const en = {
     previousDesktop: 'Previous desktop', nextDesktop: 'Next desktop', overview: 'Mission Control',
@@ -16,6 +17,7 @@ const en = {
     inUse: 'Another desktop connection is active. End it first.', changed: 'The display or connection changed. Connect again.',
     uncertain: 'The action result is unconfirmed. Check the desktop before repeating it.',
     viewChanged: 'The desktop picture changed. Wait for the latest picture before continuing.',
+    preferredRoute: 'Connect the selected route before controlling your Mac.',
     inputBusy: 'Too many inputs are waiting. Reconnect to control your Mac.',
 };
 const zh = {
@@ -32,9 +34,32 @@ const zh = {
     failed: '桌面连接失败，请检查 Mac 上的媒体 Relay。', inUse: '已有桌面连接，请先断开。', changed: '显示器或连接已变化，请重新连接。',
     uncertain: '操作结果待确认，请查看桌面后再决定是否重复操作。',
     viewChanged: '桌面画面已变化，请等待最新画面后继续。',
+    preferredRoute: '请先接通所选连接方式，再控制 Mac。',
     inputBusy: '输入等待过多，请重新连接。',
 };
-export function remoteDesktopLabels() { return getCurrentLanguage().startsWith('zh') ? zh : en; }
+const ja: typeof en = {
+    previousDesktop: '前のデスクトップ', nextDesktop: '次のデスクトップ', overview: 'Mission Control',
+    spaceUnconfirmed: 'デスクトップの切り替えを確認できません。画面を確認するか、Mission Control で選択してください。',
+    spaceShortcut: 'Mac のシステム設定 → キーボード → キーボードショートカット → Mission Control でデスクトップ切り替えを有効にしてください。',
+    exit: 'リモートデスクトップを終了', back: '戻る', controls: '操作', showControls: '操作を表示', connection: '接続', connected: '接続済み', desktops: 'デスクトップ', zoomIn: '拡大', zoomOut: '縮小',
+    settings: '画質', close: '閉じる', fullscreen: '全画面', exitFullscreen: '全画面を終了', pointer: 'ポインタ', disconnecting: '切断中…',
+    title: 'リモートデスクトップ', connect: '接続', disconnect: '切断', refresh: '更新',
+    connecting: '接続中…', checking: 'Mac を確認中…', notConnected: '未接続', inputChecking: '操作の権限を確認中…', waiting: '映像を待機中…', clarity: '解像度', smoothness: '滑らかさ',
+    standard: '標準', high: '高画質', ultra: '最高画質', display: 'ディスプレイ', text: 'テキストを入力', send: '入力',
+    zoom: 'ズーム', fit: '画面に合わせる', drag: 'ドラッグ', rightClick: '右クリック', scroll: 'スクロール', keyboard: 'キーボード',
+    disabled: 'Mac でリモートデスクトップを有効にしてください。', unavailable: 'Mac に接続できません。接続を確認して再試行してください。',
+    permission: 'Mac で画面収録を許可してください。', inputPermission: 'Mac を操作するにはアクセシビリティを許可してください。',
+    locked: 'Mac のロックを解除してください。', failed: '接続に失敗しました。Mac のメディア Relay を確認してください。',
+    inUse: '別のデスクトップ接続が使用中です。先に切断してください。', changed: 'ディスプレイまたは接続が変わりました。再接続してください。',
+    uncertain: '操作結果は未確認です。繰り返す前にデスクトップを確認してください。',
+    viewChanged: 'デスクトップの映像が変わりました。最新の映像を待ってから続けてください。',
+    preferredRoute: 'Mac を操作する前に、選択した接続を確立してください。',
+    inputBusy: '入力待ちが多すぎます。Mac を操作するには再接続してください。',
+};
+export function remoteDesktopLabelsFor(language: SupportedLanguage) {
+    return language === 'ja' ? ja : language.startsWith('zh') ? zh : en;
+}
+export function remoteDesktopLabels() { return remoteDesktopLabelsFor(getCurrentLanguage()); }
 export function remoteDesktopError(code: string) {
     const labels = remoteDesktopLabels();
     if (code === 'desktop-disabled') return labels.disabled;
@@ -44,6 +69,7 @@ export function remoteDesktopError(code: string) {
     if (code === 'desktop-in-use') return labels.inUse;
     if (code === 'desktop-operation-unknown') return labels.uncertain;
     if (code === 'desktop-view-changed') return labels.viewChanged;
+    if (code === 'preferred-route-unavailable') return labels.preferredRoute;
     if (code === 'desktop-input-busy') return labels.inputBusy;
     if (code === 'desktop-space-unconfirmed') return labels.spaceUnconfirmed;
     if (['desktop-space-shortcut-disabled', 'desktop-space-shortcut-unavailable'].includes(code)) return labels.spaceShortcut;

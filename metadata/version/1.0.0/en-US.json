@@ -1,0 +1,6 @@
+{
+  "description": "Codelync is an independent iPhone companion for users who have configured Gateway mode in Codex, Antigravity Desktop or Claude Desktop. For everyday subscription use, we recommend the vendors’ official apps.\n\nPair with Codelync on your own Mac to view existing projects, sessions and available subagent logs. Your original desktop applications keep running the sessions and model requests; available actions depend on each owner’s confirmed capabilities.\n\nRead recent messages first and load older history as needed. Use saved connection choices, compact updates and clear recovery status. English, Chinese and Japanese are supported, following the system language by default. Remote Desktop is optional and hidden by default; enable its feature switch in Settings and grant the required Mac permissions when needed.\n\nCodelync is not affiliated with OpenAI, Anthropic or Google. It does not provide model subscriptions or bundled model credentials. A compatible Mac and an existing Gateway desktop setup are required for native session use.",
+  "keywords": "gateway,desktop,sessions,coding,remote,projects,agents",
+  "supportUrl": "https://codelync.novarock.io/support.html",
+  "marketingUrl": "https://codelync.novarock.io/"
+}

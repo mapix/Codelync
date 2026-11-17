@@ -3,7 +3,7 @@ import { gunzipSync } from 'fflate';
 // Explicit synthetic native diagnostics reuse the owned codec dependency.
 export { gzipSync } from 'fflate';
 
-export const PEER_RESPONSE_CODEC_HEADER = 'x-codelight-peer-codec';
+export const PEER_RESPONSE_CODEC_HEADER = 'x-codelync-peer-codec';
 export const PEER_RESPONSE_CODEC_VALUE = '3';
 export const PEER_RESPONSE_MAX_BYTES = 8 * 1024 * 1024;
 export const PEER_COMPACT_PREFIX_BYTES = 37;

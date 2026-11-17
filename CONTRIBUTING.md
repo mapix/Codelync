@@ -1,14 +1,18 @@
 # Contributing
 
-CodeLight currently supports existing desktop Codex sessions connected through
+Use English for primary documentation, issues, pull requests and release notes.
+Keep Chinese and Japanese product copy aligned with the English source. New
+installations follow the system language; preserve an explicit language choice.
+
+Codelync currently supports existing desktop Codex sessions connected through
 gateway mode. Other harnesses and window control are deferred. Read `AGENTS.md`,
-`spec/codelight-product.md` and the relevant protocol spec before changing behavior.
+`spec/codelync-product.md` and the relevant protocol spec before changing behavior.
 
 ## Setup
 
 ```sh
-git clone https://github.com/mapix/CodeLight.git
-cd CodeLight
+git clone https://github.com/mapix/Codelync.git
+cd Codelync
 pnpm install --frozen-lockfile
 pnpm typecheck:all
 pnpm lint
@@ -30,7 +34,7 @@ See [build and verification](docs/BUILD-AND-VERIFY.md).
   verify a native or browser view appropriate to the surface, including narrow
   layouts, keyboard access and language switching.
 - Run `pnpm typecheck:all`, `pnpm lint` and the relevant tests. Tests use package
-  entry points; phone tests run with `pnpm --filter @codelight/mobile exec vitest run <files>`.
+  entry points; phone tests run with `pnpm --filter @codelync/mobile exec vitest run <files>`.
 - Keep changes focused. Explain the trigger, evidence, owner and fix mechanism
   in the pull request, along with actual results and unverified limits.
 

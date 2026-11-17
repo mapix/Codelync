@@ -1,15 +1,15 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
-import { channelList, channelOrigin, isPrivateHost, CHANNEL_KINDS } from '@slopus/happy-wire/codelight';
-import { readOptionalPrivateJson, writeDurablePrivateJson } from '../happy/discovery-persistence.mjs';
+import { channelList, channelOrigin, isPrivateHost, CHANNEL_KINDS } from '@codelync/wire/codelync';
+import { readOptionalPrivateJson, writeDurablePrivateJson } from '../codelync/discovery-persistence.mjs';
 import { CloudflareAccess } from './public-access.mjs';
-import { RelayTunnelClient, normalizeRelayAddress } from './relay-client.mjs';
+import { RelayTunnelClient, normalizeRelayAddress, validateRelayAddress } from './relay-client.mjs';
 
 /** @typedef {Record<string,any>} Value */
 /** @typedef {'local'|'cloudflare'|'relay'} Kind */
 /** @typedef {{id:string,kind:Kind,url:string,label?:string}} Channel */
-/** @typedef {{state:string,cloudflared:string,upstreamFor:(kind:Kind)=>string,probesFor:(kind:Kind)=>{verify:(url:string,signal?:AbortSignal)=>Promise<void>},startLocal:(signal:AbortSignal)=>Promise<Value>,transportFactory?:(config:Value,seed:Uint8Array)=>Value,retryInitialMs?:number,retryMaxMs?:number}} Options */
+/** @typedef {{state:string,cloudflared:string,upstreamFor:(kind:Kind)=>string,probesFor:(kind:Kind)=>{verify:(url:string,signal?:AbortSignal)=>Promise<void>},startLocal:(signal:AbortSignal)=>Promise<Value>,transportFactory?:(config:Value,seed:Uint8Array)=>Value,retryInitialMs?:number,retryMaxMs?:number,settingsOnly?:boolean,validateRelay?:(url:string,signal?:AbortSignal)=>Promise<string>}} Options */
 
 /** One configuration owner, independent transport lifecycles and no business/runtime state. */
 export class ConnectionChannelsManager extends EventEmitter {
@@ -33,6 +33,7 @@ export class ConnectionChannelsManager extends EventEmitter {
     this.retryTimers = /** @type {Map<Kind,ReturnType<typeof setTimeout>>} */ (new Map());
     this.retryDelays = /** @type {Map<Kind,number>} */ (new Map());
     this.writes = Promise.resolve();
+    this.settingsCancel = new AbortController();
   }
 
   load() {
@@ -42,6 +43,7 @@ export class ConnectionChannelsManager extends EventEmitter {
 
   async initialize() {
     if (this.closed) throw Error('connection-channels-cancelled');
+    if (!this.options.settingsOnly) {
     const identityPath = join(this.options.state, 'network-identity.json');
     let identity = await readOptionalPrivateJson(identityPath);
     if (!identity) {
@@ -51,6 +53,7 @@ export class ConnectionChannelsManager extends EventEmitter {
     if (typeof identity.seed !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(identity.seed)) throw Error('invalid-network-identity');
     this.seed = new Uint8Array(Buffer.from(identity.seed, 'base64url'));
     if (this.seed.length !== 32) throw Error('invalid-network-identity');
+    }
     const configured = await readOptionalPrivateJson(join(this.options.state, 'connection-channels.json'));
     if (configured) {
       if (configured.version !== 2 || !Array.isArray(configured.enabledChannels)) throw Error('invalid-connection-configuration');
@@ -62,10 +65,10 @@ export class ConnectionChannelsManager extends EventEmitter {
       this.saved = { version: 2, enabledChannels: relay ? [...CHANNEL_KINDS] : ['local', 'cloudflare'], relay };
       await writeDurablePrivateJson(join(this.options.state, 'connection-channels.json'), this.saved);
     }
-    if (this.closed) { this.seed.fill(0); throw Error('connection-channels-cancelled'); }
+    if (this.closed) { this.seed?.fill(0); throw Error('connection-channels-cancelled'); }
     this.initialized = true;
     this.emit('configuration', this.summary());
-    this.reconcile();
+    if (!this.options.settingsOnly) this.reconcile();
     return this.summary();
   }
 
@@ -121,7 +124,7 @@ export class ConnectionChannelsManager extends EventEmitter {
     const entry = this.entries.get(kind);
     if (!entry || this.closed || !this.saved.enabledChannels.includes(kind)
       || !entry.channels.some((/** @type {Channel} */ row) => row.url === url)) return false;
-    entry.probeCancel?.abort(); entry.confirmed = true; entry.verification++; entry.state = 'ready'; this.cancelRetry(kind, true); this.publish(); return true;
+    entry.probeCancel?.abort(); entry.disconnected = false; entry.confirmed = true; entry.verification++; entry.state = 'ready'; this.cancelRetry(kind, true); this.publish(); return true;
   }
 
   /** @param {Kind} kind */
@@ -144,20 +147,31 @@ export class ConnectionChannelsManager extends EventEmitter {
 
   /** @param {unknown} input */
   async setEnabled(input) {
-    if (!this.initialized || !this.seed) throw Error('connection-channels-not-loaded');
+    if (!this.initialized || !this.seed && !this.options.settingsOnly) throw Error('connection-channels-not-loaded');
     const kinds = this.enabledKinds(input, !!this.saved.relay);
     let disablingRelay = false;
     await this.commit(saved => {
       disablingRelay = saved.enabledChannels.includes('relay') && !kinds.includes('relay');
       return { ...saved, enabledChannels: kinds };
     });
-    if (disablingRelay) this.stopKind('relay');
-    this.reconcile(); return this.summary();
+    if (!this.options.settingsOnly) {
+      if (disablingRelay) this.stopKind('relay');
+      this.reconcile();
+    }
+    return this.summary();
   }
 
   /** @param {{serverUrl:string,token?:string}} input */
   async configureRelay(input) {
-    if (!this.initialized || !this.seed || this.closed) throw Error('connection-channels-not-loaded');
+    if (!this.initialized || !this.seed && !this.options.settingsOnly || this.closed) throw Error('connection-channels-not-loaded');
+    if (this.options.settingsOnly) {
+      const serverUrl = normalizeRelayAddress(input.serverUrl);
+      const token = typeof input.token === 'string' ? input.token : serverUrl === this.saved.relay?.serverUrl ? this.saved.relay.token : '';
+      if (!/^[A-Za-z0-9_-]{32,256}$/u.test(token)) throw Error('relay-access-key-required');
+      await (this.options.validateRelay ?? validateRelayAddress)(serverUrl, this.settingsCancel.signal);
+      return this.commit(saved => ({ ...saved, relay: { serverUrl, token },
+        enabledChannels: saved.relay ? saved.enabledChannels : this.enabledKinds([...saved.enabledChannels, 'relay'], true) }));
+    }
     const committing = this.pending.get('relay');
     // 已开始持久化的候选先完成提交和发布，新候选不能把磁盘配置与实际入口拆开。
     if (committing?.stage === 'committing') await committing.finished;
@@ -288,7 +302,8 @@ export class ConnectionChannelsManager extends EventEmitter {
       } catch (error) {
         // 进程已给出地址但本机 DNS/探针不可达时保留候选，状态必须是未验证，手机可另行证明同一 Mac。
         if (entry.kind === 'cloudflare' && this.entries.get(entry.kind) === entry && !entry.cancel.signal.aborted) {
-          if (!entry.confirmed && entry.verification === verification) entry.state = 'unverified'; this.publish(); return;
+          if (!entry.confirmed && entry.verification === verification) entry.state = 'unverified';
+          this.publish(); this.scheduleVerification(entry); return;
         }
         throw error;
       }
@@ -321,6 +336,12 @@ export class ConnectionChannelsManager extends EventEmitter {
       });
       return;
     }
+    entry.transport?.on?.('reconnecting', () => {
+      if (this.closed || entry.cancel.signal.aborted || this.entries.get(entry.kind) !== entry) return;
+      entry.probeCancel?.abort(); this.cancelRetry(entry.kind);
+      entry.disconnected = true; entry.confirmed = false; entry.verification++;
+      entry.state = 'reconnecting'; this.publish();
+    });
     entry.transport?.on?.('disconnected', () => {
       entry.probeCancel?.abort();
       entry.disconnected = true; entry.verification++;
@@ -341,8 +362,32 @@ export class ConnectionChannelsManager extends EventEmitter {
       void this.verifyEntry(entry, entry.channels[0].url).then(() => {
         // 连接再次断开后，上一代只读探针的迟到成功不能把入口伪造为 ready。
         if (!this.closed && this.entries.get(entry.kind) === entry && !entry.cancel.signal.aborted && entry.verification === verification) { entry.state = 'ready'; this.cancelRetry(entry.kind, true); this.publish(); }
-      }, () => {});
+      }, () => { this.scheduleVerification(entry); });
     });
+  }
+
+  /** Retry only an existing unverified forwarding proof; healthy entries send no polls.
+   * @param {Value} entry */
+  scheduleVerification(entry) {
+    const kind = /** @type {Kind} */ (entry.kind);
+    if (this.closed || this.options.settingsOnly || entry.cancel.signal.aborted || entry.disconnected || entry.confirmed
+      || this.entries.get(kind) !== entry || entry.state !== 'unverified' || !entry.channels.length
+      || entry.probeCancel || !this.saved.enabledChannels.includes(kind) || this.retryTimers.has(kind)) return;
+    const delay = this.retryDelays.get(kind) ?? this.retryInitialMs;
+    this.retryDelays.set(kind, Math.min(delay * 2, this.retryMaxMs));
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(kind);
+      if (this.closed || entry.cancel.signal.aborted || entry.disconnected || entry.confirmed
+        || this.entries.get(kind) !== entry || entry.state !== 'unverified' || !this.saved.enabledChannels.includes(kind)) return;
+      const verification = ++entry.verification;
+      void this.verifyEntry(entry, entry.channels[0].url).then(() => {
+        if (!this.closed && this.entries.get(kind) === entry && !entry.cancel.signal.aborted && !entry.disconnected
+          && entry.verification === verification) {
+          entry.state = 'ready'; this.cancelRetry(kind, true); this.publish();
+        }
+      }, () => { this.scheduleVerification(entry); });
+    }, delay);
+    timer.unref(); this.retryTimers.set(kind, timer);
   }
 
   /** Keep only the current read-only proof and contain synchronous factory errors.
@@ -410,6 +455,7 @@ export class ConnectionChannelsManager extends EventEmitter {
 
   close() {
     if (this.closing) return this.closing; this.closed = true;
+    this.settingsCancel.abort();
     for (const kind of /** @type {Kind[]} */ (CHANNEL_KINDS)) this.stopKind(kind);
     this.closing = (async () => {
       await this.localRefresh?.catch(() => {});

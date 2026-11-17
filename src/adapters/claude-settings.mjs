@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { nativeSettingsScope, sameNativeSettingsScope } from '../happy/native-settings-scope.mjs';
+import { nativeSettingsScope, sameNativeSettingsScope } from '../codelync/native-settings-scope.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];

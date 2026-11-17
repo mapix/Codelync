@@ -50,7 +50,7 @@ delivery.
 
 ## Native scene and remaining acceptance
 
-Open `codelight://dev/agent-question?history=1` on the candidate native build.
+Open `codelync://dev/agent-question?history=1` on the candidate native build.
 The scene contains 40 sample earlier messages with a fixed pending-question
 banner outside the scroll area. Scroll in both directions, open the banner,
 select options and close the form. `&open=1` opens the sheet directly. Do not

@@ -13,7 +13,7 @@ import { ClaudeNativeSettings } from './claude-settings.mjs';
 /** @typedef {Record<string,any>} Value */
 const hash = (/** @type {unknown} */ value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const deny = (/** @type {string} */ code) => Object.assign(Error(code), { effectMayHaveOccurred: false });
-const SLOT = Symbol.for('codelight.claude.native.owner.v1');
+const SLOT = Symbol.for('codelync.claude.native.owner.v1');
 const slots = /** @type {any} */ (globalThis);
 const TASK_EVENTS = new Set(['task_started', 'task_progress', 'task_updated', 'task_notification', 'background_tasks_changed']);
 const TASK_TERMINAL = new Set(['completed', 'failed', 'stopped']);

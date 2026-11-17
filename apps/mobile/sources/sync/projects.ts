@@ -69,7 +69,7 @@ export async function decryptProjectRecord(
     encryption: Pick<Encryption, 'decryptEncryptionKey' | 'openEncryption'>,
 ): Promise<DecryptedProjectRecord | null> {
     // Null is the legacy project form: openEncryption(null) uses the account
-    // secretbox, and its avatar uses the master Happy Blobs key.
+    // secretbox, and its avatar uses the master Codelync Blobs key.
     let dataKey: Uint8Array | null = null;
     if (record.dataEncryptionKey !== null) {
         dataKey = await encryption.decryptEncryptionKey(record.dataEncryptionKey);

@@ -6,7 +6,7 @@ import { RelayChannel, FRAME_BYTES, streamId, safePath, safeHeaders } from './re
 
 /** @typedef {Record<string,any>} Value */
 export function relayIdentity(/** @type {Uint8Array} */ publicKey) { return createHash('sha256').update(publicKey).digest('hex').slice(0, 24); }
-export function registrationMessage(/** @type {string} */ challenge) { return Buffer.from('CodeLight network relay v1\n' + challenge); }
+export function registrationMessage(/** @type {string} */ challenge) { return Buffer.from('Codelync network relay v1\n' + challenge); }
 /** @param {unknown} value @param {number} size */
 function keyBytes(value, size) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/u.test(value)) throw Error('invalid-network-key');
@@ -38,7 +38,7 @@ export function createNetworkRelay(options) {
     if (req.method === 'GET' && req.url === '/healthz') { res.end('ok\n'); return; }
     if (req.method === 'GET' && req.url === '/relay/v1/info') {
       res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
-      res.end(JSON.stringify({ service: 'codelight-network-relay', version: 1, http: true, websocket: true, requiresToken: true })); return;
+      res.end(JSON.stringify({ service: 'codelync-network-relay', version: 1, http: true, websocket: true, requiresToken: true })); return;
     }
     try {
       const target = route(req.url);

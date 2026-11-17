@@ -1,6 +1,8 @@
 import nacl from 'tweetnacl';
 import { createHash } from 'node:crypto';
-import { channelPath } from '@slopus/happy-wire/codelight';
+import { channelPath } from '@codelync/wire/codelync';
+
+const AUTHORIZATION_PREFIX = 'Codelync ';
 
 /** Private-LAN authorization keeps device bearer tokens inside the sealed box. */
 export class DeviceProofVerifier {
@@ -10,9 +12,9 @@ export class DeviceProofVerifier {
   }
   /** @param {unknown} header @param {string} method @param {string} requestUrl @param {string|null} [expectedOrigin] */
   authorize(header, method, requestUrl, expectedOrigin) {
-    if (typeof header !== 'string' || !header.startsWith('CodeLight ') || header.length > 8192) return null;
+    if (typeof header !== 'string' || !header.startsWith(AUTHORIZATION_PREFIX) || header.length > 8192) return null;
     try {
-      const packet = JSON.parse(Buffer.from(header.slice(10), 'base64url').toString());
+      const packet = JSON.parse(Buffer.from(header.slice(AUTHORIZATION_PREFIX.length), 'base64url').toString());
       if (!/^[A-Za-z0-9_-]{43}$/.test(packet.publicKey) || !/^[A-Za-z0-9_-]{32}$/.test(packet.nonce) || typeof packet.ciphertext !== 'string') return null;
       const publicKey = Buffer.from(packet.publicKey, 'base64url'), nonce = Buffer.from(packet.nonce, 'base64url');
       const plain = nacl.box.open(Buffer.from(packet.ciphertext, 'base64url'), nonce, publicKey, this.key);

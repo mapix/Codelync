@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { TerminalReceiptJournal, terminalCommandDigest } from '../src/tui/receipts.mjs';
 
 test('private durable terminal receipts preserve unknown across restart and reject ID target/payload reuse', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-tui-receipt-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-tui-receipt-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const first = new TerminalReceiptJournal(directory), commandId = 'terminal-native-0001';
   const operation = { commandId, paneId: '%3', ownerGeneration: 'native-owner', action: 'input', digest: terminalCommandDigest('input', { text: 'private terminal input' }, '%3', 'native-owner') };
   const admissions = await Promise.all([first.begin(operation), first.begin(operation)]); assert.equal(admissions.filter(value => value.created).length, 1);

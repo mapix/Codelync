@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SourceImageAdapter } from '../src/happy/bound-source.mjs';
+import { SourceImageAdapter } from '../src/codelync/bound-source.mjs';
 import { BridgeError } from '../src/errors.mjs';
-import { nativeSavedHistoryPage, nativeHistoryBoundary } from '../src/happy/recent-data.mjs';
+import { nativeSavedHistoryPage, nativeHistoryBoundary } from '../src/codelync/recent-data.mjs';
 
 /** @typedef {Record<string,any>} Value */
 function view() { return { status: 'history-only', ownerGeneration: null, currentTurnId: null, requests: [], historyComplete: false,

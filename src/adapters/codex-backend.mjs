@@ -266,7 +266,7 @@ export class CodexBackend {
           rosterAvailable: children.subagentsAvailable, rosterComplete: children.subagentsComplete }) });
       // 完整行摘要按顺序组合；只序列化改变的行，状态帧不再重复复制全部历史文本。
       const metadata = { ...session.view, rows: undefined };
-      session.view.contentStamp = createHash('sha256').update('codelight-view-v1\0').update(session.projection.rowsDigest).update(JSON.stringify(metadata)).digest('hex');
+      session.view.contentStamp = createHash('sha256').update('codelync-view-v1\0').update(session.projection.rowsDigest).update(JSON.stringify(metadata)).digest('hex');
       this.scheduleRefresh(session);
       this.publish(session);
       if (change.type === 'snapshot') for (const waiter of [...this.freshWaiters.get(session.id) ?? []]) {
@@ -663,13 +663,13 @@ function projectRequests(state, turns) { return (Array.isArray(state.requests) ?
 
 /** @param {Row[]} rows @param {WeakMap<Row,string>} digests @param {ProjectionWork} work */
 function fingerprintRows(rows, digests, work) {
-  const hash = createHash('sha256').update('codelight-rows-v1\0');
+  const hash = createHash('sha256').update('codelync-rows-v1\0');
   for (const row of rows) {
     let digest = digests.get(row);
     if (!digest) {
       const json = JSON.stringify(row);
       work.serializedRowBytes += Buffer.byteLength(json);
-      digest = createHash('sha256').update('codelight-row-v1\0').update(json).digest('hex');
+      digest = createHash('sha256').update('codelync-row-v1\0').update(json).digest('hex');
       digests.set(row, digest);
     }
     hash.update(digest);

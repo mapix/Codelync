@@ -47,7 +47,7 @@ function openSessionRoute(router: Router, sessionId: string, selectSource: boole
     }
 
     if (Platform.OS === 'web' || config.noninvasiveLocal) {
-        // CodeLight 原生页面也保持一个会话路由，连续切换不会累积历史 renderer 与订阅。
+        // Codelync 原生页面也保持一个会话路由，连续切换不会累积历史 renderer 与订阅。
         // Web has no screen recycling: @react-navigation/native-stack keeps
         // every pushed route mounted (unfocused ones only get display:none),
         // so each opened session would keep its ChatList, store subscriptions

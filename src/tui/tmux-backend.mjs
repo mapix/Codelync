@@ -294,7 +294,7 @@ export class TuiTmuxBackend {
     } else throw failure('tui-unsupported-action');
     const record = { commandId, paneId: id, ownerGeneration: expectedOwner, action, digest }, saved = await this.journal.begin(record);
     if (!saved.created) return saved.record.receipt ?? { commandId, status: 'unknown', kind: 'terminal-server-receipt', effectMayHaveOccurred: true };
-    const observer = this.observer(binding), stale = `CODELIGHT_TMUX_STALE_${randomBytes(16).toString('hex')}`;
+    const observer = this.observer(binding), stale = `CODELYNC_TMUX_STALE_${randomBytes(16).toString('hex')}`;
     observer.operations += 1; clearTimeout(observer.idleTimer); observer.idleTimer = null;
     const ownerCondition = `#{&&:#{==:#{pid},${binding.serverPid}},#{&&:#{==:#{pane_pid},${binding.pid}},#{==:#{pane_dead},0}}}`;
     const condition = action === 'resize' ? `#{&&:${ownerCondition},#{&&:#{==:#{window_id},${binding.windowId}},#{==:#{window_panes},1}}}` : ownerCondition;

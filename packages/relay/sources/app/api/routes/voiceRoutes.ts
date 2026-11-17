@@ -1,6 +1,6 @@
 import { z } from "zod";
 import * as crypto from "crypto";
-import { VoiceConversationResponseSchema, VoiceUsageResponseSchema } from "@slopus/happy-wire";
+import { VoiceConversationResponseSchema, VoiceUsageResponseSchema } from "@codelync/wire";
 import { type Fastify } from "../types";
 import { log } from "@/utils/log";
 
@@ -10,7 +10,7 @@ const VOICE_USAGE_PAGE_SIZE = 100;     // ElevenLabs maximum page size, not a co
 const ELEVEN_LABS_API = "https://api.elevenlabs.io/v1/convai";
 
 function deriveElevenUserId(happyUserId: string): string {
-    const hmac = crypto.createHmac("sha256", process.env.HANDY_MASTER_SECRET!);
+    const hmac = crypto.createHmac("sha256", process.env.CODELYNC_MASTER_SECRET!);
     hmac.update(happyUserId);
     const digest = hmac.digest();
     const base64url = digest

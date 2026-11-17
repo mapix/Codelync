@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { Session } from './storageTypes';
 import { applyNativeDirectoryAuthority } from './nativeDirectoryAuthority';
-import { peerDescriptorSession, type PeerSessionDescriptor } from './codeLightRecent';
+import { peerDescriptorSession, type PeerSessionDescriptor } from './codelyncRecent';
 
 function session(): Session {
     return { id: 'relay', metadataVersion: 8, seq: 1, createdAt: 1, updatedAt: 1, active: false, activeAt: 0,

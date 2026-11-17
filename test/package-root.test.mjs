@@ -7,7 +7,7 @@ import { productionPackageRoot } from '../scripts/package-root.mjs';
 import { createRequire } from 'node:module';
 
 test('native-only package exports do not cause installed optional dependencies to disappear from the app', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'codelight-package-root-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await mkdtemp(join(tmpdir(), 'codelync-package-root-')); t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'package.json'), '{"name":"fixture"}');
   const native = join(root, 'node_modules/@fixture/native'); await mkdir(native, { recursive: true });
   await writeFile(join(native, 'package.json'), JSON.stringify({ name: '@fixture/native', exports: { './native.node': './native.node' } }));

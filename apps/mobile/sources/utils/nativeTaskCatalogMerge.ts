@@ -1,7 +1,7 @@
 import type { Session } from '@/sync/storageTypes';
 import { NativeQuerySchema } from './nativeQuery';
 import { NativeTaskSignalSchema, NativeTasksSchema } from '@/sync/nativeTasks';
-import { isCodeLightSessionIdentity } from './codeLightSourceScope';
+import { isCodelyncSessionIdentity } from './codelyncSourceScope';
 
 /** A lightweight catalog omits selected-parent task rows. Preserve only its
  * exact prior source/owner/query envelope; omission is not an empty roster. */
@@ -14,7 +14,7 @@ export function mergeNativeTasksCatalogState(metadata: Session['metadata'], stat
         if (!parsed.success || !stateInherited && state && Object.hasOwn(state, field)) continue;
         const source = metadata?.bridge?.source, scope = parsed.data.scope;
         const sameSource = metadata?.client?.id === 'noninvasive-bridge' && typeof metadata.machineId === 'string' && !!metadata.machineId.trim()
-            && isCodeLightSessionIdentity(source, metadata?.bridge?.controlMode) && metadata.machineId === previous?.metadata?.machineId
+            && isCodelyncSessionIdentity(source, metadata?.bridge?.controlMode) && metadata.machineId === previous?.metadata?.machineId
             && source?.app === scope.app && source.nativeCollection === scope.nativeCollection && source.hostId === scope.hostId
             && source.id === scope.parentConversationId && source.runtimeGeneration === scope.ownerGeneration;
         const query = NativeQuerySchema.safeParse(state?.nativeQuery);

@@ -6,7 +6,7 @@ import type { AuthCredentials } from "@/auth/tokenStorage";
 import type { Encryption } from "./encryption/encryption";
 import type { ProjectAvatar } from "./projectTypes";
 import type { SessionAvatarDescriptor } from "./sessionAvatarTypes";
-import { getHappyClientId } from "./apiSocket";
+import { getCodelyncClientId } from "./apiSocket";
 import { getServerUrl, rewriteLoopbackHost } from "./serverConfig";
 import { credentialHeaders } from './peerNetwork';
 
@@ -34,7 +34,7 @@ export async function loadSessionAvatar(
   const requestUrl = `${serverUrl}/v1/sessions/${encodeURIComponent(sessionId)}/avatar/request-download`;
   const headers = {
     ...credentialHeaders(credentials,requestUrl,'POST',serverUrl),
-    "X-Happy-Client": getHappyClientId(),
+    "X-Codelync-Client": getCodelyncClientId(),
   };
   const grant = await fetch(
     requestUrl,
@@ -52,7 +52,7 @@ export async function loadSessionAvatar(
   const url = new URL(rewriteLoopbackHost(download.data.downloadUrl));
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return null;
   const response = await fetch(url.toString(), {
-    headers: isSameServerEndpoint(url.toString(), serverUrl) || credentials.peer ? { ...credentialHeaders(credentials,url.toString(),'GET',serverUrl), 'X-Happy-Client':getHappyClientId() } : undefined,
+    headers: isSameServerEndpoint(url.toString(), serverUrl) || credentials.peer ? { ...credentialHeaders(credentials,url.toString(),'GET',serverUrl), 'X-Codelync-Client':getCodelyncClientId() } : undefined,
     signal,
     redirect: "error",
   });

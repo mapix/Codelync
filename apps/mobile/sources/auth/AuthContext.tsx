@@ -73,7 +73,7 @@ export function AuthProvider({ children, initialCredentials }: { children: React
             try {
                 await reloadAppAsync();
             } catch (error) {
-                Modal.alert(t('common.error'), t('codeLightSetup.reloadFailed'));
+                Modal.alert(t('common.error'), t('codelyncSetup.reloadFailed'));
             }
         }
     };

@@ -4,12 +4,12 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HappySessionTransport, HappyTransportError, deriveContentKeyPair, encryptRecord, decryptRecord, sealDataKey } from '../src/happy/session-transport.mjs';
+import { CodelyncSessionTransport, CodelyncTransportError, deriveContentKeyPair, encryptRecord, decryptRecord, sealDataKey } from '../src/codelync/session-transport.mjs';
 
 /** @typedef {Record<string, any>} Value */
 
-const enabled = process.env.HAPPY_TRANSPORT_INTEGRATION === '1';
-const accountPath = process.env.HAPPY_TRANSPORT_TEST_ACCOUNT;
+const enabled = process.env.CODELYNC_TRANSPORT_INTEGRATION === '1';
+const accountPath = process.env.CODELYNC_TRANSPORT_TEST_ACCOUNT;
 
 test('real isolated Happy server: encrypted v3/cursor recovery, scoped RPC, state CAS and blob upload/download', { skip: !enabled || !accountPath }, async () => {
   assert.ok(accountPath);
@@ -26,12 +26,12 @@ test('real isolated Happy server: encrypted v3/cursor recovery, scoped RPC, stat
   assert.equal(typeof session.id, 'string');
   const directory = await mkdtemp(join(tmpdir(), 'happy-live-transport-'));
   const common = { serverOrigin: origin, token: account.token, sessionId: session.id, encryptionKey: key, pollMs: 0, requestTimeoutMs: 10000, initialMetadata: metadata, metadataVersion: session.metadataVersion };
-  let a = new HappySessionTransport({ ...common, statePath: join(directory, 'a.json') });
-  let b = new HappySessionTransport({ ...common, statePath: join(directory, 'b.json') });
+  let a = new CodelyncSessionTransport({ ...common, statePath: join(directory, 'a.json') });
+  let b = new CodelyncSessionTransport({ ...common, statePath: join(directory, 'b.json') });
   let rpcCalls = 0;
   /** @type {Value[]} */ const records = [];
   a.registerReceiptHandler(params => { rpcCalls++; assert.equal(/** @type {Value} */ (params).commandId, 'fixture-readonly'); return { ok: true, testOnly: true, value: 'receipt-lookup-no-native-dispatch' }; });
-  a.registerRpc('fixture-error', () => { throw new HappyTransportError('fixture-failed', 'Synthetic transport error, not a native action.', false); });
+  a.registerRpc('fixture-error', () => { throw new CodelyncTransportError('fixture-failed', 'Synthetic transport error, not a native action.', false); });
   b.on('record', record => records.push(record));
   try {
     await Promise.all([a.start(), b.start()]); assert.equal(a.status().connected, true); assert.equal(b.status().connected, true);
@@ -60,7 +60,7 @@ test('real isolated Happy server: encrypted v3/cursor recovery, scoped RPC, stat
     const uploaded = await a.uploadAttachment(bytes, { filename: 'transport-fixture.png' }); assert.equal(uploaded.size, bytes.length);
     const downloaded = await b.downloadAttachment(uploaded.ref); assert.ok(Buffer.from(downloaded).equals(Buffer.from(bytes)));
     await assert.rejects(b.downloadAttachment('sessions/different-session/attachments/11111111-1111-1111-1111-111111111111.enc'), { code: 'invalid-attachment-ref' });
-    await b.close(); b = new HappySessionTransport({ ...common, statePath: join(directory, 'b.json') });
+    await b.close(); b = new CodelyncSessionTransport({ ...common, statePath: join(directory, 'b.json') });
     let replay = 0, recovered = 0; b.on('record', () => { replay++; }); b.on('recoverable-inbox', event => { recovered += event.count; });
     await b.start(); assert.equal(replay, 0); assert.ok(recovered >= 1); assert.equal(b.listInbox()[0].id, first.id);
     await b.ackInbox(first.id); assert.equal(b.listInbox().some((/** @type {Value} */ item) => item.id === first.id), false);

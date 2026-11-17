@@ -5,7 +5,7 @@ import * as spawnLifecycle from './spawnRequestId';
 import { nativeWriteConnectionBlocked } from '@/utils/nativeWriteConnection';
 import { nativeComposerInputReadOnly } from '@/utils/nativeComposerInputReadOnly';
 import { canSendToNoninvasiveSource } from './noninvasiveBridge';
-import { handleCodeLightSlashSubmission } from '@/utils/codeLightNativeCommands';
+import { handleCodelyncSlashSubmission } from '@/utils/codelyncNativeCommands';
 
 vi.mock('expo-crypto', () => ({ randomUUID: () => crypto.randomUUID() }));
 
@@ -145,7 +145,7 @@ describe('chat composer callback boundary', () => {
         const composer = { getMessage: vi.fn(() => 'original'), clearMessage: vi.fn() };
         const session = { draft: 'original', draftUpdatedAt: 5, metadata: { client: { id: 'rig' }, rigMetadataVersion: 1 } };
         const scope = {
-            nativeWriteConnectionBlocked, nativeComposerInputReadOnly, canSendToNoninvasiveSource, handleCodeLightSlashSubmission,
+            nativeWriteConnectionBlocked, nativeComposerInputReadOnly, canSendToNoninvasiveSource, handleCodelyncSlashSubmission,
             apiSocket: { peerConnected: vi.fn(() => true) },
             session,
             storage: { getState: () => ({ sessions: { 'original-session': session } }) },

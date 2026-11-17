@@ -39,7 +39,7 @@ vi.mock('react-native', () => ({ Platform: { OS: 'web' }, AppState: { currentSta
 vi.mock('@/encryption/libsodium.lib', () => ({ default: sodium }));
 vi.mock('@/encryption/aes', () => import('@/encryption/aes.web'));
 vi.mock('@/utils/platform', () => ({ isRunningOnMac: () => false }));
-vi.mock('@/sync/apiSocket', () => ({ apiSocket: { request: mocks.request, onReconnected: vi.fn(() => () => {}) }, getCurrentAppState: () => 'active', getHappyClientId: () => 'test' }));
+vi.mock('@/sync/apiSocket', () => ({ apiSocket: { request: mocks.request, onReconnected: vi.fn(() => () => {}) }, getCurrentAppState: () => 'active', getCodelyncClientId: () => 'test' }));
 vi.mock('@/sync/webTabTitle', () => ({ notifyUnreadMessage: vi.fn() }));
 vi.mock('@/sync/storage', () => ({ storage: { getState: () => mocks.state } }));
 vi.mock('@/sync/ops', () => ({ sessionSetAgentModes: vi.fn() }));

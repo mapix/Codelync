@@ -28,11 +28,11 @@ import { SessionActionsAnchor, SessionActionsPopover } from './SessionActionsPop
 import { ShimmerText } from './ShimmerText';
 import { StatusDot } from './StatusDot';
 import { ProjectSessionSelect } from './ProjectSessionSelect';
-import { codeLightSourceAppName } from '@/utils/codeLightSourceScope';
+import { codelyncSourceAppName } from '@/utils/codelyncSourceScope';
 import { config } from '@/config';
 import { sync } from '@/sync/sync';
 import { getCurrentLanguage } from '@/text';
-import { codeLightSubagentKindLabels } from '@/text/codeLightSubagentLabels';
+import { codelyncSubagentKindLabels } from '@/text/codelyncSubagentLabels';
 
 /**
  * The strip is a control in its own right, like the ones in the header above
@@ -114,14 +114,14 @@ export const WorktreeTabStrip = React.memo(({ sessionId }: { sessionId: string }
         pending: pendingChats,
     }), [pendingChats, worktree]);
     const pickerOptions = React.useMemo(() => [
-        ...resolved.tabs.filter(tab => !config.noninvasiveLocal || !tab.isSubagent).map(tab => ({ key: tab.id, label: tab.sourceApp ? `${codeLightSourceAppName(tab.sourceApp)} · ${tab.name}` : tab.name })),
+        ...resolved.tabs.filter(tab => !config.noninvasiveLocal || !tab.isSubagent).map(tab => ({ key: tab.id, label: tab.sourceApp ? `${codelyncSourceAppName(tab.sourceApp)} · ${tab.name}` : tab.name })),
         ...resolved.pending.map(chat => ({ key: chat.id, label: t('session.newChat') })),
     ], [resolved]);
     // The selection follows whichever chip stands for the open chat: the
     // stand-in while the chat is unnamed, its session from the moment it is not.
     const selectedId = pending?.sessionId ?? sessionId;
     const selectedTab = resolved.tabs.find(tab => tab.id === selectedId);
-    const selectedLabel = selectedTab ? `${selectedTab.isSubagent ? codeLightSubagentKindLabels[getCurrentLanguage()] + ' · ' : ''}${selectedTab.sourceApp ? codeLightSourceAppName(selectedTab.sourceApp) + ' · ' : ''}${selectedTab.name}` : undefined;
+    const selectedLabel = selectedTab ? `${selectedTab.isSubagent ? codelyncSubagentKindLabels[getCurrentLanguage()] + ' · ' : ''}${selectedTab.sourceApp ? codelyncSourceAppName(selectedTab.sourceApp) + ' · ' : ''}${selectedTab.name}` : undefined;
     const { startSession } = useStartSessionFromDraft();
 
     const scrollRef = React.useRef<ScrollView>(null);

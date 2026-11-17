@@ -12,7 +12,7 @@ import struct
 import subprocess
 import time
 
-DEFAULT_ROOT = Path.home() / '.codelight-antigravity-probe'
+DEFAULT_ROOT = Path.home() / '.codelync-antigravity-probe'
 
 
 def private_json(path, value):
@@ -83,20 +83,20 @@ def prepare(root, source):
     source_config = json.loads((Path.home() / '.gemini/config/config.json').read_text())
     config = {key: source_config[key] for key in ['gateway', 'models'] if key in source_config}
     config['userSettings'] = {'remoteControlEnabled': False,
-        'remoteControlHostname': 'CodeLight isolated probe'}
+        'remoteControlHostname': 'Codelync isolated probe'}
     private_json(probe_home / '.gemini/config/config.json', config)
-    info['CFBundleIdentifier'] = 'io.codelight.antigravity.probe'
+    info['CFBundleIdentifier'] = 'io.codelync.antigravity.probe'
     # Electron locates its helpers using CFBundleName before loading JavaScript.
     # Keep that internal name; the display name and runtime name identify probes.
-    info['CFBundleDisplayName'] = 'CodeLight Antigravity Probe'
+    info['CFBundleDisplayName'] = 'Codelync Antigravity Probe'
     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
 
     def main(text):
         text = replace_once(text, 'const electron_1 = require("electron");',
             'const electron_1 = require("electron");\n'
-            'electron_1.app.setName("CodeLight Antigravity Probe");\n'
-            'electron_1.app.setPath("userData", process.env.CODELIGHT_AGY_PROBE_ROOT + "/user-data");\n'
-            'electron_1.app.setPath("logs", process.env.CODELIGHT_AGY_PROBE_ROOT + "/logs");')
+            'electron_1.app.setName("Codelync Antigravity Probe");\n'
+            'electron_1.app.setPath("userData", process.env.CODELYNC_AGY_PROBE_ROOT + "/user-data");\n'
+            'electron_1.app.setPath("logs", process.env.CODELYNC_AGY_PROBE_ROOT + "/logs");')
         return replace_once(text,
             'if (!electron_1.app.isDefaultProtocolClient(PROTOCOL, ...protocolClientArgs)) {',
             'if (false && !electron_1.app.isDefaultProtocolClient(PROTOCOL, ...protocolClientArgs)) {')
@@ -144,7 +144,7 @@ def status(root):
         endpoint = {'version': 1, 'pid': pid, 'parentPid': parent,
             'binary': binary, 'executable': binary, 'origin': 'http://127.0.0.1:' + ports[-1],
             'startTime': start_time, 'generation': str(pid) + ':' + start_time,
-            'appDataDir': 'codelightantigravityprobe',
+            'appDataDir': 'codelyncantigravityprobe',
             'csrfToken': csrf.group(1), 'httpsPort': int(https[-1]) if https else None,
             'home': str(root / 'home'), 'logPath': str(log_path)}
         private_json(root / 'endpoint.json', endpoint)
@@ -158,7 +158,7 @@ def start(root):
     if status(root)['running']:
         raise RuntimeError('Probe is already running')
     app = root / 'Antigravity Probe.app'
-    env = dict(os.environ, HOME=str(root / 'home'), CODELIGHT_AGY_PROBE_ROOT=str(root))
+    env = dict(os.environ, HOME=str(root / 'home'), CODELYNC_AGY_PROBE_ROOT=str(root))
     env.pop('ELECTRON_RUN_AS_NODE', None)
     with (root / 'desktop.log').open('ab') as log:
         process = subprocess.Popen([str(app / 'Contents/MacOS/Antigravity'),

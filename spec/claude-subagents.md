@@ -198,7 +198,7 @@ status cannot loan old output ownership. Stop still requires active membership.
 Record, held/getSession lookup, owner, query, CLI and birth identities are checked
 again at the original manager method's invocation boundary and after the read.
 A null result is unavailable. Output must be a whole string of at most 65536
-UTF-8 bytes with the original native `truncated` boolean; CodeLight does not cut
+UTF-8 bytes with the original native `truncated` boolean; Codelync does not cut
 the body or manufacture truncation.
 
 `code.stopTask` is a mutation with an owner receipt and a stable command ID.

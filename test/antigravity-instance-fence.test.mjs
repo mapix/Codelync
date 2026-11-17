@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AntigravityRpcClient, antigravityHostId } from '../src/adapters/antigravity-rpc.mjs';
-import { SourceImageAdapter } from '../src/happy/bound-source.mjs';
+import { SourceImageAdapter } from '../src/codelync/bound-source.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const original = { version: 1, pid: 42, binary: '/Applications/Antigravity.app/Contents/Resources/bin/language_server', home: '/private/original', appDataDir: 'antigravity', generation: 'owner-a', csrfToken: 'fixture-only', origin: 'http://127.0.0.1:12345' };

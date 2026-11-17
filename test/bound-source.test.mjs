@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createBoundSource } from '../src/happy/bound-source.mjs';
+import { createBoundSource } from '../src/codelync/bound-source.mjs';
 
 /** @typedef {Record<string,any>} Value */
 function gate() {
@@ -12,7 +12,7 @@ function gate() {
   return { promise, release: () => release() };
 }
 async function fixture() {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-bound-source-')), calls = /** @type {Value[]} */ ([]);
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-bound-source-')), calls = /** @type {Value[]} */ ([]);
   const adapter = { command: async (/** @type {string} */ id, /** @type {string} */ action) => { calls.push({ id, action }); return { requested: true }; }, dispose: () => { throw Error('original adapter must not be disposed'); } };
   const options = { directory: join(directory, 'active'), leaseDirectory: join(directory, 'leases'), account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token' },
     binding: { source: { app: 'codex', hostId: 'local', id: 'fixture-original' }, happySessionId: 'fixture-bound', sessionKey: Buffer.alloc(32, 7).toString('base64'), metadata: {} }, adapter };
@@ -23,7 +23,7 @@ async function fixture() {
   return { directory, options, actor, calls, closes: () => closes, dispose: async () => { await actor.close(); await rm(directory, { recursive: true, force: true }); } };
 }
 
-test('bound actor navigation pins retirement and release closes only CodeLight transport once', async () => {
+test('bound actor navigation pins retirement and release closes only Codelync transport once', async () => {
   const f = await fixture(), entered = gate(), resume = gate();
   f.options.adapter.command = async (id, action) => { f.calls.push({ id, action }); entered.release(); await resume.promise; return { requested: true }; };
   try {

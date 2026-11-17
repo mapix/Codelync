@@ -4,8 +4,8 @@ import { mkdtemp, rm, readFile, writeFile, stat, mkdir, symlink } from 'node:fs/
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
-import { SourceRegistry, sourceKey } from '../src/happy/source-registry.mjs';
-import { encryptRecord, decryptRecord } from '../src/happy/session-transport.mjs';
+import { SourceRegistry, sourceKey } from '../src/codelync/source-registry.mjs';
+import { encryptRecord, decryptRecord } from '../src/codelync/session-transport.mjs';
 
 /** @typedef {Record<string,any>} Value */
 
@@ -15,7 +15,7 @@ test('source identity includes host and never collapses sources with equal paths
 });
 
 test('Antigravity registration retains the proven session protocol, kind and stable instance namespace through ACK recovery', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-antigravity-binding-'));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-antigravity-binding-'));
   const source = { app: 'antigravity', id: 'native-conversation', hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'original-owner' };
   let stored, calls = 0;
   const registry = new SourceRegistry({ directory: dir, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') }, fetch: /** @type {typeof fetch} */ (async (_url, request) => {
@@ -32,7 +32,7 @@ test('Antigravity registration retains the proven session protocol, kind and sta
 });
 
 test('Claude registration and cold recovery preserve mode and native collection with independent encrypted bindings', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-claude-binding-')); let calls = 0;
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-claude-binding-')); let calls = 0;
   const registry = new SourceRegistry({ directory, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') },
     fetch: /** @type {typeof fetch} */ (async (_url, request) => new Response(JSON.stringify({ session: { id: 'fixture-' + ++calls, ...JSON.parse(/** @type {string} */ (request?.body)) } }))) });
   try {
@@ -50,7 +50,7 @@ test('Claude registration and cold recovery preserve mode and native collection 
 });
 
 test('lost registration ACK reuses the durable data key and returns one source binding', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-registry-'));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-registry-'));
   let stored, attempts = 0;
   const fakeFetch = /** @type {typeof fetch} */ (async (_url, request) => {
     const body = JSON.parse(/** @type {string} */ (request?.body));
@@ -68,12 +68,12 @@ test('lost registration ACK reuses the durable data key and returns one source b
     assert.equal(binding.metadata.nativeSession.catalogueAvailable, true);
     await registry.register(source, 'test-machine'); assert.equal(attempts, 2);
     const other = new SourceRegistry({ directory: dir, account: { serverUrl: 'http://127.0.0.1:1', token: 'other-test-token', secret: randomBytes(32).toString('base64') }, fetch: fakeFetch });
-    await assert.rejects(other.register(source, 'test-machine'), /another CodeLight account/); assert.equal(attempts, 2);
+    await assert.rejects(other.register(source, 'test-machine'), /another Codelync account/); assert.equal(attempts, 2);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('product registration rejects deferred sources before writes; research registration is explicit', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-registry-scope-')), path = join(dir, 'product');
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-registry-scope-')), path = join(dir, 'product');
   const account = { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') };
   let calls = 0;
   const fetch = /** @type {typeof globalThis.fetch} */ (async (_url, request) => {
@@ -96,25 +96,25 @@ test('product registration rejects deferred sources before writes; research regi
 });
 
 test('machine declares three Desktop sources while every standalone runner remains unavailable', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-machine-scope-')), secret = randomBytes(32);
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-machine-scope-')), secret = randomBytes(32);
   const fakeFetch = /** @type {typeof fetch} */ (async (_url, request) => {
     const body = JSON.parse(/** @type {string} */ (request?.body));
     const metadata = /** @type {Value} */ (decryptRecord(body.metadata, new Uint8Array(secret), 'legacy'));
-    assert.deepEqual(metadata.codeLight, { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 });
+    assert.deepEqual(metadata.codelync, { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 });
     for (const runner of ['codex', 'claude', 'gemini', 'openclaw', 'rig']) assert.equal(metadata.cliAvailability[runner], false);
     return new Response(JSON.stringify({ machine: { id: body.id } }));
   });
   try {
     const registry = new SourceRegistry({ directory: dir, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: secret.toString('base64') }, fetch: fakeFetch });
     const machine = await registry.machine();
-    assert.deepEqual(machine.metadata.codeLight, { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 });
+    assert.deepEqual(machine.metadata.codelync, { codexOnly: false, sourceApps: ['codex', 'antigravity', 'claude-desktop'], projectActivityVersion: 1 });
     const saved = JSON.parse(await readFile(join(dir, 'machine.json'), 'utf8'));
-    assert.deepEqual(saved.metadata.codeLight, machine.metadata.codeLight);
+    assert.deepEqual(saved.metadata.codelync, machine.metadata.codelync);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('a saved Codex window binding remains historical and cannot bypass product registration scope', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-saved-scope-'));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-saved-scope-'));
   const account = { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') };
   const source = { app: 'codex', hostId: 'local', id: 'historical-window', kind: 'window' }; let calls = 0;
   const fakeFetch = /** @type {typeof fetch} */ (async (_url, request) => {
@@ -131,7 +131,7 @@ test('a saved Codex window binding remains historical and cannot bypass product 
 });
 
 test('cold-start saved bindings include only registered owned Codex records with matching source hashes', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-saved-bindings-'));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-saved-bindings-'));
   const account = { serverUrl: 'http://127.0.0.1:1', token: 'fixture-token', secret: randomBytes(32).toString('base64') };
   const registry = new SourceRegistry({ directory: dir, account }), before = new Map();
   /** @param {string} id @param {string} [app] @returns {Value} */
@@ -175,7 +175,7 @@ test('cold-start saved bindings include only registered owned Codex records with
 });
 
 test('saved bindings from a missing profile are empty without creating a directory', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-saved-missing-')), path = join(dir, 'not-created');
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-saved-missing-')), path = join(dir, 'not-created');
   try {
     const registry = new SourceRegistry({ directory: path, account: { serverUrl: 'http://127.0.0.1:1', secret: randomBytes(32).toString('base64') } });
     assert.deepEqual(await registry.savedBindings(), []); await assert.rejects(stat(path), { code: 'ENOENT' });
@@ -183,7 +183,7 @@ test('saved bindings from a missing profile are empty without creating a directo
 });
 
 async function metadataFixture() {
-  const dir = await mkdtemp(join(tmpdir(), 'codelight-catalogue-')), key = new Uint8Array(randomBytes(32));
+  const dir = await mkdtemp(join(tmpdir(), 'codelync-catalogue-')), key = new Uint8Array(randomBytes(32));
   const source = { app: 'codex', hostId: 'local', id: 'fixture-native', kind: 'session', title: 'Fixture', updatedAt: 100, preview: 'Fixture history' };
   const metadata = { path: '/fixture', nativeSession: { title: source.title, updatedAt: source.updatedAt, parentId: null, agentName: '', preview: source.preview, isPinned: false, catalogueAvailable: true, preserved: 'old history evidence' },
     capabilities: { abort: false, steering: false }, nativeControls: { current: 'old-model' }, bridge: { source, controlMode: 'session', currentTurnId: 'original-turn' } };

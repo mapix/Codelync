@@ -15,7 +15,7 @@ function outcome(id: string, ref: string, t: 'user-message-accepted' | 'user-mes
 }
 const options = { holdUserMessagesUntilAccepted: true };
 
-describe('CodeLight nonterminal delivery outcome', () => {
+describe('Codelync nonterminal delivery outcome', () => {
     it('holds old phone records lacking expectsAcceptance while preserving already observed native history', () => {
         const state = createReducer();
         const legacyPhone = normalizeRawMessage('old-server-user', 'old-mobile-user', 1, { role: 'user', content: { type: 'text', text: 'old phone record' } } as unknown as RawRecord)!;

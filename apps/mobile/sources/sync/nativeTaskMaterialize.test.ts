@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
-import { nativeTaskDigestText, nativeTaskTransfer } from '@slopus/happy-wire/native-tasks';
+import { nativeTaskDigestText, nativeTaskTransfer } from '@codelync/wire/native-tasks';
 import type { NativeTasks } from './nativeTasks';
 vi.mock('expo-crypto', async () => ({ CryptoDigestAlgorithm: { SHA256: 'SHA256' }, digestStringAsync: async (_algorithm: string, text: string) => {
     const { createHash } = await import('node:crypto'); return createHash('sha256').update(text).digest('hex');

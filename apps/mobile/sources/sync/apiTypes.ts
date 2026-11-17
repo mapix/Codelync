@@ -5,7 +5,7 @@ import {
     ApiUpdateNewMessageSchema,
     ApiUpdateSessionStateSchema as SharedApiUpdateSessionStateSchema,
     type ApiMessage,
-} from '@slopus/happy-wire';
+} from '@codelync/wire';
 import { GitHubProfileSchema, ImageRefSchema } from './profile';
 import { RelationshipStatusSchema, UserProfileSchema } from './friendTypes';
 import { FeedBodySchema } from './feedTypes';

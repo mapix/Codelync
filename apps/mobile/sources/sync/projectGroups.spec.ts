@@ -8,7 +8,7 @@ import {
 import type { ProjectGroupData } from './projectGroups';
 import type { Session } from './storageTypes';
 import type { SessionRowData } from './storage';
-import { isCodeLightSessionSource } from '@/utils/codeLightSourceScope';
+import { isCodelyncSessionSource } from '@/utils/codelyncSourceScope';
 
 function session(options: {
     id: string;
@@ -140,13 +140,13 @@ describe('buildProjectGroups', () => {
 describe('buildPathProjectGroups', () => {
     it('uses canonical native project metadata for a missing owner without enabling source controls', () => {
         const a = session({ id: 'a', path: '/tmp/linked-tree-a' }), b = session({ id: 'b', path: '/tmp/linked-tree-b' });
-        for (const row of [a, b]) Object.assign(row.metadata!, { client: { id: 'noninvasive-bridge', name: 'CodeLight', version: 'test' },
+        for (const row of [a, b]) Object.assign(row.metadata!, { client: { id: 'noninvasive-bridge', name: 'Codelync', version: 'test' },
             nativeSession: { projectKey: 'canonical-repository', projectPath: '/projects/canonical', projectLabel: 'canonical' },
             bridge: { controlMode: 'session', sourceStatus: 'disconnected', source: { app: 'antigravity', id: row.id, kind: 'session',
                 protocol: 'antigravity-connect', hostId: 'local:antigravity:' + 'a'.repeat(64), runtimeGeneration: null } } });
         const before = [a.metadata!.bridge!, b.metadata!.bridge!];
         expect(buildPathProjectGroups([a, b], toRow, isActive, 'happy')).toMatchObject([{ name: 'Antigravity · canonical', sessionCount: 2 }]);
-        for (const row of [a, b]) expect(isCodeLightSessionSource(row.metadata!.bridge!.source, row.metadata!.bridge!.controlMode)).toBe(false);
+        for (const row of [a, b]) expect(isCodelyncSessionSource(row.metadata!.bridge!.source, row.metadata!.bridge!.controlMode)).toBe(false);
         expect([a.metadata!.bridge!, b.metadata!.bridge!]).toEqual(before);
     });
     it('does not trust canonical native metadata under invalid app, kind, host or protocol identity', () => {

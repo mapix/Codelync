@@ -12,7 +12,7 @@ import { thumbhashToDataUri } from '@/utils/thumbhash';
 import { NativeImagePreview } from '@/components/NativeImagePreview';
 import { AttachmentFilePreview } from '@/components/AttachmentFilePreview';
 import { attachmentMediaKind, attachmentByteLabel, MAX_VIDEO_PREVIEW_BYTES } from '@/utils/attachmentMedia';
-import { codeLightMediaLabels } from '@/text/codeLightMediaLabels';
+import { codelyncMediaLabels } from '@/text/codelyncMediaLabels';
 
 const fileInputSchema = z.object({
     ref: z.string().min(1).optional(), name: z.string(), size: z.number().nonnegative().optional(), mimeType: z.string().max(128).optional(),
@@ -28,7 +28,7 @@ export const FileView = React.memo<ToolViewProps>(props => {
 function NativeImagePlaceholder({ sessionId, imageId, name }: { sessionId?: string; imageId: string; name: string }) {
     const { theme } = useUnistyles();
     return <View style={styles.container}>
-        <Pressable testID={`codelight-native-image-${imageId}`} accessibilityRole="button" accessibilityLabel={t('imagePreview.open')} disabled={!sessionId}
+        <Pressable testID={`codelync-native-image-${imageId}`} accessibilityRole="button" accessibilityLabel={t('imagePreview.open')} disabled={!sessionId}
             onPress={() => { if (sessionId) Modal.show({ component: NativeImagePreview, props: { sessionId, imageId, name } }); }}
             style={styles.media}>
             <Ionicons name="image-outline" size={32} color={theme.colors.textSecondary} />
@@ -39,7 +39,7 @@ function NativeImagePlaceholder({ sessionId, imageId, name }: { sessionId?: stri
 }
 
 function AttachmentFileView({ tool, sessionId }: ToolViewProps) {
-    const { theme } = useUnistyles(), labels = codeLightMediaLabels[getCurrentLanguage()];
+    const { theme } = useUnistyles(), labels = codelyncMediaLabels[getCurrentLanguage()];
     const opening = React.useRef(false);
     const parsed = fileInputSchema.safeParse(tool.input);
     if (!parsed.success) return null;
@@ -55,7 +55,7 @@ function AttachmentFileView({ tool, sessionId }: ToolViewProps) {
         catch { opening.current = false; }
     };
     return <View style={styles.container}>
-        <Pressable testID={`codelight-attachment-${ref ?? 'unavailable'}`} accessibilityRole="button" accessibilityLabel={`${oversizedVideo ? labels.videoTooLarge : labels.open} · ${name}`}
+        <Pressable testID={`codelync-attachment-${ref ?? 'unavailable'}`} accessibilityRole="button" accessibilityLabel={`${oversizedVideo ? labels.videoTooLarge : labels.open} · ${name}`}
             accessibilityState={{ disabled: !readable }} disabled={!readable} onPress={open} style={kind === 'file' ? styles.file : styles.media}>
             {kind === 'image' && thumbnail ? <Image source={{ uri: thumbnail }} style={styles.thumbnail} contentFit="cover" /> : null}
             <Ionicons name={kind === 'video' ? 'play-circle-outline' : kind === 'image' ? 'image-outline' : 'document-text-outline'}

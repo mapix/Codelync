@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import nacl from 'tweetnacl';
 import WebSocket, { WebSocketServer } from 'ws';
-import { GatewayMetrics } from '../src/happy/gateway-metrics.mjs';
-import { PairingInvitations, createPairingGateway } from '../src/happy/pairing-gateway.mjs';
+import { GatewayMetrics } from '../src/codelync/gateway-metrics.mjs';
+import { PairingInvitations, createPairingGateway } from '../src/codelync/pairing-gateway.mjs';
 import { gatewayProof } from './fixtures/gateway-proof.mjs';
 
 /** @typedef {Record<string,any>} Value */
@@ -43,7 +43,7 @@ test('sampling reads exact socket deltas without payload listeners or duplicate 
 });
 
 test('durable counters resume independently of session bytes, requests, rate and monotonic uptime', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-metrics-')), path = join(directory, 'totals.json');
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-metrics-')), path = join(directory, 'totals.json');
   t.after(() => rm(directory, { recursive: true, force: true }));
   let now = 0;
   const first = await GatewayMetrics.load(path, { clock: () => now }), socket = new CounterSocket();

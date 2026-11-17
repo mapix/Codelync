@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { rpcTarget } from '@slopus/happy-wire/codelight';
+import { rpcTarget } from '@codelync/wire/codelync';
 const state = vi.hoisted(() => ({ values: new Map<string, string>(), rpc: vi.fn(), id: vi.fn(() => 'never-generated') }));
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: {
     getItem: async (key: string) => state.values.get(key) ?? null, setItem: async (key: string, value: string) => { state.values.set(key, value); },

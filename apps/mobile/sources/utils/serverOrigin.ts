@@ -26,7 +26,7 @@ export function isSameServerEndpoint(target: string, base: string): boolean {
     } catch { return false; }
 }
 
-export function codeLightMacCommand(origin: string): string {
+export function codelyncMacCommand(origin: string): string {
     const address = normalizeServerOrigin(origin).replace(/'/g, "'\\''");
-    return `./start-codelight.sh --server='${address}'`;
+    return `./start-codelync.sh --server='${address}'`;
 }

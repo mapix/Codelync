@@ -2,7 +2,7 @@
 
 ## Approved interface and trust boundary
 
-`NativeModules.CodeLightCodec.decodeAuthenticatedPayload({bodyBase64, expectedBytes,
+`NativeModules.CodelyncCodec.decodeAuthenticatedPayload({bodyBase64, expectedBytes,
 compression, includeMetrics?})` returns a promise containing `{text, metrics?}`.
 The body uses canonical standard base64 for exactly the intended authenticated
 byte view. Compression is `none` or `gzip`; expected bytes are an integer from
@@ -35,10 +35,10 @@ The module does not parse JSON or alter compact-payload reconstruction.
 
 ## Registered iOS implementation
 
-- Add `CodeLightCodec.mm` to the Happydev Compile Sources phase and the header
+- Add `CodelyncCodec.mm` to the Codelync Compile Sources phase and the header
   to its source group.
 - Link the system `libz.tbd` (`-lz`); Foundation is already available.
-- Register with `RCT_EXPORT_MODULE(CodeLightCodec)` and
+- Register with `RCT_EXPORT_MODULE(CodelyncCodec)` and
   `requiresMainQueueSetup = NO`; use RN 0.83.1's existing legacy-module interop.
 - Wire the async authenticated body decoder after the existing MAC/peer checks.
   Preserve exact typed-array offset/length ownership when encoding base64.
@@ -101,9 +101,9 @@ Reproduce from the repository root, choosing a private output path:
 
 ```sh
 xcrun clang++ -std=c++20 -fobjc-arc -fblocks -O2 \
-  -Wall -Wextra -Werror -DCODELIGHT_CODEC_STANDALONE=1 \
-  -I apps/mobile/ios apps/mobile/ios/CodeLightCodec.mm \
-  test/native/CodeLightCodecTests.mm -framework Foundation -lz \
+  -Wall -Wextra -Werror -DCODELYNC_CODEC_STANDALONE=1 \
+  -I apps/mobile/ios apps/mobile/ios/CodelyncCodec.mm \
+  test/native/CodelyncCodecTests.mm -framework Foundation -lz \
   -o /private/output/native-codec-tests
 /private/output/native-codec-tests
 ```

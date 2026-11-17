@@ -5,7 +5,7 @@ import { getServerUrl } from './serverConfig';
 import { NativeTaskCache, type NativeTaskCacheContext } from './nativeTaskCache';
 import { nativeTaskReader } from './nativeTasksRpc';
 import { materializeNativeTaskReply } from './nativeTaskMaterialize';
-import { captureCurrentNativeTaskScope, currentNativeTaskSignal, nativeTaskScopesEqual } from '@/utils/codeLightNativeTasks';
+import { captureCurrentNativeTaskScope, currentNativeTaskSignal, nativeTaskScopesEqual } from '@/utils/codelyncNativeTasks';
 
 export const nativeTaskPeerIdentity = () => apiSocket.peerIdentity() ?? getServerUrl();
 export function nativeTaskCacheContext(session: Session | null | undefined): NativeTaskCacheContext | null {

@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AntigravityBackend } from '../src/adapters/antigravity-backend.mjs';
 import { antigravityArchivedIds } from '../src/adapters/antigravity-history.mjs';
-import { SourceRegistry, sourceKey } from '../src/happy/source-registry.mjs';
-import { CodeLightMacDaemon } from '../src/happy/mac-daemon.mjs';
-import { recentCatalogPage } from '../src/happy/recent-data.mjs';
-import { decryptRecord } from '../src/happy/session-transport.mjs';
+import { SourceRegistry, sourceKey } from '../src/codelync/source-registry.mjs';
+import { CodelyncMacDaemon } from '../src/codelync/mac-daemon.mjs';
+import { recentCatalogPage } from '../src/codelync/recent-data.mjs';
+import { decryptRecord } from '../src/codelync/session-transport.mjs';
 
 /** @typedef {Record<string,any>} Value */
 const source = { app: 'antigravity', id: 'native-parent', hostId: 'local:antigravity:' + 'a'.repeat(64), kind: 'session', protocol: 'antigravity-connect', runtimeGeneration: 'original-owner', title: 'Native source', workspace: '/fixture/project' };
@@ -47,7 +47,7 @@ test('catalog visibility rejects archive flags even before the stored catalogueA
 });
 
 test('archive CAS hides an existing mirror once and unarchive restores the same key, history and binding', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-archive-registry-')); let stored = /** @type {Value|null} */ (null), writes = 0;
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-archive-registry-')); let stored = /** @type {Value|null} */ (null), writes = 0;
   const registry = new SourceRegistry({ directory, account: { serverUrl: 'http://127.0.0.1:1', token: 'fixture', secret: randomBytes(32).toString('base64') },
     fetch: /** @type {typeof fetch} */ (async (_url, request) => { stored ??= { id: 'registered-mirror', ...JSON.parse(/** @type {string} */ (request?.body)) }; return new Response(JSON.stringify({ session: stored })); }) });
   try {
@@ -67,11 +67,11 @@ test('archive CAS hides an existing mirror once and unarchive restores the same 
 });
 
 test('confirmed archive evidence hides a saved binding despite incomplete native inventory and starts no observer', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'codelight-archive-daemon-')), archived = { ...source, archived: true };
+  const directory = await mkdtemp(join(tmpdir(), 'codelync-archive-daemon-')), archived = { ...source, archived: true };
   let registered = 0, started = 0, marked = 0;
   const binding = { happySessionId: 'old-mirror', source, metadata: { bridge: { source }, nativeSession: { catalogueAvailable: true } } };
   const connection = { socket: {}, registerRpc: () => {}, waitForConnect: async () => {}, close: () => {} };
-  const daemon = new CodeLightMacDaemon({ directory, account: { secret: randomBytes(32).toString('base64'), serverUrl: 'http://127.0.0.1:1' },
+  const daemon = new CodelyncMacDaemon({ directory, account: { secret: randomBytes(32).toString('base64'), serverUrl: 'http://127.0.0.1:1' },
     discovery: { discover: async () => ({ sources: [], hiddenSources: [archived], errors: ['antigravity-index-unavailable'] }), adapter: () => ({}) },
     registry: { machine: async () => ({ id: 'machine', metadata: {} }), register: async () => { registered++; return binding; }, existingBinding: async () => binding,
       markArchived: async () => { if ((/** @type {Value} */ (binding.metadata.nativeSession)).archived !== true) marked++; binding.metadata.nativeSession = /** @type {any} */ ({ archived: true, catalogueAvailable: false }); } },

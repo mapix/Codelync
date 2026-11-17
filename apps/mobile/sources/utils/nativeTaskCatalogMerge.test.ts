@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest';
 import type { Session } from '@/sync/storageTypes';
 import { mergeNativeTasksCatalogState } from './nativeTaskCatalogMerge';
-import { peerDescriptorSession, type PeerSessionDescriptor } from '@/sync/codeLightRecent';
-import { nativeTaskSignal } from '@slopus/happy-wire/native-tasks';
-import { captureCurrentNativeTaskScope, projectCodeLightNativeTasks } from './codeLightNativeTasks';
+import { peerDescriptorSession, type PeerSessionDescriptor } from '@/sync/codelyncRecent';
+import { nativeTaskSignal } from '@codelync/wire/native-tasks';
+import { captureCurrentNativeTaskScope, projectCodelyncNativeTasks } from './codelyncNativeTasks';
 import { nativeTaskCacheKey } from '@/sync/nativeTaskCache';
 
 const previous = () => ({ id: 'relay', metadata: { machineId: 'mac', client: { id: 'noninvasive-bridge' }, bridge: { controlMode: 'session', sourceStatus: 'connected', currentTurnId: null,
@@ -64,6 +64,6 @@ it('invalidates explicit null, new main runtime and new query instead of revivin
         const current = captureCurrentNativeTaskScope(next)!; expect(current).not.toBeNull();
         expect(nativeTaskCacheKey({ peerId: 'peer', sessionId: next.id, scope: current, desiredDigest: 'b'.repeat(64) }))
             .not.toBe(nativeTaskCacheKey({ peerId: 'peer', sessionId: value.id, scope: signal.scope, desiredDigest: signal.digest }));
-        expect(projectCodeLightNativeTasks(next, full).native).toBeNull();
+        expect(projectCodelyncNativeTasks(next, full).native).toBeNull();
     }
 });

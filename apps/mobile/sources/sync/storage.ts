@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { mergeMessageArray, selectCatalog } from './messageArray';
 import { isNoninvasiveBridge } from './noninvasiveBridge';
 import { applyNativeDirectoryAuthority } from './nativeDirectoryAuthority';
-import { isCodeLightSessionSource, type CodeLightSourceApp } from '@/utils/codeLightSourceScope';
+import { isCodelyncSessionSource, type CodelyncSourceApp } from '@/utils/codelyncSourceScope';
 import { messagePlanMode } from './messagePlanMode';
 import { useShallow } from 'zustand/react/shallow'
 import equal from 'fast-deep-equal'
@@ -138,7 +138,7 @@ interface SessionMessages {
 
 // Display-only row data — all primitives, cheap to deep-equal
 export interface SessionRowData {
-    sourceApp?: CodeLightSourceApp;
+    sourceApp?: CodelyncSourceApp;
     isSubagent?: boolean;
     botId?: string | null;
     botUsername?: string | null;
@@ -226,8 +226,8 @@ function buildSessionRowData(
     return {
         id: session.id,
         isSubagent: session.metadata?.nativeSession?.isSubagent === true,
-        ...(isCodeLightSessionSource(session.metadata?.bridge?.source, session.metadata?.bridge?.controlMode)
-            ? { sourceApp: session.metadata!.bridge!.source.app as CodeLightSourceApp } : {}),
+        ...(isCodelyncSessionSource(session.metadata?.bridge?.source, session.metadata?.bridge?.controlMode)
+            ? { sourceApp: session.metadata!.bridge!.source.app as CodelyncSourceApp } : {}),
         botId: session.metadata?.bot?.id ?? null,
         botUsername: session.metadata?.bot?.username ?? null,
         name: getSessionName(session),
