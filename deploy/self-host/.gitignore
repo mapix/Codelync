@@ -1,0 +1,5 @@
+.env
+Caddyfile
+livekit.yaml
+certs/
+*.tmp

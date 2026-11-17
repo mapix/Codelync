@@ -1,0 +1,42 @@
+name: codelight-self-host
+
+services:
+  caddy:
+    image: caddy:2.10.2
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  livekit:
+    profiles: [media]
+    image: livekit/livekit-server:v1.13.11
+    restart: unless-stopped
+    network_mode: host
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+      - ./certs:/etc/livekit/certs:ro
+
+  network:
+    profiles: [network]
+    build:
+      context: ../..
+      dockerfile: deploy/network-relay/Dockerfile
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      HOST: 127.0.0.1
+      PORT: "8081"
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN:?Run node configure.mjs first}
+    healthcheck:
+      test: ["CMD", "node", "--input-type=module", "-e", "const r = await fetch('http://127.0.0.1:8081/healthz'); if (!r.ok) process.exit(1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  caddy_data:
+  caddy_config:

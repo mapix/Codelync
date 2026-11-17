@@ -539,6 +539,18 @@ struct DesktopSourcesView: View {
 }
 // END CODELIGHT SOURCE SUBSCRIPTION VIEW
 
+struct RelayDeploymentGuideLink: View {
+    @Environment(\.locale) private var locale
+    private var destination: URL {
+        let language = locale.language.languageCode?.identifier ?? "en"
+        let document = language.hasPrefix("zh") ? "SELF-HOSTING.zh-CN.md" : "SELF-HOSTING.md"
+        return URL(string: "https://github.com/mapix/CodeLight/blob/main/docs/\(document)")!
+    }
+    var body: some View {
+        Link("Deployment guide", destination: destination).font(.caption)
+    }
+}
+
 struct PublicAccessView: View {
     @ObservedObject var service: ServiceController
     @State private var relayExpanded = false
@@ -565,6 +577,7 @@ struct PublicAccessView: View {
             if !service.channelsError.isEmpty { Text(LocalizedStringKey(service.channelsError)).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             DisclosureGroup("Configure Relay", isExpanded: $relayExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
+                    RelayDeploymentGuideLink().accessibilityIdentifier("codelight-network-relay-guide")
                     TextField("Relay server address", text: $service.relayServer, prompt: Text("https://relay.example.com"))
                         .textFieldStyle(.roundedBorder).disabled(service.accessBusy)
                     SecureField("Access key", text: $service.relayKey).textFieldStyle(.roundedBorder).disabled(service.accessBusy)
@@ -594,6 +607,7 @@ struct RemoteDesktopSettingsView: View {
             }.pickerStyle(.segmented).disabled(!service.desktopKnown || service.desktopBusy)
                 .accessibilityIdentifier("codelight-desktop-relay-mode")
             if service.desktopMode == "external" {
+                RelayDeploymentGuideLink().accessibilityIdentifier("codelight-media-relay-guide")
                 TextField("LiveKit server URL", text: $service.desktopServer, prompt: Text("wss://media.example.com"))
                     .textFieldStyle(.roundedBorder).accessibilityIdentifier("codelight-desktop-server")
                 TextField("API key", text: $service.desktopAPIKey).textFieldStyle(.roundedBorder)

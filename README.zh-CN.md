@@ -61,6 +61,13 @@ iOS 首次询问本地网络权限时，请允许后再使用 LAN。Mac 重启�
 阅读较早历史时，新问题提示仍可打开。选择答案后需要明确提交，回复保持
 原 question/communication 身份与原生接受回执。
 
+## 自建 Relay 与远程桌面
+
+操作步骤见 [部署指南](docs/SELF-HOSTING.zh-CN.md) 和
+[Linux Compose 模板](deploy/self-host/)。Mac 已内置 LiveKit；只自建通信 Relay
+不会自动转发它的 WebRTC 视频。模板可分别启动通信 Relay、可选外部 LiveKit，
+或两者一起启动，并提供 TURN 配置和真机公网验证步骤。
+
 ## 构建与验证
 
 ```sh

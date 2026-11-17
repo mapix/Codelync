@@ -89,6 +89,24 @@ the desktop switched.
 
 ## Transport and identity
 
+### Self-hosting documentation
+
+The Mac's custom media-server fields expose a localized Deployment guide link
+to the rendered `docs/SELF-HOSTING.md` or `docs/SELF-HOSTING.zh-CN.md` on the
+canonical GitHub repository's main branch. This guide distinguishes LiveKit
+media from CodeLight's HTTP/WebSocket network relay, documents Linux Compose
+deployment and optional TURN/TLS, and preserves the existing source-repository
+access requirement. Opening the guide is independent of service availability
+and does not alter saved settings or start a connection. Saving media settings
+validates their format; actual RoomService/media reachability is tested at join.
+
+Templates generate independent credentials on the deployment machine, retain
+them only in ignored private files, and expose HTTPS/WSS through TLS termination.
+Their checks report API/service reachability separately from a phone's actual
+encrypted media/input acceptance. TURN/TLS on port 5349 does not promise access
+from networks permitting only TCP 443; that requires a separate IP or an
+appropriate layer-four routing design.
+
 - Existing authenticated sealed peer APIs authorize status, display selection,
   joins, desktop input and disconnect. All routes are machine scoped, never
   session scoped. Desktop input bodies are sealed end to end as well as replies.

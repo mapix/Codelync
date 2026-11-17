@@ -43,6 +43,14 @@ See the [current product contract](spec/codelight-product.md),
 | `spec` | Current product/protocol rules and marked historical research |
 | `assets/branding` | Generated CodeLight brand assets |
 
+## Self-hosting
+
+See the [Relay and remote desktop deployment guide](docs/SELF-HOSTING.md)
+([中文](docs/SELF-HOSTING.zh-CN.md)) and [Linux Compose templates](deploy/self-host/).
+The Mac already includes a local LiveKit server. A self-hosted HTTP/WebSocket
+relay provides a communication route; public video requires independently
+reachable media paths or the optional external LiveKit configuration.
+
 ## Development
 
 The current source also includes an optional, independent remote desktop. It is

@@ -317,6 +317,16 @@ sequenceDiagram
 
 ## Routing and phone transparency
 
+The Mac's Configure Relay fields include a localized Deployment guide link to
+the canonical GitHub main-branch Markdown preview. The guide and
+`deploy/self-host/` templates cover both this network service and the separate
+LiveKit desktop media service. Network-relay image builds use the repository
+root as context, copy only the deployment package manifest and `src/network/`,
+and exclude private state/dependencies through a Dockerfile-specific ignore file.
+The Compose network service is optional, single-replica and bound to loopback
+behind HTTPS/WSS. Its registration key is independent from LiveKit credentials.
+Endpoint checks do not substitute for the Mac's authenticated HTTP/WS validation.
+
 One TLS hostname can serve multiple Macs through `/r/<network-public-id>` base
 paths. Network identity is independent from the account encryption key; its public
 route is derived from an authenticated signing key and stays stable across

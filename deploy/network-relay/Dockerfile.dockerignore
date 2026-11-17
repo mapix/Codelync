@@ -1,0 +1,7 @@
+**
+!deploy/
+!deploy/network-relay/
+!deploy/network-relay/package.json
+!src/
+!src/network/
+!src/network/*.mjs

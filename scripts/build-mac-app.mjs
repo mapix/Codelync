@@ -101,6 +101,7 @@ await writeFile(join(output, 'Contents/Info.plist'), `<?xml version="1.0"?><!DOC
 </dict></plist>`);
 await verifyDesktopHelper();
 const chinese = {
+  "Deployment guide": "部署指南",
   "Remote desktop": "远程桌面",
   "Media relay": "媒体 Relay",
   "This Mac": "本机",

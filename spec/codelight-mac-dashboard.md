@@ -1,5 +1,14 @@
 # Mac connection dashboard
 
+## Relay deployment help
+
+Configure Relay and the Remote desktop custom-server form each contain one
+localized Deployment guide link. It opens the canonical GitHub main-branch
+Markdown preview in the default browser, choosing Chinese or English from the
+app's localization. The link remains usable while CodeLight is stopped and
+does not submit, save or clear server settings. Keep the link outside disabled
+save controls and show it beside the corresponding server fields.
+
 ## Start and pause
 
 The Mac dashboard always exposes Start and Pause controls. Its service controller

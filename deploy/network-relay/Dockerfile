@@ -1,7 +1,8 @@
+# Build from the repository root; this service needs no workspace installation.
 ARG NODE_IMAGE=node:24.22.2-alpine
 FROM ${NODE_IMAGE}
 WORKDIR /app
-COPY package.json ./
+COPY deploy/network-relay/package.json ./
 RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund
 COPY src/network/ ./src/network/
 USER node
