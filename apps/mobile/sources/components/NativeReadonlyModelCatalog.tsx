@@ -24,7 +24,7 @@ export function NativeReadonlyModelCatalog({ session, captured, active, onClose 
         <View style={styles.overlay}>
             <Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel={closeLabel} onPress={onClose} />
             <View testID="codelync-native-model-catalog" style={styles.sheet}>
-                <View style={styles.header}><Text style={styles.title}>{t('agentInput.model.title')}</Text>
+                <View style={styles.header}><Text style={styles.title} numberOfLines={1}>{t('agentInput.model.title')}</Text>
                     <Pressable testID="codelync-native-model-catalog-close" accessibilityRole="button" accessibilityLabel={closeLabel} onPress={onClose} style={styles.close}>
                         <Text style={styles.link}>{closeLabel}</Text></Pressable></View>
                 <ScrollView>{model.models.map(option => <Pressable key={option.id} testID={'codelync-native-model-catalog:' + option.id}
@@ -36,10 +36,14 @@ export function NativeReadonlyModelCatalog({ session, captured, active, onClose 
     </Modal>;
 }
 const styles = StyleSheet.create(theme => ({
-    overlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 20 }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)' },
-    sheet: { maxHeight: '70%', borderRadius: 16, overflow: 'hidden', backgroundColor: theme.colors.surface },
-    header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingLeft: 14 }, title: { flex: 1, color: theme.colors.text, ...Typography.default('semiBold') },
-    close: { minHeight: 44, minWidth: 44, paddingHorizontal: 12, justifyContent: 'center' }, link: { color: theme.colors.textLink },
-    row: { minHeight: 44, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
-    text: { color: theme.colors.text }, readonly: { color: theme.colors.textSecondary, paddingHorizontal: 14, paddingVertical: 10 },
+    overlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 24 },
+    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000000', opacity: theme.dark ? 0.56 : 0.28 },
+    sheet: { maxHeight: '70%', borderRadius: 16, overflow: 'hidden', backgroundColor: theme.colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
+    header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingLeft: 14 },
+    title: { flex: 1, minWidth: 0, color: theme.colors.text, ...Typography.default('semiBold') },
+    close: { minHeight: 44, minWidth: 44, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' },
+    link: { color: theme.colors.textLink },
+    row: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
+    text: { color: theme.colors.text },
+    readonly: { color: theme.colors.textSecondary, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
 }));

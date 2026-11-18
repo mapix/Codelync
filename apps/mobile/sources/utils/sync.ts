@@ -45,6 +45,10 @@ export class InvalidateSync {
         });
     }
 
+    isIdle(): boolean {
+        return this._stopped || (!this._invalidated && !this._invalidatedDouble && this._pendings.length === 0);
+    }
+
     stop() {
         if (this._stopped) {
             return;

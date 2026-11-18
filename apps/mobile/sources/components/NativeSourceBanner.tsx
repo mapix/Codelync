@@ -41,25 +41,47 @@ export function NativeSourceBanner({ sessionId, topInset = 0 }: { sessionId: str
     if (session && codelyncSavedHistory(session)) return <NativeSavedHistoryBanner session={session} topInset={topInset} />;
     if (session && nativeParentControl(session)) return <NativeParentControl sessionId={sessionId} topInset={topInset} />;
     if (!notice) return null;
+    const bannerSurface = {
+        padding: 14,
+        paddingTop: topInset + 14,
+        gap: 8,
+        backgroundColor: theme.colors.surface ?? theme.colors.groupped.background,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.divider ?? 'rgba(142, 142, 147, 0.25)',
+    };
+    const retryButtonStyle = {
+        alignSelf: 'flex-start' as const,
+        minHeight: 44,
+        minWidth: 44,
+        paddingHorizontal: 12,
+        justifyContent: 'center' as const,
+        opacity: retrying ? 0.45 : 1,
+    };
+    const retryTextStyle = {
+        color: theme.colors.textLink ?? theme.colors.text,
+        ...Typography.default('semiBold'),
+    };
     if (progress.revalidating || progress.revalidationFailed) {
         const cachedLabels = nativeReadRecoveryLabels[getCurrentLanguage()];
-        return <View testID="codelync-cached-session-check" style={{ padding: 14, paddingTop: topInset + 14, gap: 8, backgroundColor: theme.colors.groupped.background }}>
+        return <View testID="codelync-cached-session-check" style={bannerSurface}>
             <Text accessibilityLiveRegion="polite" style={{ color: theme.colors.textSecondary, ...Typography.default() }}>{progress.revalidating ? cachedLabels.checking : cachedLabels.failed}</Text>
-            {progress.revalidationFailed ? <Pressable accessibilityRole="button" testID="codelync-retry-session-sync" onPress={() => { void retry(); }} style={{ minHeight: 44, justifyContent: 'center' }}>
-                <Text style={{ color: theme.colors.text, ...Typography.default('semiBold') }}>{t('common.retry')}</Text>
+            {progress.revalidationFailed ? <Pressable accessibilityRole="button" accessibilityLabel={t('common.retry')} accessibilityState={{ disabled: retrying, busy: retrying }}
+                disabled={retrying} testID="codelync-retry-session-sync" onPress={() => { void retry(); }} style={retryButtonStyle}>
+                <Text style={retryTextStyle}>{t('common.retry')}</Text>
             </Pressable> : null}
         </View>;
     }
     // The fresh HTTP read confirms messages independently of desktop navigation.
     if (progress.phase === 'complete' && sourceStatus === 'connected') return null;
     // 预加载也会挂载 banner；不能在 mount 时额外切换桌面，点击导航是唯一发起者。
-    return <View testID="codelync-auto-session-sync" style={{ padding: 14, paddingTop: topInset + 14, gap: 8, backgroundColor: theme.colors.groupped.background }}>
+    return <View testID="codelync-auto-session-sync" style={bannerSurface}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {loading ? <ActivityIndicator size="small" color={theme.colors.textSecondary} /> : null}
             <Text accessibilityLiveRegion="polite" style={{ flex: 1, color: theme.colors.textSecondary, ...Typography.default() }}>{failed ? failureText : t('codelyncLoading.messages')}</Text>
         </View>
-        {failed ? <Pressable accessibilityRole="button" onPress={() => { void retry(); }} testID="codelync-retry-session-sync" style={{ minHeight: 44, justifyContent: 'center' }}>
-            <Text style={{ color: theme.colors.text, ...Typography.default('semiBold') }}>{t('common.retry')}</Text>
+        {failed ? <Pressable accessibilityRole="button" accessibilityLabel={t('common.retry')} accessibilityState={{ disabled: retrying, busy: retrying }}
+            disabled={retrying} onPress={() => { void retry(); }} testID="codelync-retry-session-sync" style={retryButtonStyle}>
+            <Text style={retryTextStyle}>{t('common.retry')}</Text>
         </Pressable> : null}
     </View>;
 }

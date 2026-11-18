@@ -74,38 +74,71 @@ export class AntigravityRpcClient {
   /** @param {{runtimePath?:string,readRuntime?:()=>Promise<Value>,fetch?:typeof fetch,timeoutMs?:number}} [options] */
   constructor(options = {}) {
     const path = options.runtimePath ?? process.env.CODELYNC_ANTIGRAVITY_RUNTIME;
-    this.readRuntime = options.readRuntime ?? (path ? () => readAntigravityRuntime(path) : async () => {
-      const cached = this.latestRuntime;
-      if (cached) {
-        const identity = await antigravityProcessIdentity(cached.pid).catch(() => null);
-        if (identity && identity.executable === cached.binary && identity.startTime === cached.startTime && identity.parentPid === cached.parentPid) return cached;
-      }
-      const runtime = await discoverAntigravityRuntime(); if (!runtime) throw unavailable(); return runtime;
-    });
+    this.readRuntime = options.readRuntime ?? (path ? () => readAntigravityRuntime(path) : () => this.discoverRuntime());
     this.fetch = options.fetch ?? fetch; this.timeoutMs = options.timeoutMs ?? 15000;
     /** @type {Value|null} */ this.latestRuntime = null;
+    /** @type {Promise<Value>|null} */ this.discoveryFlight = null;
+    /** @type {Promise<Value>|null} */ this.runtimeFlight = null;
+    /** @type {Set<()=>Promise<void>>} */ this.summaryClosers = new Set();
     /** @type {Set<AbortController>} */ this.summaryControllers = new Set();
+    this.disposed = false;
   }
-  async runtime() { const runtime = await this.readRuntime(); this.latestRuntime = runtime; return runtime; }
+  /** Coalesce concurrent fallback runtime discovery probes into one active flight.
+   * @returns {Promise<Value>} */
+  discoverRuntime() {
+    if (this.disposed) return Promise.reject(unavailable());
+    if (!this.discoveryFlight) {
+      const flight = (async () => {
+        const cached = this.latestRuntime;
+        if (cached) {
+          const identity = await antigravityProcessIdentity(cached.pid).catch(() => null);
+          if (identity && identity.executable === cached.binary && identity.startTime === cached.startTime && identity.parentPid === cached.parentPid) return cached;
+        }
+        const runtime = await discoverAntigravityRuntime(); if (!runtime) throw unavailable(); return runtime;
+      })().finally(() => { if (this.discoveryFlight === flight) this.discoveryFlight = null; });
+      this.discoveryFlight = flight;
+    }
+    return this.discoveryFlight;
+  }
+  async runtime() {
+    if (this.disposed) throw unavailable();
+    if (!this.runtimeFlight) {
+      const flight = Promise.resolve().then(() => this.readRuntime()).then(runtime => {
+        if (this.disposed) throw unavailable();
+        this.latestRuntime = runtime;
+        return runtime;
+      }).finally(() => { if (this.runtimeFlight === flight) this.runtimeFlight = null; });
+      this.runtimeFlight = flight;
+    }
+    return this.runtimeFlight;
+  }
   generation() { return this.latestRuntime?.generation ?? null; }
   /** Only the shipped local read stream; callers cannot select a cloud backend.
    * @param {{expectedGeneration:string,expectedHostId:string,signal?:AbortSignal}} options
    * @returns {Promise<{response:Response,scope:{hostId:string,generation:string},close:()=>Promise<void>}>} */
   async subscribeSummaries(options) {
+    if (this.disposed) throw unavailable('antigravity-summary-stream-unavailable');
     const controller = new AbortController(), abort = () => controller.abort();
     this.summaryControllers.add(controller); options.signal?.addEventListener('abort', abort, { once: true });
     if (options.signal?.aborted) controller.abort();
     const timer = setTimeout(abort, this.timeoutMs);
+    timer.unref?.();
     /** @type {Response|undefined} */ let response;
+    let closed = false;
     const close = async () => {
-      controller.abort(); clearTimeout(timer); this.summaryControllers.delete(controller);
+      if (closed) return;
+      closed = true;
+      controller.abort(); clearTimeout(timer);
+      this.summaryControllers.delete(controller);
+      this.summaryClosers.delete(close);
       options.signal?.removeEventListener('abort', abort);
       await response?.body?.cancel().catch(() => {});
     };
+    this.summaryClosers.add(close);
     try {
       const runtime = await this.runtime(), hostId = antigravityHostId(runtime);
       if (hostId !== options.expectedHostId || runtime.generation !== options.expectedGeneration) throw new BridgeError('source-epoch-changed', 'The native summary owner changed before observation.', 409);
-      if (controller.signal.aborted) throw unavailable('antigravity-summary-stream-unavailable');
+      if (this.disposed || controller.signal.aborted) throw unavailable('antigravity-summary-stream-unavailable');
       const body = Buffer.from('{}'), framed = Buffer.alloc(7); framed.writeUInt32BE(2, 1); body.copy(framed, 5);
       response = await this.fetch(runtime.origin + ANTIGRAVITY_SERVICE + 'JetboxSubscribeToSummaries', { method: 'POST', redirect: 'error', signal: controller.signal,
         headers: { 'Content-Type': 'application/connect+json', 'Connect-Protocol-Version': '1', 'X-Codeium-Csrf-Token': runtime.csrfToken,
@@ -113,6 +146,7 @@ export class AntigravityRpcClient {
       if (!response.ok || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/connect+json' || !response.body?.getReader) throw unavailable('antigravity-summary-stream-unavailable');
       const after = await this.runtime();
       if (after.generation !== runtime.generation || antigravityHostId(after) !== hostId) throw new BridgeError('source-epoch-changed', 'The native summary owner changed during observation.', 409);
+      if (this.disposed || controller.signal.aborted) throw unavailable('antigravity-summary-stream-unavailable');
       clearTimeout(timer);
       return { response, scope: { hostId, generation: runtime.generation }, close };
     } catch (error) {
@@ -123,6 +157,7 @@ export class AntigravityRpcClient {
   /** @param {string} method @param {Value} [body] @param {{expectedGeneration?:string|null,expectedHostId?:string,mutation?:boolean}} [options] @returns {Promise<Value>} */
   async call(method, body = {}, options = {}) {
     if (!/^[A-Z][A-Za-z0-9]{0,99}$/.test(method)) throw new BridgeError('unsupported-action', 'A known native Antigravity method is required.');
+    if (this.disposed) throw Object.assign(unavailable(), { effectMayHaveOccurred: false });
     let runtime;
     try {
       runtime = await this.runtime();
@@ -161,5 +196,12 @@ export class AntigravityRpcClient {
       throw unavailable('antigravity-rpc-unavailable');
     }
   }
-  async dispose() { for (const controller of this.summaryControllers) controller.abort(); this.summaryControllers.clear(); this.latestRuntime = null; }
+  async dispose() {
+    this.disposed = true;
+    for (const controller of this.summaryControllers) controller.abort();
+    await Promise.allSettled([...this.summaryClosers].map(close => close()));
+    this.summaryClosers.clear();
+    this.summaryControllers.clear();
+    this.latestRuntime = null;
+  }
 }

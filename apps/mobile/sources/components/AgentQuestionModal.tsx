@@ -1,12 +1,13 @@
 import * as React from 'react';
-import {
+import * as ReactNative from 'react-native';
+const {
     ActivityIndicator,
     Modal,
     Pressable,
     ScrollView,
     TextInput,
     View,
-} from 'react-native';
+} = ReactNative;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
@@ -123,6 +124,12 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
         }
     }, [onClose, pending.id, pending.kind, sessionId, submitting, unconfirmed, session?.metadata]);
 
+    const rn = ReactNative as Record<string, any>;
+    const KeyboardContainer: React.ComponentType<any> = Object.prototype.hasOwnProperty.call(rn, 'KeyboardAvoidingView') && rn.KeyboardAvoidingView
+        ? rn.KeyboardAvoidingView
+        : View;
+    const keyboardBehavior = Object.prototype.hasOwnProperty.call(rn, 'Platform') && rn.Platform?.OS === 'ios' ? 'padding' : undefined;
+
     return (
         <Modal
             visible={visible}
@@ -132,105 +139,134 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
         >
             <View testID="codelync-question-modal" style={[styles.container, { paddingTop: safeArea.top }]}>
                 <View style={styles.header}>
-                    <Pressable testID="codelync-question-close" accessibilityRole="button" onPress={handleDismiss} hitSlop={12} disabled={submitting}>
-                        <Text style={styles.headerAction}>{t('common.cancel')}</Text>
+                    <Pressable
+                        testID="codelync-question-close"
+                        accessibilityRole="button"
+                        accessibilityLabel={t('common.cancel')}
+                        accessibilityState={{ disabled: submitting }}
+                        style={styles.headerSideButton}
+                        onPress={handleDismiss}
+                        hitSlop={12}
+                        disabled={submitting}
+                    >
+                        <Text style={[styles.headerAction, submitting && styles.actionDisabled]}>{t('common.cancel')}</Text>
                     </Pressable>
-                    <Text style={styles.headerTitle}>{t('agentQuestion.title')}</Text>
+                    <Text style={styles.headerTitle} numberOfLines={1}>{t('agentQuestion.title')}</Text>
                     <View style={styles.headerSpacer} />
                 </View>
 
-                <ScrollView
-                    style={styles.scroll}
-                    contentContainerStyle={[styles.scrollContent, { paddingBottom: safeArea.bottom + 96 }]}
-                    keyboardShouldPersistTaps="handled"
+                <KeyboardContainer
+                    testID="codelync-question-keyboard-avoiding"
+                    behavior={keyboardBehavior}
+                    style={styles.keyboardAvoiding}
                 >
-                    {pending.questions.map((question, index) => {
-                        const draft = draftFor(question.id);
-                        const multiSelect = question.multiSelect === true;
-                        const answered = isQuestionAnswered(question, drafts[question.id]);
-
-                        return (
-                            <View testID={`codelync-question-${question.id}`} key={question.id} style={styles.questionBlock}>
-                                <View style={styles.headerChipRow}>
-                                    <View style={styles.headerChip}>
-                                        <Text style={styles.headerChipText}>{question.header}</Text>
-                                    </View>
-                                    {!answered && <View style={styles.requiredDot} />}
-                                </View>
-                                <Text style={styles.questionText}>{question.question}</Text>
-                                {multiSelect && (
-                                    <Text style={styles.hintText}>{t('agentQuestion.chooseMultiple')}</Text>
-                                )}
-
-                                {question.options.map((option, optionIndex) => {
-                                    const selected = draft.options.includes(option.label);
-                                    return (
-                                        <Pressable
-                                            key={option.label}
-                                            testID={`codelync-question-option-${question.id}-${optionIndex}`}
-                                            accessibilityRole="button"
-                                            accessibilityState={{ selected }}
-                                            style={[styles.option, selected && styles.optionSelected]}
-                                            onPress={() => handleToggle(question.id, option.label, multiSelect)}
-                                            disabled={submitting || unconfirmed}
-                                        >
-                                            <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                                                {selected && (
-                                                    <Ionicons name="checkmark" size={14} color="#fff" />
-                                                )}
-                                            </View>
-                                            <View style={styles.optionText}>
-                                                <Text style={styles.optionLabel}>{option.label}</Text>
-                                                {option.description ? (
-                                                    <Text style={styles.optionDescription}>
-                                                        {option.description}
-                                                    </Text>
-                                                ) : null}
-                                            </View>
-                                        </Pressable>
-                                    );
-                                })}
-
-                                {question.allowCustom !== false && (
-                                    <View style={styles.customBlock}>
-                                        <Text style={styles.customLabel}>{t('agentQuestion.ownAnswer')}</Text>
-                                        <TextInput
-                                            testID={`codelync-question-custom-${question.id}`}
-                                            style={styles.customInput}
-                                            value={draft.custom}
-                                            onChangeText={value => handleCustomChange(question.id, value)}
-                                            placeholder={t('agentQuestion.ownAnswerPlaceholder')}
-                                            placeholderTextColor={theme.colors.textSecondary}
-                                            multiline
-                                            editable={!submitting && !unconfirmed}
-                                            // Focus the first question's field so the keyboard is
-                                            // ready for a written answer without another tap.
-                                            autoFocus={index === 0 && question.options.length === 0}
-                                        />
-                                    </View>
-                                )}
-                            </View>
-                        );
-                    })}
-
-                    {error && <Text style={styles.errorText}>{error}</Text>}
-                </ScrollView>
-
-                <View style={[styles.footer, { paddingBottom: safeArea.bottom + 12 }]}>
-                    <Pressable
-                        testID="codelync-question-submit"
-                        accessibilityRole="button"
-                        style={[styles.submit, (!ready || submitting) && styles.submitDisabled]}
-                        onPress={handleSubmit}
-                        disabled={!ready || submitting || writesBlocked}
+                    <ScrollView
+                        style={styles.scroll}
+                        contentContainerStyle={[styles.scrollContent, { paddingBottom: 28 }]}
+                        keyboardShouldPersistTaps="handled"
+                        automaticallyAdjustKeyboardInsets={keyboardBehavior === 'padding'}
                     >
-                        {submitting ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.submitText}>{t(unconfirmed ? 'agentQuestion.checkResult' : 'agentQuestion.submit')}</Text>
+                        {pending.questions.map((question, index) => {
+                            const draft = draftFor(question.id);
+                            const multiSelect = question.multiSelect === true;
+                            const answered = isQuestionAnswered(question, drafts[question.id]);
+
+                            return (
+                                <View testID={`codelync-question-${question.id}`} key={question.id} style={styles.questionBlock}>
+                                    <View style={styles.headerChipRow}>
+                                        <View style={styles.headerChip}>
+                                            <Text style={styles.headerChipText}>{question.header}</Text>
+                                        </View>
+                                        {!answered && <View style={styles.requiredDot} />}
+                                    </View>
+                                    <Text style={styles.questionText}>{question.question}</Text>
+                                    {multiSelect && (
+                                        <Text style={styles.hintText}>{t('agentQuestion.chooseMultiple')}</Text>
+                                    )}
+
+                                    {question.options.map((option, optionIndex) => {
+                                        const selected = draft.options.includes(option.label);
+                                        return (
+                                            <Pressable
+                                                key={option.label}
+                                                testID={`codelync-question-option-${question.id}-${optionIndex}`}
+                                                accessibilityRole="button"
+                                                accessibilityState={{ selected, disabled: submitting || unconfirmed }}
+                                                style={[styles.option, selected && styles.optionSelected]}
+                                                onPress={() => handleToggle(question.id, option.label, multiSelect)}
+                                                disabled={submitting || unconfirmed}
+                                            >
+                                                <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                                                    {selected && (
+                                                        <Ionicons name="checkmark" size={14} color="#fff" />
+                                                    )}
+                                                </View>
+                                                <View style={styles.optionText}>
+                                                    <Text style={styles.optionLabel}>{option.label}</Text>
+                                                    {option.description ? (
+                                                        <Text style={styles.optionDescription}>
+                                                            {option.description}
+                                                        </Text>
+                                                    ) : null}
+                                                </View>
+                                            </Pressable>
+                                        );
+                                    })}
+
+                                    {question.allowCustom !== false && (
+                                        <View style={styles.customBlock}>
+                                            <Text style={styles.customLabel}>{t('agentQuestion.ownAnswer')}</Text>
+                                            <TextInput
+                                                testID={`codelync-question-custom-${question.id}`}
+                                                style={styles.customInput}
+                                                value={draft.custom}
+                                                onChangeText={value => handleCustomChange(question.id, value)}
+                                                placeholder={t('agentQuestion.ownAnswerPlaceholder')}
+                                                placeholderTextColor={theme.colors.textSecondary}
+                                                multiline
+                                                editable={!submitting && !unconfirmed}
+                                                // Focus the first question's field so the keyboard is
+                                                // ready for a written answer without another tap.
+                                                autoFocus={index === 0 && question.options.length === 0}
+                                            />
+                                        </View>
+                                    )}
+                                </View>
+                            );
+                        })}
+
+                        {error && (
+                            <Text
+                                testID="codelync-question-error"
+                                accessibilityLiveRegion="polite"
+                                style={[
+                                    styles.errorText,
+                                    { color: theme.colors.warningCritical ?? theme.colors.textDestructive ?? (theme.dark ? '#FF453A' : '#FF3B30') },
+                                ]}
+                            >
+                                {error}
+                            </Text>
                         )}
-                    </Pressable>
-                </View>
+                    </ScrollView>
+
+                    <View style={[styles.footer, { paddingBottom: safeArea.bottom + 12 }]}>
+                        <Pressable
+                            testID="codelync-question-submit"
+                            accessibilityRole="button"
+                            accessibilityLabel={t(unconfirmed ? 'agentQuestion.checkResult' : 'agentQuestion.submit')}
+                            accessibilityState={{ disabled: !ready || submitting || writesBlocked, busy: submitting }}
+                            style={[styles.submit, (!ready || submitting || writesBlocked) && styles.submitDisabled]}
+                            onPress={handleSubmit}
+                            disabled={!ready || submitting || writesBlocked}
+                        >
+                            {submitting ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.submitText}>{t(unconfirmed ? 'agentQuestion.checkResult' : 'agentQuestion.submit')}</Text>
+                            )}
+                        </Pressable>
+                    </View>
+                </KeyboardContainer>
             </View>
         </Modal>
     );
@@ -245,14 +281,24 @@ const stylesheet = StyleSheet.create((theme) => ({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 14,
+        paddingVertical: 8,
+        minHeight: 52,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: theme.colors.divider,
+    },
+    headerSideButton: {
+        minWidth: 80,
+        minHeight: 44,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
     },
     headerAction: {
         fontSize: 16,
         color: theme.colors.textLink,
         ...Typography.default(),
+    },
+    actionDisabled: {
+        opacity: 0.45,
     },
     headerTitle: {
         flex: 1,
@@ -262,7 +308,10 @@ const stylesheet = StyleSheet.create((theme) => ({
         ...Typography.default('semiBold'),
     },
     headerSpacer: {
-        width: 60,
+        minWidth: 80,
+    },
+    keyboardAvoiding: {
+        flex: 1,
     },
     scroll: {
         flex: 1,
@@ -296,7 +345,7 @@ const stylesheet = StyleSheet.create((theme) => ({
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: '#FF9500',
+        backgroundColor: theme.dark ? '#FF9F0A' : '#FF9500',
     },
     questionText: {
         fontSize: 17,
@@ -319,21 +368,21 @@ const stylesheet = StyleSheet.create((theme) => ({
         borderColor: 'transparent',
     },
     optionSelected: {
-        borderColor: theme.colors.textLink,
+        borderColor: theme.colors.radio?.active ?? theme.colors.textLink,
     },
     checkbox: {
         width: 22,
         height: 22,
         borderRadius: 6,
         borderWidth: 2,
-        borderColor: theme.colors.divider,
+        borderColor: theme.dark ? '#98989D' : (theme.colors.textSecondary ?? '#6C6C70'),
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 1,
     },
     checkboxSelected: {
-        backgroundColor: theme.colors.textLink,
-        borderColor: theme.colors.textLink,
+        backgroundColor: theme.colors.radio?.active ?? theme.colors.textLink,
+        borderColor: theme.colors.radio?.active ?? theme.colors.textLink,
     },
     optionText: {
         flex: 1,
@@ -350,8 +399,8 @@ const stylesheet = StyleSheet.create((theme) => ({
         ...Typography.default(),
     },
     customBlock: {
-        gap: 6,
-        marginTop: 4,
+        gap: 8,
+        marginTop: 6,
     },
     customLabel: {
         fontSize: 13,
@@ -363,7 +412,7 @@ const stylesheet = StyleSheet.create((theme) => ({
         borderRadius: 12,
         backgroundColor: theme.colors.surface,
         borderWidth: 1,
-        borderColor: theme.colors.divider,
+        borderColor: theme.dark ? 'rgba(255, 255, 255, 0.16)' : (theme.colors.divider ?? theme.colors.textSecondary),
         paddingHorizontal: 14,
         paddingVertical: 12,
         fontSize: 15,
@@ -372,7 +421,7 @@ const stylesheet = StyleSheet.create((theme) => ({
     },
     errorText: {
         fontSize: 14,
-        color: '#FF3B30',
+        color: theme.colors.warningCritical ?? theme.colors.textDestructive ?? (theme.dark ? '#FF453A' : '#FF3B30'),
         ...Typography.default(),
     },
     footer: {
@@ -387,7 +436,7 @@ const stylesheet = StyleSheet.create((theme) => ({
         borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: theme.colors.textLink,
+        backgroundColor: theme.colors.radio?.active ?? theme.colors.textLink,
     },
     submitDisabled: {
         opacity: 0.4,

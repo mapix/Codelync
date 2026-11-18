@@ -63,6 +63,7 @@ const stylesheet = StyleSheet.create((theme, runtime) => ({
     },
     centerContent: {
         flex: 1,
+        minWidth: 0,
         justifyContent: 'center',
     },
     title: {
@@ -91,13 +92,23 @@ const stylesheet = StyleSheet.create((theme, runtime) => ({
     rightSection: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginLeft: 8,
+        justifyContent: 'flex-end',
+        marginLeft: 12,
+        flexShrink: 1,
+        minWidth: 0,
+    },
+    rightSectionDetail: {
+        maxWidth: '48%',
     },
     detail: {
         ...Typography.default('regular'),
         color: theme.colors.textSecondary,
         fontSize: 17,
+        lineHeight: 22,
         letterSpacing: -0.41,
+        flexShrink: 1,
+        minWidth: 0,
+        textAlign: 'right',
     },
     divider: {
         height: Platform.select({ ios: 0.33, default: 0 }),
@@ -218,7 +229,7 @@ export const Item = React.memo<ItemProps>((props) => {
                 <View style={styles.centerContent}>
                     <Text 
                         style={[styles.title, titleColor, titleStyle]}
-                        numberOfLines={subtitle ? 1 : 2}
+                        numberOfLines={subtitle ? 2 : 3}
                     >
                         {title}
                     </Text>
@@ -241,7 +252,7 @@ export const Item = React.memo<ItemProps>((props) => {
                 </View>
 
                 {/* Right Section */}
-                <View style={styles.rightSection}>
+                <View style={[styles.rightSection, detail && !rightElement ? styles.rightSectionDetail : undefined]}>
                     {detail && !rightElement && (
                         <Text 
                             style={[
@@ -249,7 +260,7 @@ export const Item = React.memo<ItemProps>((props) => {
                                 { marginRight: showAccessory ? 6 : 0 },
                                 detailStyle
                             ]}
-                            numberOfLines={1}
+                            numberOfLines={2}
                         >
                             {detail}
                         </Text>
@@ -258,7 +269,7 @@ export const Item = React.memo<ItemProps>((props) => {
                         <ActivityIndicator 
                             size="small" 
                             color={theme.colors.textSecondary}
-                            style={{ marginRight: showAccessory ? 6 : 0 }}
+                            style={{ marginRight: showAccessory ? 6 : 0, flexShrink: 0 }}
                         />
                     )}
                     {rightElement}
@@ -267,7 +278,7 @@ export const Item = React.memo<ItemProps>((props) => {
                             name="chevron-forward" 
                             size={chevronSize} 
                             color={theme.colors.groupped.chevron}
-                            style={{ marginLeft: 4 }}
+                            style={{ marginLeft: 4, flexShrink: 0 }}
                         />
                     )}
                 </View>
@@ -290,6 +301,8 @@ export const Item = React.memo<ItemProps>((props) => {
     if (isInteractive) {
         return (
             <BubblePressable
+                accessibilityRole={handlePress ? 'button' : undefined}
+                accessibilityState={handlePress ? { disabled: !!(disabled || loading), selected } : undefined}
                 onPress={handlePress}
                 onLongPress={onLongPress}
                 onPressIn={handlePressIn}

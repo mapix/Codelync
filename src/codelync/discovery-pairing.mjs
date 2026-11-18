@@ -43,9 +43,18 @@ export async function pairCodelync(options) {
       }
       if (answer.state !== 'requested') throw Error('The pairing server returned an unsupported state.');
       await new Promise((resolveWait, reject) => {
-        const onAbort = () => { clearTimeout(timer); reject(options.signal?.reason ?? Error('Pairing aborted.')); };
-        const timer = setTimeout(() => { options.signal?.removeEventListener('abort', onAbort); resolveWait(undefined); }, options.pollMs ?? 1000);
-        options.signal?.addEventListener('abort', onAbort, { once: true });
+        const signal = options.signal;
+        if (signal?.aborted) { reject(signal.reason ?? Error('Pairing aborted.')); return; }
+        let settled = false;
+        const onAbort = () => {
+          if (settled) return; settled = true;
+          clearTimeout(timer); reject(signal?.reason ?? Error('Pairing aborted.'));
+        };
+        const timer = setTimeout(() => {
+          if (settled) return; settled = true;
+          signal?.removeEventListener('abort', onAbort); resolveWait(undefined);
+        }, options.pollMs ?? 1000);
+        signal?.addEventListener('abort', onAbort, { once: true });
       });
     }
     throw Error('Codelync pairing timed out. Run again to display a new link.');

@@ -444,6 +444,64 @@ final class DesktopCapture: @unchecked Sendable {
     }
 }
 
+// BEGIN CODELYNC DESKTOP STDIN FRAMER
+struct DesktopStdinFramer {
+    let maxLineBytes: Int
+    private var buffer = Data()
+    private var discardingOversizedLine = false
+
+    init(maxLineBytes: Int = 16_384) {
+        self.maxLineBytes = maxLineBytes
+    }
+
+    mutating func append(_ bytes: Data) -> [Data] {
+        var lines: [Data] = []
+        var cursor = bytes.startIndex
+        while cursor < bytes.endIndex {
+            if discardingOversizedLine {
+                guard let end = bytes[cursor...].firstIndex(of: 10) else { return lines }
+                discardingOversizedLine = false
+                cursor = bytes.index(after: end)
+                continue
+            }
+            if let end = bytes[cursor...].firstIndex(of: 10) {
+                var slice = bytes[cursor..<end]
+                if slice.last == 13, buffer.isEmpty { slice = slice.dropLast() }
+                let sliceLength = bytes.distance(from: slice.startIndex, to: slice.endIndex)
+                if buffer.count + sliceLength > maxLineBytes {
+                    buffer.removeAll(keepingCapacity: true)
+                } else if buffer.isEmpty {
+                    lines.append(Data(slice))
+                } else {
+                    buffer.append(contentsOf: slice)
+                    if buffer.last == 13 { buffer.removeLast() }
+                    if buffer.count <= maxLineBytes { lines.append(buffer) }
+                    buffer.removeAll(keepingCapacity: true)
+                }
+                cursor = bytes.index(after: end)
+            } else {
+                let remaining = bytes.distance(from: cursor, to: bytes.endIndex)
+                if buffer.count + remaining > maxLineBytes {
+                    buffer.removeAll(keepingCapacity: true)
+                    discardingOversizedLine = true
+                } else {
+                    buffer.append(bytes[cursor...])
+                }
+                break
+            }
+        }
+        return lines
+    }
+
+    mutating func flush() -> Data? {
+        defer { buffer.removeAll(keepingCapacity: false); discardingOversizedLine = false }
+        guard !discardingOversizedLine, !buffer.isEmpty else { return nil }
+        if buffer.last == 13 { buffer.removeLast() }
+        return buffer.isEmpty || buffer.count > maxLineBytes ? nil : buffer
+    }
+}
+// END CODELYNC DESKTOP STDIN FRAMER
+
 @main struct Main {
     @MainActor static func main() {
         LiveKitSDK.disableLogging()
@@ -455,17 +513,26 @@ final class DesktopCapture: @unchecked Sendable {
         termination.setEventHandler { Task { @MainActor in await host.stop(); exit(0) } }
         termination.resume()
         // Blocking stdin reads run off the main actor; commands execute serially.
-        let stream = AsyncStream<String> { continuation in
+        let stream = AsyncStream<Data> { continuation in
             Thread.detachNewThread {
-                while let line = readLine(), line.utf8.count <= 16_384 {
-                    continuation.yield(line)
+                var framer = DesktopStdinFramer(maxLineBytes: 16_384)
+                let stdinHandle = FileHandle.standardInput
+                while true {
+                    let chunk = stdinHandle.availableData
+                    if chunk.isEmpty { break }
+                    for lineBytes in framer.append(chunk) {
+                        continuation.yield(lineBytes)
+                    }
+                }
+                if let trailing = framer.flush() {
+                    continuation.yield(trailing)
                 }
                 continuation.finish()
             }
         }
         Task { @MainActor in
-            for await line in stream {
-                guard let bytes = line.data(using: .utf8), let request = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { continue }
+            for await bytes in stream {
+                guard let request = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { continue }
                 await host.handle(request)
             }
             await host.stop()

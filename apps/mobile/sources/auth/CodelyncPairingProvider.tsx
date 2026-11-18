@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Platform } from 'react-native';
-import { CameraView } from 'expo-camera';
+import { Alert, Linking, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { getRandomBytes, digestStringAsync, CryptoDigestAlgorithm } from 'expo-crypto';
 import { peerMaterial } from '@codelync/wire/codelync';
@@ -14,6 +13,8 @@ import sodium from '@/encryption/libsodium.lib';
 import { decodeBase64, encodeBase64 } from '@/encryption/base64';
 import { getServerUrl, setServerUrl } from '@/sync/serverConfig';
 import { useCheckScannerPermissions } from '@/hooks/useCheckCameraPermissions';
+import { CodelyncQrScannerModal } from '@/components/CodelyncQrScannerModal';
+import { Modal } from '@/modal';
 import { config } from '@/config';
 import { t, getCurrentLanguage } from '@/text';
 import { bootstrapMacDiagnostics } from '@/sync/bootstrapMacDiagnostics';
@@ -24,9 +25,26 @@ const PENDING_KEY = 'codelync_pending_scan_v1';
 const DEVICE_KEY = 'codelync_device_box_key_v1';
 type PairingContext = { busy: boolean; error: string | null; scan: () => Promise<void>; connect: (url: string) => Promise<void> };
 const Context = createContext<PairingContext | null>(null);
+
+function formatPairingError(failure: unknown): string {
+    const code = failure instanceof CodelyncPairingError ? failure.code : 'network';
+    if (code === 'location') {
+        return getCurrentLanguage().startsWith('zh')
+            ? '这台 Mac 的位置验证失败，请检查网络后重新扫描。'
+            : 'Could not verify this Mac’s location. Check the network and scan again.';
+    }
+    if (code === 'expired' || code === 'used') return t('codelyncPairing.refresh');
+    if (code === 'storage') return t('codelyncPairing.storage');
+    if (code === 'invalid' || code === 'identity') return t('codelyncPairing.invalid');
+    return t('codelyncPairing.network');
+}
+
 export function CodelyncPairingProvider({ children }: { children: React.ReactNode }) {
     const auth = useAuth(), authRef = useRef(auth); authRef.current = auth;
     const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+    const [scannerOpen, setScannerOpen] = useState(false);
+    const connectingRef = useRef(false);
+    const scanningPermissionRef = useRef(false);
     const checkCamera = useCheckScannerPermissions();
     const controller = useRef<CodelyncPairingController | null>(null);
     if (!controller.current) controller.current = new CodelyncPairingController({
@@ -72,34 +90,83 @@ export function CodelyncPairingProvider({ children }: { children: React.ReactNod
         login: credentials => authRef.current.login(credentials.token, credentials.secret, credentials.serverUrl),
         reload: async () => { if (Platform.OS === 'web') window.location.reload(); else await reloadAppAsync(); },
     });
-    const run = useCallback(async (operation: () => Promise<void>) => {
-        setBusy(true); setError(null);
-        try { await operation(); } catch (failure) {
-            const code = failure instanceof CodelyncPairingError ? failure.code : 'network';
-            setError(code === 'location' ? getCurrentLanguage().startsWith('zh') ? '这台 Mac 的位置验证失败，请检查网络后重新扫描。' : 'Could not verify this Mac’s location. Check the network and scan again.'
-                : code === 'expired' || code === 'used' ? t('codelyncPairing.refresh') : code === 'storage' ? t('codelyncPairing.storage') : code === 'invalid' || code === 'identity' ? t('codelyncPairing.invalid') : t('codelyncPairing.network'));
+    const run = useCallback(async (operation: () => Promise<void>, options?: { alertOnError?: boolean }) => {
+        connectingRef.current = true;
+        setBusy(true);
+        setError(null);
+        try {
+            await operation();
+        } catch (failure) {
+            const message = formatPairingError(failure);
+            setError(message);
+            if (options?.alertOnError) {
+                Modal.alert(t('common.error'), message, [{ text: t('common.ok') }]);
+            }
             throw failure;
+        } finally {
+            connectingRef.current = false;
+            setBusy(false);
         }
-        finally { setBusy(false); }
     }, []);
     const connect = useCallback((url: string) => run(() => controller.current!.connect(url)), [run]);
     const scan = useCallback(async () => {
-        if (busy) return;
-        if (!await checkCamera()) { setError(t('modals.cameraPermissionsRequiredToScanQr')); return; }
-        try { await CameraView.launchScanner({ barcodeTypes: ['qr'] }); } catch { setError(t('onboarding.linkFailed')); }
-    }, [busy, checkCamera]);
+        if (connectingRef.current || scanningPermissionRef.current) return;
+        setError(null);
+        scanningPermissionRef.current = true;
+        try {
+            const granted = await checkCamera();
+            if (!granted) {
+                const message = t('modals.cameraPermissionsRequiredToScanQr');
+                setError(message);
+                if (Platform.OS === 'ios' || Platform.OS === 'android') {
+                    Alert.alert(
+                        t('common.error'),
+                        message,
+                        [
+                            { text: t('common.cancel'), style: 'cancel' },
+                            { text: t('settings.title'), onPress: () => { void Linking.openSettings(); } },
+                        ],
+                    );
+                } else {
+                    Modal.alert(t('common.error'), message, [{ text: t('common.ok') }]);
+                }
+                return;
+            }
+            setScannerOpen(true);
+        } finally {
+            scanningPermissionRef.current = false;
+        }
+    }, [checkCamera]);
+    const handleScanned = useCallback((url: string) => {
+        setScannerOpen(false);
+        void run(() => controller.current!.connect(url), { alertOnError: true }).catch(() => {});
+    }, [run]);
+    const handlePasteFromScanner = useCallback(async () => {
+        setScannerOpen(false);
+        const link = await Modal.prompt(
+            t('onboarding.pasteLinkTitle'),
+            t('onboarding.pasteLinkMessage'),
+            { placeholder: 'codelync://pair?...', confirmText: t('onboarding.pasteLinkConfirm') },
+        );
+        if (link?.trim()) {
+            await run(() => controller.current!.connect(link.trim()), { alertOnError: true }).catch(() => {});
+        }
+    }, [run]);
     useEffect(() => {
         if (!config.noninvasiveLocal) return;
-        void run(() => controller.current!.resume()).catch(() => {});
-        if (!CameraView.isModernBarcodeScannerAvailable) return;
-        const subscription = CameraView.onModernBarcodeScanned(async event => {
-            if (!event.data.startsWith('codelync://pair?')) return;
-            if (Platform.OS === 'ios') await CameraView.dismissScanner().catch(() => {});
-            await connect(event.data).catch(() => {});
-        });
-        return () => subscription.remove();
-    }, [connect, run]);
-    return <Context.Provider value={{ busy, error, scan, connect }}>{children}</Context.Provider>;
+        void controller.current!.resume().catch(() => {});
+    }, []);
+    return (
+        <Context.Provider value={{ busy, error, scan, connect }}>
+            {children}
+            <CodelyncQrScannerModal
+                visible={scannerOpen}
+                onClose={() => setScannerOpen(false)}
+                onScanned={handleScanned}
+                onPasteLink={() => { void handlePasteFromScanner(); }}
+            />
+        </Context.Provider>
+    );
 }
 export function useCodelyncPairing() {
     const value = useContext(Context); if (!value) throw Error('CodelyncPairingProvider is missing'); return value;

@@ -62,14 +62,14 @@ export default {
     expo: {
         name: localBridge ? 'Codelync' : name,
         slug: 'codelync',
-        version: "1.0.0",
+        version: "1.0.1",
         runtimeVersion: localBridge ? 'codelync-22' : '21',
         orientation: "default",
         icon: localBridge ? './sources/assets/images/codelync-icon-v2.png' : './sources/assets/images/icon.png',
         scheme: 'codelync',
         userInterfaceStyle: "automatic",
         ios: {
-            ...(localBridge ? { buildNumber: '2026111705' } : {}),
+            ...(localBridge ? { buildNumber: '2026111801' } : {}),
             supportsTablet: true,
             bundleIdentifier: nativeBundleId,
             config: {

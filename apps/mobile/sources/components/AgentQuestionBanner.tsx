@@ -116,7 +116,16 @@ export function AgentQuestionBannerView({ pending, onPress, onDismiss, dismissDi
                         {t('agentQuestion.unsupportedDescription', { kind: pending.rawKind })}
                     </Text>
                 </View>
-                <Pressable onPress={onDismiss} hitSlop={10} disabled={dismissDisabled}>
+                <Pressable
+                    testID="codelync-question-dismiss"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('agentQuestion.dismiss')}
+                    accessibilityState={{ disabled: dismissDisabled }}
+                    style={[styles.dismissButton, dismissDisabled && styles.dismissDisabled]}
+                    onPress={onDismiss}
+                    hitSlop={10}
+                    disabled={dismissDisabled}
+                >
                     <Text style={styles.dismiss}>{t('agentQuestion.dismiss')}</Text>
                 </Pressable>
             </View>
@@ -127,7 +136,13 @@ export function AgentQuestionBannerView({ pending, onPress, onDismiss, dismissDi
     const remaining = pending.questions.length - 1;
 
     return (
-        <Pressable style={styles.container} onPress={onPress} accessibilityRole="button" testID="codelync-question-open">
+        <Pressable
+            style={styles.container}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={first?.header ? `${first.header}${first.question ? ` · ${first.question}` : ''}` : t('agentQuestion.title')}
+            testID="codelync-question-open"
+        >
             <View style={styles.icon}>
                 <Ionicons name="help-circle-outline" size={20} color={theme.colors.textLink} />
             </View>
@@ -180,6 +195,14 @@ const stylesheet = StyleSheet.create((theme) => ({
         fontSize: 13,
         color: theme.colors.textSecondary,
         ...Typography.default(),
+    },
+    dismissButton: {
+        minHeight: 44,
+        justifyContent: 'center',
+        paddingHorizontal: 4,
+    },
+    dismissDisabled: {
+        opacity: 0.45,
     },
     dismiss: {
         fontSize: 14,

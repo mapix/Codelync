@@ -110,13 +110,16 @@ export class NativeCatalogDeltas {
     /** @type {Value|null} */ this.current = null;
     this.epoch = randomUUID(); this.sequence = 0;
     /** @type {Map<string,Value>} */ this.snapshots = new Map();
+    this.isolatedRows = /** @type {WeakSet<Value[]>} */ (new WeakSet());
   }
-  /** Background-only preparation; no native reads or observer activation.
-   * @param {{source:Value,binding:Value,actor?:Value}[]} entries @param {string|null} machineId */
-  capture(entries, machineId) {
+  /** Build a catalog projection; `isolate` detaches rows for long-lived `current` snapshots.
+   * @param {{source:Value,binding:Value,actor?:Value}[]} entries @param {string|null} machineId @param {boolean} [isolate] */
+  prepare(entries, machineId, isolate = true) {
     const at = this.now(), indexed = catalogEntries(entries);
     if (indexed.length > 10000) throw new BridgeError('catalog-too-large', 'The native directory exceeds its snapshot bound.', 503);
-    const rows = structuredClone(indexed.map(row => recentDescriptor(row.entry, at)));
+    const descriptors = indexed.map(row => recentDescriptor(row.entry, at));
+    const rows = isolate ? structuredClone(descriptors) : descriptors;
+    if (isolate) this.isolatedRows.add(rows);
     const byId = new Set(rows.map(row => row.id));
     const signatures = new Map(rows.map(row => [row.id, createHash('sha256').update(JSON.stringify({
       nativeUpdatedAt: row.nativeUpdatedAt, basicOnly: row.basicOnly, metadataVersion: row.metadataVersion, metadata: row.metadata,
@@ -126,6 +129,9 @@ export class NativeCatalogDeltas {
     const signature = createHash('sha256').update(JSON.stringify([machineId, [...signatures]])).digest('hex');
     return { at, rows, byId, signatures, signature, machineIds, ownerMachineId: machineId };
   }
+  /** Background-only preparation; no native reads or observer activation.
+   * @param {{source:Value,binding:Value,actor?:Value}[]} entries @param {string|null} machineId */
+  capture(entries, machineId) { return this.prepare(entries, machineId, true); }
   /** Publish atomically after successful preparation. @param {{source:Value,binding:Value,actor?:Value}[]} entries @param {string|null} machineId */
   refresh(entries, machineId) { this.current = this.capture(entries, machineId); }
   /** Older phones also page prepared headers without reading checkpoints.
@@ -158,7 +164,7 @@ export class NativeCatalogDeltas {
       // no rows whose metadata could otherwise reveal a scope change.
       const previous = candidate?.ownerMachineId === machineId ? candidate : null;
       if (previous) this.touch(params.since, previous, now);
-      const current = this.maintained ? this.current : this.capture(entries, machineId);
+      const current = this.maintained ? this.current : this.prepare(entries, machineId, false);
       if (!current || current.ownerMachineId !== machineId) throw new BridgeError('source-unavailable', 'The maintained native directory is not ready for this Mac.', 503);
       const { rows, byId, signatures, machineIds } = current;
       if (previous && previous.signature === current.signature) {
@@ -172,7 +178,7 @@ export class NativeCatalogDeltas {
       }
       const watermark = `${this.epoch}:${++this.sequence}`;
       snapshot = { at: current.at, lastUsedAt: now, watermark, mode, machineIds, ownerMachineId: machineId, requestedSince: params.since ?? null, baseWatermark: previous ? params.since : null,
-        changed: structuredClone(changed), removedIds, byId, signatures, signature: current.signature };
+        changed: this.isolatedRows.has(rows) ? changed : structuredClone(changed), removedIds, byId, signatures, signature: current.signature };
       this.snapshots.set(watermark, snapshot);
       while (this.snapshots.size > this.maxSnapshots) { const oldest = this.snapshots.keys().next().value; if (oldest === undefined) break; this.snapshots.delete(oldest); }
     }

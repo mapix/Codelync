@@ -28,23 +28,28 @@ export function NativeSessionUnavailable({ sessionId, known, loading, topInset =
         return result;
     }, [messages]);
     const source = known?.metadata?.bridge?.source;
-    return <View testID="codelync-session-unavailable" style={{ flex: 1, paddingHorizontal: 20, paddingTop: topInset + 20, gap: 12 }}>
+    const retryDisabled = loading || busy;
+    return <View testID="codelync-session-unavailable" style={{ flex: 1, paddingHorizontal: 20, paddingTop: topInset + 20, paddingBottom: 20, gap: 12, backgroundColor: theme.colors.groupped?.background ?? theme.colors.surface }}>
         <Text style={{ color: theme.colors.text, fontSize: 20 }}>{labels.title}</Text>
         {source ? <Text style={{ color: theme.colors.textSecondary }} numberOfLines={2}>{codelyncSourceAppName(source.app)} · {known?.metadata?.nativeSession?.title || source.id}</Text> : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {loading || busy ? <ActivityIndicator color={theme.colors.textSecondary} /> : null}
-            <Text accessibilityLiveRegion="polite" style={{ flex: 1, color: theme.colors.textSecondary }}>{loading || busy ? labels.loading : failed ? labels.refreshFailed : labels.unavailable}</Text>
+            {retryDisabled ? <ActivityIndicator color={theme.colors.textSecondary} /> : null}
+            <Text accessibilityLiveRegion="polite" style={{ flex: 1, color: theme.colors.textSecondary }}>{retryDisabled ? labels.loading : failed ? labels.refreshFailed : labels.unavailable}</Text>
         </View>
-        <View style={{ flexDirection: 'row', gap: 20 }}>
-            <Pressable testID="codelync-unavailable-retry" accessibilityRole="button" disabled={loading || busy} style={{ minHeight: 44, justifyContent: 'center' }} onPress={() => {
+        <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+            <Pressable testID="codelync-unavailable-retry" accessibilityRole="button" accessibilityLabel={t('common.retry')} accessibilityState={{ disabled: retryDisabled, busy: retryDisabled }}
+                disabled={retryDisabled} style={{ minHeight: 44, minWidth: 44, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', opacity: retryDisabled ? 0.45 : 1 }} onPress={() => {
                 if (flight.current || loading) return;
                 setBusy(true); setFailed(false);
                 flight.current = Promise.resolve().then(onRetry).catch(() => { setFailed(true); }).finally(() => { flight.current = null; setBusy(false); });
-            }}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable>
-            <Pressable testID="codelync-unavailable-back" accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }} onPress={onBack}><Text style={{ color: theme.colors.text }}>{labels.back}</Text></Pressable>
+            }}><Text style={{ color: theme.colors.textLink ?? theme.colors.text, fontWeight: '600' }}>{t('common.retry')}</Text></Pressable>
+            <Pressable testID="codelync-unavailable-back" accessibilityRole="button" accessibilityLabel={labels.back}
+                style={{ minHeight: 44, minWidth: 44, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' }} onPress={onBack}>
+                <Text style={{ color: theme.colors.text }}>{labels.back}</Text>
+            </Pressable>
         </View>
         {draft ? <View><Text style={{ color: theme.colors.textSecondary }}>{labels.draft}</Text><Text selectable style={{ color: theme.colors.text }} numberOfLines={6}>{draft}</Text></View> : null}
-        {rows.length ? <FlatList data={rows} keyExtractor={row => row.id} ListHeaderComponent={<Text style={{ color: theme.colors.textSecondary }}>{labels.saved}</Text>}
+        {rows.length ? <FlatList data={rows} keyExtractor={row => row.id} contentContainerStyle={{ paddingBottom: 24 }} ListHeaderComponent={<Text style={{ color: theme.colors.textSecondary }}>{labels.saved}</Text>}
             renderItem={({ item }) => <Text selectable style={{ color: theme.colors.text, paddingVertical: 8 }} numberOfLines={8}>{item.text}</Text>} /> : null}
     </View>;
 }

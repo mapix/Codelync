@@ -50,12 +50,16 @@ export const OnboardingScreen = React.memo(function OnboardingScreen({
     };
 }) {
     const insets = useSafeAreaInsets();
+    const horizontalInsets = {
+        paddingLeft: Math.max(0, insets.left ?? 0),
+        paddingRight: Math.max(0, insets.right ?? 0),
+    };
     return (
         <View style={styles.root}>
             {header}
             <ScrollView
                 style={styles.body}
-                contentContainerStyle={styles.bodyContent}
+                contentContainerStyle={[styles.bodyContent, horizontalInsets]}
                 alwaysBounceVertical={false}
                 keyboardShouldPersistTaps="handled"
             >
@@ -74,7 +78,11 @@ export const OnboardingScreen = React.memo(function OnboardingScreen({
                 </View>
                 <View style={styles.spacer} />
             </ScrollView>
-            <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+            <View style={[styles.footer, {
+                paddingBottom: (insets.bottom ?? 0) + 12,
+                paddingLeft: Math.max(16, insets.left ?? 0),
+                paddingRight: Math.max(16, insets.right ?? 0),
+            }]}>
                 <GetHelpButton />
             </View>
         </View>
@@ -182,7 +190,8 @@ export const GetHelpButton = React.memo(function GetHelpButton() {
             onPress={openHelp}
             accessibilityRole="button"
             accessibilityLabel={t('onboarding.getHelp')}
-            hitSlop={8}
+            accessibilityState={{ disabled: false }}
+            hitSlop={6}
             style={({ pressed }) => [styles.getHelp, pressed && styles.getHelpPressed]}
         >
             <Ionicons name="help-circle-outline" size={17} color={theme.colors.textSecondary} />
@@ -198,14 +207,16 @@ const styles = StyleSheet.create((theme) => ({
     },
     body: {
         flex: 1,
+        minHeight: 0,
     },
     bodyContent: {
         flexGrow: 1,
         alignItems: 'center',
-        paddingVertical: 8,
+        paddingVertical: 16,
     },
     spacer: {
         flexGrow: 1,
+        minHeight: 0,
     },
     block: {
         width: '100%',
@@ -241,10 +252,12 @@ const styles = StyleSheet.create((theme) => ({
     getHelp: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 6,
-        minHeight: 36,
+        minHeight: 44,
+        minWidth: 44,
         paddingHorizontal: 12,
-        borderRadius: 18,
+        borderRadius: 22,
     },
     getHelpPressed: {
         backgroundColor: theme.colors.surfacePressedOverlay,

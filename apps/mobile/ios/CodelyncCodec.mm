@@ -44,12 +44,67 @@ static BOOL ValidUTF8(const uint8_t *bytes, NSUInteger size) {
   return YES;
 }
 
+static const int8_t kBase64DecodeTable[128] = {
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+  -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+  52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+  -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+  15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+  -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+  41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+};
+
+// Rejects whitespace, non-alphabet chars, misplaced '=', and non-zero trailing pad bits without re-encoding.
+static BOOL IsCanonicalBase64(NSString *value) {
+  NSUInteger length = value.length;
+  if (length == 0) return YES;
+  if (length % 4 != 0) return NO;
+  unichar fourthLast = [value characterAtIndex:length - 4];
+  unichar thirdLast = [value characterAtIndex:length - 3];
+  unichar secondLast = [value characterAtIndex:length - 2];
+  unichar last = [value characterAtIndex:length - 1];
+  if (fourthLast >= 128 || kBase64DecodeTable[fourthLast] < 0) return NO;
+  if (last == '=') {
+    if (thirdLast >= 128 || kBase64DecodeTable[thirdLast] < 0) return NO;
+    if (secondLast == '=') {
+      if ((kBase64DecodeTable[thirdLast] & 0x0f) != 0) return NO;
+    } else {
+      if (secondLast >= 128 || kBase64DecodeTable[secondLast] < 0 || (kBase64DecodeTable[secondLast] & 0x03) != 0) return NO;
+    }
+  } else {
+    if (thirdLast >= 128 || kBase64DecodeTable[thirdLast] < 0 ||
+        secondLast >= 128 || kBase64DecodeTable[secondLast] < 0 ||
+        last >= 128 || kBase64DecodeTable[last] < 0) return NO;
+  }
+  NSUInteger prefixLength = length - 4;
+  if (prefixLength == 0) return YES;
+  const char *ascii = CFStringGetCStringPtr((__bridge CFStringRef)value, kCFStringEncodingASCII);
+  if (ascii) {
+    for (NSUInteger index = 0; index < prefixLength; index++) {
+      uint8_t ch = (uint8_t)ascii[index];
+      if (ch >= 128 || kBase64DecodeTable[ch] < 0) return NO;
+    }
+    return YES;
+  }
+  unichar chunk[4096];
+  for (NSUInteger offset = 0; offset < prefixLength; offset += 4096) {
+    NSUInteger count = prefixLength - offset < 4096 ? prefixLength - offset : 4096;
+    CFStringGetCharacters((__bridge CFStringRef)value, CFRangeMake((CFIndex)offset, (CFIndex)count), chunk);
+    for (NSUInteger index = 0; index < count; index++) {
+      unichar ch = chunk[index];
+      if (ch >= 128 || kBase64DecodeTable[ch] < 0) return NO;
+    }
+  }
+  return YES;
+}
+
 NSString *CodelyncDecodeAuthenticatedBody(NSData *body, NSUInteger expectedBytes, BOOL gzip,
                                          NSMutableDictionary<NSString *, NSNumber *> *metrics, NSError **error) {
   double began = CodecNow();
   if (![body isKindOfClass:[NSData class]] || body.length > CodelyncCodecMaxDecodedBytes || expectedBytes > CodelyncCodecMaxDecodedBytes)
     return CodecFail(@"E_CODEC_TOO_LARGE", error);
-  NSData *owned = [body copy];
+  NSData *owned = [body isKindOfClass:[NSMutableData class]] ? [body copy] : body;
   NSData *decoded = owned;
   if (gzip) {
     const uint8_t *bytes = (const uint8_t *)owned.bytes;
@@ -146,8 +201,9 @@ RCT_EXPORT_METHOD(decodeAuthenticatedPayload:(NSDictionary *)request
     @autoreleasepool {
       @try {
         double started = CodecNow();
+        if (!IsCanonicalBase64(ownedBody)) { failure(@"E_CODEC_INPUT", CodecError(@"E_CODEC_INPUT")); return; }
         NSData *encoded = [[NSData alloc] initWithBase64EncodedString:ownedBody options:0];
-        if (!encoded || ![[encoded base64EncodedStringWithOptions:0] isEqualToString:ownedBody]) { failure(@"E_CODEC_INPUT", CodecError(@"E_CODEC_INPUT")); return; }
+        if (!encoded || encoded.length != encodedEstimate) { failure(@"E_CODEC_INPUT", CodecError(@"E_CODEC_INPUT")); return; }
         double base64Ended = CodecNow();
         NSMutableDictionary *metrics = diagnostics ? [NSMutableDictionary dictionary] : nil;
         NSError *error = nil;

@@ -60,7 +60,8 @@ export class RelayChannel {
     if (initial.length) { stream.pending = initial; stream.offset = 0; }
     source.on('data', (/** @type {Buffer} */ chunk) => {
       source.pause(); if (stream.closed) return;
-      if (stream.pending || chunk.length > WINDOW_BYTES) { this.drop(stream.id); return; }
+      if (!chunk.length) { this.pump(stream); return; }
+      if (stream.pending) { this.drop(stream.id); return; }
       stream.pending = chunk; stream.offset = 0; this.pump(stream);
     });
     source.once('end', () => { stream.sourceEnded = true; this.pump(stream); });
@@ -73,10 +74,10 @@ export class RelayChannel {
     if (stream.closed || this.closed || stream.sending || this.socket.readyState !== 1 || this.socket.bufferedAmount > BUFFER_BYTES) return;
     if (stream.pending && stream.credit > 0) {
       const length = Math.min(FRAME_BYTES, stream.credit, stream.pending.length - stream.offset);
+      if (stream.bodyLimit && stream.sentBytes + length > stream.bodyLimit) { this.drop(stream.id); return; }
       const header = Buffer.allocUnsafe(17); header[0] = 1; Buffer.from(stream.id, 'hex').copy(header, 1);
       const frame = Buffer.concat([header, stream.pending.subarray(stream.offset, stream.offset + length)]);
       stream.credit -= length; stream.offset += length; stream.sentBytes += length;
-      if (stream.bodyLimit && stream.sentBytes > stream.bodyLimit) { this.drop(stream.id); return; }
       if (stream.offset === stream.pending.length) { stream.pending = null; stream.offset = 0; }
       stream.sending = true;
       this.socket.send(frame, { binary: true }, error => { stream.sending = false; if (error) this.drop(stream.id); else { this.pump(stream); this.wake(); } });

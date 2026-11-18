@@ -8,6 +8,36 @@ const object = (/** @type {unknown} */ input) => input && typeof input === 'obje
 const label = (/** @type {unknown} */ input, max = 512) => typeof input === 'string' && !!input.trim() && input.length <= max && !/[\x00-\x1f\x7f]/.test(input) ? input : null;
 const hash = (/** @type {unknown} */ input) => createHash('sha256').update(JSON.stringify(input)).digest('hex');
 const fail = (/** @type {string} */ code, effect = false) => Object.assign(Error(code), { effectMayHaveOccurred: effect });
+/** @param {unknown} error @param {boolean} effect @returns {Error & {effectMayHaveOccurred?:boolean}} */
+function preserveEffect(error, effect) {
+  const inherited = Boolean(error && typeof error === 'object' && /** @type {Value} */ (error).effectMayHaveOccurred === true);
+  const mayHaveOccurred = effect || inherited;
+  if (error instanceof Error) {
+    const desc = Object.getOwnPropertyDescriptor(error, 'effectMayHaveOccurred');
+    if (desc?.value === mayHaveOccurred) return error;
+    if (Object.isExtensible(error) && (!desc || desc.writable && desc.configurable)) {
+      /** @type {Value} */ (error).effectMayHaveOccurred = mayHaveOccurred;
+      return error;
+    }
+    const wrapped = Error(error.message || 'native-settings-operation-failed', { cause: error });
+    wrapped.name = error.name;
+    if (typeof /** @type {Value} */ (error).code === 'string') /** @type {Value} */ (wrapped).code = /** @type {Value} */ (error).code;
+    if (error.stack) wrapped.stack = error.stack;
+    return Object.assign(wrapped, { effectMayHaveOccurred: mayHaveOccurred });
+  }
+  const msg = typeof error === 'string' && error ? error
+    : error && typeof error === 'object' && typeof /** @type {Value} */ (error).message === 'string' && /** @type {Value} */ (error).message
+      ? /** @type {Value} */ (error).message : 'native-settings-operation-failed';
+  const code = error && typeof error === 'object' && typeof /** @type {Value} */ (error).code === 'string' ? /** @type {Value} */ (error).code : null;
+  return Object.assign(Error(msg), { ...(code ? { code } : {}), effectMayHaveOccurred: mayHaveOccurred });
+}
+const SCOPE_IDENTITY_KEYS = ['app', 'appMode', 'nativeCollection', 'nativeConversationId', 'hostId', 'ownerGeneration', 'runtimeGeneration', 'queryToken', 'cliSessionId'];
+/** @param {unknown} a @param {unknown} b */
+function sameScopeIdentity(a, b) {
+  if (!a || typeof a !== 'object' || !b || typeof b !== 'object') return false;
+  const left = /** @type {Value} */ (a), right = /** @type {Value} */ (b);
+  return SCOPE_IDENTITY_KEYS.every(key => left[key] === right[key]);
+}
 /** The native Query read can await initialization; its failure never creates another Query.
  * @param {()=>Promise<any>} read @returns {Promise<any>} */
 async function boundedRead(read) {
@@ -84,8 +114,8 @@ export class ClaudeNativeSettings {
   /** @param {Value} value @returns {Promise<Value>} */
   async read(value) {
     if (this.closed) throw fail('native-bridge-deactivated');
-    const query = value.query, base = this.options.scope(value);
-    if (!query || !label(base.queryToken) || !label(base.cliSessionId)) throw fail('native-settings-query-unavailable');
+    const query = value?.query, base = this.options.scope(value), expectedMode = this.kind === 'cowork' ? 'chat' : 'code';
+    if (!query || !base || typeof base !== 'object' || base.appMode !== expectedMode || !label(base.queryToken) || !label(base.cliSessionId)) throw fail('native-settings-query-unavailable');
     this.options.assertCurrent(value, query, base);
     const before = this.record(value), mode = this.options.mode();
     const reads = await Promise.allSettled([
@@ -96,6 +126,7 @@ export class ClaudeNativeSettings {
       boundedRead(() => this.options.api().getSession(value.sessionId, this.kind === 'cowork' ? { metadataOnly: true } : undefined)),
     ]);
     this.options.assertCurrent(value, query, base);
+    if (!sameScopeIdentity(base, this.options.scope(value))) throw fail('stale-query');
     if (hash(before) !== hash(this.record(value))) throw fail('settings-conflict');
     const result = (/** @type {number} */ index) => reads[index].status === 'fulfilled' ? reads[index].value : null;
     const models = claudeNativeModels(result(0), mode, this.kind), commands = claudeNativeCommands(result(1));
@@ -198,9 +229,7 @@ export class ClaudeNativeSettings {
       if (observation.superseded) throw fail('settings-superseded', observation.reached);
       return observation;
     } catch (error) {
-      const e = /** @type {Error & {effectMayHaveOccurred?:boolean}} */ (gateFailure ?? (error instanceof Error ? error : fail('native-settings-operation-failed')));
-      if (observation.reached) e.effectMayHaveOccurred = true;
-      throw e;
+      throw preserveEffect(gateFailure ?? error, observation.reached);
     } finally {
       cleanup();
     }
@@ -211,11 +240,16 @@ export class ClaudeNativeSettings {
     if (this.options.readOnly) throw fail('native-read-only');
     if (this.kind !== 'code' || this.options.writeVerified !== true && this.options.probeIdleEffort !== true) throw fail('native-settings-gate-unverified');
     if (this.busy) throw fail('native-settings-operation-busy');
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw fail('invalid-settings');
     const expected = nativeSettingsScope(payload.expectedScope);
-    if (!expected || !label(payload.model) || payload.reasoningEffort !== null && !EFFORTS.includes(payload.reasoningEffort)
+    if (!expected || !label(payload.model) || !label(payload.expectedModel)
+      || payload.reasoningEffort !== null && !EFFORTS.includes(payload.reasoningEffort)
+      || payload.expectedReasoningEffort !== null && !EFFORTS.includes(payload.expectedReasoningEffort)
       || Object.keys(payload).some(key => !['model', 'reasoningEffort', 'expectedModel', 'expectedReasoningEffort', 'expectedScope'].includes(key))) throw fail('invalid-settings');
     this.busy = true; let effect = false;
     try {
+      const liveScope = this.options.scope(value);
+      if (expected.appMode !== 'code' || !sameScopeIdentity(expected, liveScope)) throw fail('settings-conflict');
       const before = await this.read(value), current = before.model.current;
       const probe = this.options.probeIdleEffort === true && this.options.writeVerified !== true;
       const writable = before.model.available || probe && before.model.idleHeld && before.model.catalogComplete && !!current;
@@ -256,9 +290,7 @@ export class ClaudeNativeSettings {
         ...(complete ? { nativeSettingsEvidence: { version: 1, expectedScope: expected, confirmedScope: controls.scope,
           modelAckConfirmed: true, effortAckConfirmed: true, effectiveModel: effective.model, effectiveReasoningEffort: effective.reasoningEffort } } : {}) };
     } catch (error) {
-      const e = error instanceof Error ? /** @type {Error & {effectMayHaveOccurred?:boolean}} */ (error) : fail('native-settings-operation-failed');
-      if (effect) e.effectMayHaveOccurred = true;
-      throw e;
+      throw preserveEffect(error, effect);
     } finally { this.busy = false; }
   }
   /** Revoke pending owner operations; late native replies cannot republish ACKs. */

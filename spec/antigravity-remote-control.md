@@ -25,6 +25,9 @@ Desktop. Other historical harnesses and window/AX adapters remain deferred.
   to private observer leases. Default distribution values remain unchanged.
 - A configured endpoint must prove its owner identity before discovery advertises
   Antigravity. Missing, stale or unverified owners produce unavailable state.
+- Original desktop `language_server` discovery ignores `language_server multicall ...`
+  CLI helper subprocesses while preserving strict single-owner `--csrf_token`
+  and parent-app verification.
 
 ## Transport and control
 
@@ -59,6 +62,9 @@ Phone traffic uses the existing sealed Codelync transport. Local Antigravity
 credentials stay on the Mac. No unauthenticated native service is exposed publicly.
 Registration, selected-conversation snapshots, tool/status streaming and commands
 must retain the source application, host, owner generation and conversation ID.
+Concurrent runtime discovery probes coalesce into one active check, and
+disposing the RPC client fails closed and aborts/cancels all pending or active
+summary streams.
 
 Each mutation is journaled under its original command ID before native dispatch.
 Unknown outcomes are queried, never automatically replayed. If the native service
@@ -109,7 +115,11 @@ Selected large trajectories start with a native suffix of at most 16 steps using
 `GetCascadeTrajectorySteps.stepOffset` and the original index's absolute count.
 The request never invents an end/count field. Earlier history extends that native
 offset backwards in small batches; a partial suffix is never reported as complete
-history. Row IDs and orders retain absolute native step indexes. A prefix whose
+history. Resident summary merging preserves monotonic `max(base.stepCount, streamHeader.stepCount)`
+within the same `trajectoryId` when the reactive summary stream lags behind
+unary `GetAllCascadeTrajectories`, and `snapshot()` performs one post-flight
+fresh resident read if its initial post-step `list({ history: false, fresh: true })`
+coalesced onto an earlier in-flight resident read. Row IDs and orders retain absolute native step indexes. A prefix whose
 user turn is outside the loaded suffix has an observation grouping ID but no
 inferred current control turn or cancel permission. Native roster/run status remain
 independent index observations. Oversized suffixes can reduce the requested suffix;
@@ -151,6 +161,10 @@ search unrelated computer directories.
 Codelync offers both proven session sources, identifies each application in the
 conversation picker, and preserves drafts independently. Foreground status
 synchronization stays separate from selected conversation history loading.
+Live stream deletions confirmed by a matching owner proof remove cached base
+headers so reconnects cannot resurrect deleted conversations or subagents, and
+idle selected-session poll hints include own-trajectory status/waiting/termination
+markers while still skipping history reloads when only child/aggregate status changes.
 Tool activity, terminal errors and pending requests are projected from native state.
 
 Each selected parent conversation provides a subagent list from the original

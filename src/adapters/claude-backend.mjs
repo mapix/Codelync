@@ -269,7 +269,7 @@ export class ClaudeDesktopBackend {
   /** @param {string} id @param {{expectedHostId?:string}} [context] */
   async snapshot(id, context = {}) {
     const reply = projectClaudeNativeTranscript(await this.rpc.call(this.namespace + '.snapshot', { sessionId: id, limit: 32 }, { expectedHostId: context.expectedHostId, collection: this.collection }));
-    const view = this.inputCapabilities(claudeTranscriptView(reply)); this.rememberOwner(id, view.ownerGeneration); const prior = this.sessions.get(id);
+    const view = this.inputCapabilities(claudeTranscriptView(reply)); this.rememberOwner(id, view.ownerGeneration); const prior = this.sessions.get(JSON.stringify([context.expectedHostId ?? null, id]));
     await this.attachTasks(id, view, context);
     if (prior && prior.generation === view.ownerGeneration) { prior.transcript = reply; prior.view = view; }
     this.rememberHistory(id, reply);
@@ -304,14 +304,17 @@ export class ClaudeDesktopBackend {
   async completeSnapshot(id, context = {}) { return { ...await this.historyPage(id, context), status: 'unknown', currentTurnId: null, requests: [] }; }
   /** @param {string} id @param {(view:Value)=>void} callback @param {{expectedHostId?:string}} [context] */
   async subscribe(id, callback, context = {}) {
-    let session = this.sessions.get(id);
-    if (!session) { session = { callbacks: new Set(), events: [], cursor: 0, generation: null, running: false, timer: null, closed: false, stamp: null }; this.sessions.set(id, session); }
-    session.callbacks.add(callback); const current = session;
+    const key = JSON.stringify([context.expectedHostId ?? null, id]);
+    let session = this.sessions.get(key);
+    if (!session) { session = { callbacks: new Set(), events: [], cursor: 0, generation: null, running: false, timer: null, closed: false, stamp: null, view: null }; this.sessions.set(key, session); }
+    let delivered = false;
+    const notify = (/** @type {Value} */ view) => { delivered = true; callback(view); };
+    session.callbacks.add(notify); const current = session;
     const poll = async () => {
       if (current.closed || current.running || this.disposed) return; current.running = true;
       try {
         const events = await this.rpc.call(this.namespace + '.events', { sessionId: id, cursor: current.cursor }, { expectedHostId: context.expectedHostId, collection: this.collection });
-        if (events.ownerGeneration !== current.generation || events.executionToken !== current.executionToken || events.resetRequired) { current.events = []; current.cursor = 0; current.transcript = null; current.generation = events.ownerGeneration; current.executionToken = events.executionToken; }
+        if (events.ownerGeneration !== current.generation || events.executionToken !== current.executionToken || events.resetRequired) { current.events = []; current.cursor = 0; current.transcript = null; current.view = null; current.generation = events.ownerGeneration; current.executionToken = events.executionToken; }
         current.cursor = events.cursor;
         const transcriptChanged = (events.events ?? []).some((/** @type {Value} */ event) => !taskMessage(event.message));
         for (const event of events.events ?? []) if (event.message && !taskMessage(event.message)) current.events.push(event.message);
@@ -321,14 +324,18 @@ export class ClaudeDesktopBackend {
         const view = this.inputCapabilities(claudeTranscriptView(current.transcript, current.events)); this.rememberOwner(id, view.ownerGeneration);
         await this.attachTasks(id, view, context);
         if (view.contentStamp !== current.stamp) { current.stamp = view.contentStamp; current.view = view; for (const listener of current.callbacks) listener(structuredClone(view)); }
+        else current.view = view;
       } catch {
         current.transcript = null; current.events = []; current.cursor = 0;
-        if (current.stamp !== 'unavailable') { current.stamp = 'unavailable'; for (const listener of current.callbacks) listener({ rows: [], requests: [], status: 'owner-unavailable', currentTurnId: null, ownerGeneration: null, historyComplete: false }); }
+        const unavailable = { rows: [], requests: [], status: 'owner-unavailable', currentTurnId: null, ownerGeneration: null, historyComplete: false };
+        current.view = unavailable;
+        if (current.stamp !== 'unavailable') { current.stamp = 'unavailable'; for (const listener of current.callbacks) listener(structuredClone(unavailable)); }
       } finally { current.running = false; }
     };
     await poll();
+    if (!delivered && current.view && !current.closed) notify(structuredClone(current.view));
     if (!current.timer) { current.timer = setInterval(() => { void poll(); }, this.pollMs); current.timer.unref(); }
-    return () => { current.callbacks.delete(callback); if (!current.callbacks.size) { current.closed = true; clearInterval(current.timer); this.sessions.delete(id); } };
+    return () => { if (current.closed) return; current.callbacks.delete(notify); if (!current.callbacks.size) { current.closed = true; clearInterval(current.timer); this.sessions.delete(key); } };
   }
   /** @param {string} id @param {string} action @param {Value} payload @param {string} commandId @param {{expectedGeneration?:string|null,expectedHostId?:string,expectedQueryToken?:string|null}} [context] */
   async command(id, action, payload, commandId, context = {}) {

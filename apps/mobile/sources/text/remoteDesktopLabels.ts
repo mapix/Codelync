@@ -19,8 +19,11 @@ const en = {
     viewChanged: 'The desktop picture changed. Wait for the latest picture before continuing.',
     preferredRoute: 'Connect the selected route before controlling your Mac.',
     inputBusy: 'Too many inputs are waiting. Reconnect to control your Mac.',
+    keyEscape: 'Escape', keyTab: 'Tab', keyEnter: 'Return', keyBackspace: 'Delete',
+    keyLeft: 'Left arrow', keyUp: 'Up arrow', keyDown: 'Down arrow', keyRight: 'Right arrow',
+    keyCommand: 'Command', keyShift: 'Shift',
 };
-const zh = {
+const zh: typeof en = {
     previousDesktop: '上一桌面', nextDesktop: '下一桌面', overview: '桌面总览',
     spaceUnconfirmed: '未确认桌面切换，请查看画面，或通过桌面总览选择。',
     spaceShortcut: '请在 Mac 系统设置 → 键盘 → 键盘快捷键 → Mission Control 中启用桌面切换快捷键。',
@@ -36,6 +39,29 @@ const zh = {
     viewChanged: '桌面画面已变化，请等待最新画面后继续。',
     preferredRoute: '请先接通所选连接方式，再控制 Mac。',
     inputBusy: '输入等待过多，请重新连接。',
+    keyEscape: 'Esc 键', keyTab: 'Tab 键', keyEnter: '回车', keyBackspace: '退格',
+    keyLeft: '左方向键', keyUp: '上方向键', keyDown: '下方向键', keyRight: '右方向键',
+    keyCommand: 'Command', keyShift: 'Shift',
+};
+const zhHant: typeof en = {
+    previousDesktop: '上一個桌面', nextDesktop: '下一個桌面', overview: '桌面總覽',
+    spaceUnconfirmed: '未確認桌面切換，請查看畫面，或透過桌面總覽選擇。',
+    spaceShortcut: '請在 Mac 系統設定 → 鍵盤 → 鍵盤快速鍵 → Mission Control 中啟用桌面切換快速鍵。',
+    exit: '結束遠端桌面', back: '返回', controls: '控制', showControls: '顯示控制', connection: '連線狀態', connected: '已連線', desktops: '桌面', zoomIn: '放大', zoomOut: '縮小',
+    settings: '畫面', close: '關閉', fullscreen: '全螢幕', exitFullscreen: '結束全螢幕', pointer: '指標', disconnecting: '正在中斷連線…',
+    title: '遠端桌面', connect: '連線', disconnect: '中斷連線', refresh: '重新整理', connecting: '正在連線…', checking: '正在檢查 Mac…', notConnected: '未連線', inputChecking: '正在確認控制權限…', waiting: '等待畫面…',
+    clarity: '清晰度', smoothness: '流暢度', standard: '標準', high: '高畫質', ultra: '超高畫質', display: '顯示器',
+    text: '輸入文字', send: '輸入', zoom: '縮放', fit: '符合畫面', drag: '拖曳', rightClick: '右鍵', scroll: '捲動', keyboard: '鍵盤',
+    disabled: '請在 Mac 上開啟遠端桌面。', unavailable: '無法連線至 Mac，請檢查連線後再試。',
+    permission: '請在 Mac 上允許螢幕錄製。', inputPermission: '請在 Mac 上允許輔助使用以進行控制。', locked: '請先解鎖 Mac。',
+    failed: '桌面連線失敗，請檢查 Mac 上的媒體 Relay。', inUse: '已有桌面連線，請先中斷。', changed: '顯示器或連線已變更，請重新連線。',
+    uncertain: '操作結果待確認，請查看桌面後再決定是否重複操作。',
+    viewChanged: '桌面畫面已變更，請等待最新畫面後繼續。',
+    preferredRoute: '請先接通所選連線方式，再控制 Mac。',
+    inputBusy: '輸入等待過多，請重新連線。',
+    keyEscape: 'Esc 鍵', keyTab: 'Tab 鍵', keyEnter: '換行', keyBackspace: '退格',
+    keyLeft: '左方向鍵', keyUp: '上方向鍵', keyDown: '下方向鍵', keyRight: '右方向鍵',
+    keyCommand: 'Command', keyShift: 'Shift',
 };
 const ja: typeof en = {
     previousDesktop: '前のデスクトップ', nextDesktop: '次のデスクトップ', overview: 'Mission Control',
@@ -55,9 +81,12 @@ const ja: typeof en = {
     viewChanged: 'デスクトップの映像が変わりました。最新の映像を待ってから続けてください。',
     preferredRoute: 'Mac を操作する前に、選択した接続を確立してください。',
     inputBusy: '入力待ちが多すぎます。Mac を操作するには再接続してください。',
+    keyEscape: 'エスケープ', keyTab: 'タブ', keyEnter: '改行', keyBackspace: '削除',
+    keyLeft: '左矢印', keyUp: '上矢印', keyDown: '下矢印', keyRight: '右矢印',
+    keyCommand: 'コマンド', keyShift: 'シフト',
 };
 export function remoteDesktopLabelsFor(language: SupportedLanguage) {
-    return language === 'ja' ? ja : language.startsWith('zh') ? zh : en;
+    return language === 'ja' ? ja : language === 'zh-Hant' ? zhHant : language.startsWith('zh') ? zh : en;
 }
 export function remoteDesktopLabels() { return remoteDesktopLabelsFor(getCurrentLanguage()); }
 export function remoteDesktopError(code: string) {

@@ -62,6 +62,8 @@ export function antigravitySummaryIdleConfirmed(summary) {
     && !antigravitySummaryHasWork(summary);
 }
 
+const compareId = (/** @type {string} */ a, /** @type {string} */ b) => (a < b ? -1 : a > b ? 1 : 0);
+
 /** Build once per native index so multiple ancestors do not rescan all metadata.
  * @param {unknown} summaries */
 export function antigravitySubagentIndex(summaries) {
@@ -72,11 +74,13 @@ export function antigravitySubagentIndex(summaries) {
     const child = antigravitySubagentIdentity(summary);
     if (!child.isSubagent || !child.parentId) continue;
     if (!identity(id)) throw new BridgeError('antigravity-invalid-response', 'The native subagent identity is invalid.', 503);
+    if (child.parentId === id) continue;
     const entry = { id, parentId: child.parentId, name: child.name || 'Antigravity subagent', status: antigravitySubagentStatus(summary),
       observedAt: typeof summary.lastModifiedTime === 'string' ? Date.parse(summary.lastModifiedTime) || 0 : 0,
       statusSource: summary.nativeSummaryAvailable === true ? 'native-summary-stream' : summary.nativeActivityInvalidated === true ? 'unknown' : 'native-cascade-summary' };
     const rows = children.get(child.parentId) ?? []; rows.push(entry); children.set(child.parentId, rows);
   }
+  for (const rows of children.values()) if (rows.length > 1) rows.sort((a, b) => compareId(a.id, b.id));
   return { children };
 }
 
@@ -87,6 +91,15 @@ export function projectAntigravitySubagentTree(index, parentConversationId, host
   if (!identity(parentConversationId) || !/^local:antigravity:[a-f0-9]{64}$/.test(hostId) || !identity(ownerGeneration)) throw new BridgeError('source-epoch-changed', 'The native subagent source identity is unavailable.', 409);
   /** @type {Value[]} */ const rows = [];
   const visited = new Set([parentConversationId]), queue = [{ id: parentConversationId, depth: 0 }];
+  /** @type {Map<string,string>} */ const parentOf = new Map();
+  const isAncestor = (/** @type {string} */ candidate, /** @type {string} */ node) => {
+    /** @type {string|undefined} */ let cursor = node;
+    for (let steps = 0; cursor !== undefined && steps <= visited.size; steps++) {
+      if (cursor === candidate) return true;
+      cursor = parentOf.get(cursor);
+    }
+    return false;
+  };
   let depthBounded = false;
   for (let at = 0; at < queue.length; at += 1) {
     const parent = queue[at];
@@ -95,8 +108,9 @@ export function projectAntigravitySubagentTree(index, parentConversationId, host
         if (parent.id !== parentConversationId) throw new BridgeError('antigravity-invalid-response', 'The native subagent ancestry loops through its selected ancestor.', 503);
         continue;
       }
+      if (isAncestor(child.id, parent.id)) throw new BridgeError('antigravity-invalid-response', 'The native subagent ancestry contains a cycle.', 503);
       if (visited.has(child.id)) continue;
-      visited.add(child.id); const depth = parent.depth + 1;
+      visited.add(child.id); parentOf.set(child.id, parent.id); const depth = parent.depth + 1;
       queue.push({ id: child.id, depth });
       if (depth > 128) { depthBounded = true; continue; }
       rows.push({ id: child.id, name: child.name, app: 'antigravity', nativeConversationId: child.id,
@@ -105,7 +119,7 @@ export function projectAntigravitySubagentTree(index, parentConversationId, host
     }
   }
   const rank = /** @type {Record<string,number>} */ ({ waiting: 0, running: 1, unknown: 2, idle: 3, failed: 4, stopped: 4 });
-  rows.sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2) || a.depth - b.depth || b.observedAt - a.observedAt || a.id.localeCompare(b.id));
+  rows.sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2) || a.depth - b.depth || b.observedAt - a.observedAt || compareId(a.id, b.id));
   const total = visited.size - 1, truncated = total > MAX_SUBAGENTS || depthBounded;
   const allRows = rows.map(row => { const value = { ...row }; delete value.observedAt; return value; });
   return { rows: allRows.slice(0, MAX_SUBAGENTS), allRows, total, truncated, complete: !truncated,

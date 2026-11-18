@@ -108,6 +108,13 @@ conversations only.
   root. The underlying parent facts remain unchanged.
 - Search exposes matching child sessions even when project/parent folds are
   closed, with the same search fields and case normalization as before.
+- `buildCodelyncBrowserRows` evaluates `isCodelyncNativeSession` and source-key
+  projection in a single pass over `sessions`, counts ordinary conversations
+  inline during grouping, and defers parent-key resolution and ancestor graph
+  traversal to subagents, search results, or expanded project groups.
+- `useVisibleSessionListViewData` returns the underlying list-view array and
+  project items unchanged without cloning `{ ...item, project }` entries when
+  `hideArchivedSessions` is `false` or when a project contains no archived rows.
 
 ## Regression evidence
 

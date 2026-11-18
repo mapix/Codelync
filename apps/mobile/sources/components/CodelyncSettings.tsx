@@ -25,6 +25,7 @@ export const CodelyncSettings = React.memo(function CodelyncSettings() {
     const version = [Application.nativeApplicationVersion || Constants.expoConfig?.version, Application.nativeBuildVersion].filter(Boolean).join(' · ');
     return <CodelyncSettingsView snapshot={snapshot} themePreference={themePreference} languageLabel={languageLabel} version={version}
         remoteDesktopEnabled={remoteDesktopEnabled} onRemoteDesktopChange={setRemoteDesktopEnabled}
+        scanBusy={Boolean(pairing.busy)}
         onSelectConnection={selectConnection} onScan={() => { void pairing.scan(); }} onLanguage={() => router.push('/settings/language')}
         onNavigate={page => router.navigate(codelyncTopLevelRoute(page))}
         onThemeChange={preference => { setThemePreference(preference); applyAppThemePreference(preference); }} />;

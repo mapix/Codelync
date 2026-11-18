@@ -35,6 +35,28 @@ export type ToolsGroupItem = {
 export type DisplayItem = TextItem | AgentWorkGroupItem | ToolsGroupItem;
 type GroupingOptions = { collapseCurrentTurn?: boolean; collapseAgentWork?: boolean; adjacentTools?: boolean; sessionId?: string };
 
+type CachedGrouping = {
+    sessionId: string | undefined;
+    enabled: boolean;
+    collapseCurrentTurn: boolean;
+    collapseAgentWork: boolean | undefined;
+    adjacentTools: boolean | undefined;
+    messages: Message[];
+    items: DisplayItem[];
+};
+
+function isSettledUserMessage(message: Message): boolean {
+    return message.kind === 'user-text' && !message.pending && message.sendError === undefined;
+}
+
+function findSplitItemIndex(items: readonly DisplayItem[], anchor: Message): number {
+    for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        if (item.type === 'message' && item.message === anchor) return i;
+    }
+    return -1;
+}
+
 /**
  * The messages array arrives newest-first (that is how sync stores it); the
  * returned display items are chronological, ready for a top-to-bottom list.
@@ -52,11 +74,47 @@ export function useGroupedMessages(
 ): DisplayItem[] {
     const collapseCurrentTurn = options.collapseCurrentTurn ?? true;
     const { collapseAgentWork, adjacentTools, sessionId } = options;
-    const previous = React.useRef<{ sessionId: string | undefined; items: DisplayItem[] }>({ sessionId, items: [] });
+    const previous = React.useRef<CachedGrouping | null>(null);
     return React.useMemo(() => {
+        const prev = previous.current;
+        if (prev
+            && prev.sessionId === sessionId
+            && prev.enabled === enabled
+            && prev.collapseCurrentTurn === collapseCurrentTurn
+            && prev.collapseAgentWork === collapseAgentWork
+            && prev.adjacentTools === adjacentTools
+            && prev.messages.length > 0
+            && messages.length > 0) {
+            let suffix = 0;
+            while (suffix < messages.length
+                && suffix < prev.messages.length
+                && messages[messages.length - 1 - suffix] === prev.messages[prev.messages.length - 1 - suffix]) {
+                suffix++;
+            }
+            if (suffix >= 2) {
+                const start = messages.length - suffix;
+                for (let currIdx = start; currIdx < messages.length - 1; currIdx++) {
+                    if (!isSettledUserMessage(messages[currIdx])) continue;
+                    const splitIdx = findSplitItemIndex(prev.items, messages[currIdx]);
+                    if (splitIdx > 0) {
+                        const headItems = groupMessagesForDisplay(messages.slice(0, currIdx + 1), enabled, {
+                            collapseCurrentTurn,
+                            collapseAgentWork,
+                            adjacentTools,
+                            sessionId,
+                        });
+                        const stableHead = retainToolsGroupIds(headItems, prev.items.slice(splitIdx));
+                        const combined = [...prev.items.slice(0, splitIdx), ...stableHead];
+                        previous.current = { sessionId, enabled, collapseCurrentTurn, collapseAgentWork, adjacentTools, messages, items: combined };
+                        return combined;
+                    }
+                    break;
+                }
+            }
+        }
         const items = groupMessagesForDisplay(messages, enabled, { collapseCurrentTurn, collapseAgentWork, adjacentTools, sessionId });
-        const stable = retainToolsGroupIds(items, previous.current.sessionId === sessionId ? previous.current.items : []);
-        previous.current = { sessionId, items: stable };
+        const stable = retainToolsGroupIds(items, prev && prev.sessionId === sessionId ? prev.items : []);
+        previous.current = { sessionId, enabled, collapseCurrentTurn, collapseAgentWork, adjacentTools, messages, items: stable };
         return stable;
     }, [messages, enabled, collapseCurrentTurn, collapseAgentWork, adjacentTools, sessionId]);
 }
@@ -151,15 +209,34 @@ export function ordinaryToolRunWindowEnd(messages: readonly Message[], requested
 
 /** Preserve a summary's list key when live/history extends its original rows. */
 export function retainToolsGroupIds(items: DisplayItem[], previous: readonly DisplayItem[]): DisplayItem[] {
-    const oldGroups = previous.filter((item): item is ToolsGroupItem => item.type === 'tools-group');
+    if (!previous.length) return items;
+    const oldByAnchor = new Map<string, ToolsGroupItem>();
+    for (let i = 0; i < previous.length; i++) {
+        const item = previous[i];
+        if (item.type === 'tools-group' && !oldByAnchor.has(item.anchorId)) {
+            oldByAnchor.set(item.anchorId, item);
+        }
+    }
+    if (!oldByAnchor.size) return items;
     const used = new Set<string>();
-    return items.map(item => {
+    let changed = false;
+    const result = items.map(item => {
         if (item.type !== 'tools-group') return item;
-        const memberIds = new Set(item.messages.map(message => message.id));
-        const old = oldGroups.find(group => !used.has(group.id) && memberIds.has(group.anchorId));
+        let old: ToolsGroupItem | undefined;
+        for (let i = 0; i < item.messages.length; i++) {
+            const candidate = oldByAnchor.get(item.messages[i].id);
+            if (candidate && !used.has(candidate.id)) {
+                old = candidate;
+                break;
+            }
+        }
         if (!old) return item;
-        used.add(old.id); return old.id === item.id ? item : { ...item, id: old.id, anchorId: old.anchorId };
+        used.add(old.id);
+        if (old.id === item.id) return item;
+        changed = true;
+        return { ...item, id: old.id, anchorId: old.anchorId };
     });
+    return changed ? result : items;
 }
 
 function collectAgentWorkGroups(messages: Message[], turnOf: number[], collapseCurrentTurn: boolean): Array<{

@@ -1,7 +1,7 @@
 {
   "name": "codelync",
-  "version": "1.0.0",
-  "codelyncBuild": "2026111705",
+  "version": "1.0.1",
+  "codelyncBuild": "2026111801",
   "private": true,
   "type": "module",
   "description": "Codelync phone companion for existing Codex, Antigravity Desktop and Claude Desktop sessions in Gateway setups",

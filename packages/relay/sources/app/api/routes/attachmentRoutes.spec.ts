@@ -1,28 +1,34 @@
 import fastify from "fastify";
 import { serializerCompiler, validatorCompiler, ZodTypeProvider } from "fastify-type-provider-zod";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_CAPPED_ATTACHMENT_BYTES } from "@/storage/cappedAttachments";
 import { type Fastify } from "../types";
 
 const {
     state,
     dbMock,
     filesMock,
-    fsMock,
     resetState,
     seedSession
 } = vi.hoisted(() => {
     const state = {
         sessions: [] as Array<{ id: string; accountId: string }>,
         uploads: new Map<string, Buffer>(),
+        localDir: "/tmp/test-files",
         useLocalStorage: true,
         s3PostUrl: "https://s3.test/post-url",
         s3GetUrl: "https://s3.test/get-url",
         s3PolicyMaxLength: 0,
     };
 
-    const resetState = () => {
+    const resetState = async () => {
         state.sessions = [];
         state.uploads = new Map();
+        state.localDir = await mkdtemp(path.join(tmpdir(), "codelync-attachment-routes-"));
+        await mkdir(path.join(state.localDir, "sessions/s1/attachments"), { recursive: true });
         state.useLocalStorage = true;
         state.s3PolicyMaxLength = 0;
     };
@@ -67,32 +73,20 @@ const {
         },
         s3bucket: "test-bucket",
         isLocalStorage: vi.fn(() => state.useLocalStorage),
-        getLocalFilesDir: vi.fn(() => "/tmp/test-files"),
+        getLocalFilesDir: vi.fn(() => state.localDir),
         putLocalFile: vi.fn(async (filePath: string, data: Buffer) => {
             state.uploads.set(filePath, data);
+            const fullPath = path.join(state.localDir, filePath);
+            await mkdir(path.dirname(fullPath), { recursive: true });
+            await writeFile(fullPath, data);
         }),
     };
 
-    const fsMock = {
-        existsSync: vi.fn((p: string) => {
-            const rel = p.replace(/^\/tmp\/test-files\//, "");
-            return state.uploads.has(rel);
-        }),
-        readFileSync: vi.fn((p: string) => {
-            const rel = p.replace(/^\/tmp\/test-files\//, "");
-            return state.uploads.get(rel) ?? Buffer.alloc(0);
-        }),
-    };
-
-    return { state, dbMock, filesMock, fsMock, resetState, seedSession };
+    return { state, dbMock, filesMock, resetState, seedSession };
 });
 
 vi.mock("@/storage/db", () => ({ db: dbMock }));
 vi.mock("@/storage/files", () => filesMock);
-vi.mock("fs", async () => {
-    const actual = await vi.importActual<typeof import("fs")>("fs");
-    return { ...actual, existsSync: fsMock.existsSync, readFileSync: fsMock.readFileSync };
-});
 
 import { attachmentRoutes } from "./attachmentRoutes";
 
@@ -124,9 +118,13 @@ async function createApp() {
 }
 
 describe("attachmentRoutes — request-upload", () => {
-    let app: Fastify;
-    beforeEach(() => { resetState(); });
-    afterEach(async () => { if (app) await app.close(); });
+    let app: Fastify | undefined;
+    beforeEach(async () => { await resetState(); });
+    afterEach(async () => {
+        vi.unstubAllEnvs();
+        if (app) { await app.close(); app = undefined; }
+        await rm(state.localDir, { recursive: true, force: true });
+    });
 
     it("returns 200 with .enc ref + method=PUT in local mode for the session owner", async () => {
         seedSession("s1", "u1");
@@ -209,9 +207,13 @@ describe("attachmentRoutes — request-upload", () => {
 });
 
 describe("attachmentRoutes — PUT (local-mode upload)", () => {
-    let app: Fastify;
-    beforeEach(() => { resetState(); });
-    afterEach(async () => { if (app) await app.close(); });
+    let app: Fastify | undefined;
+    beforeEach(async () => { await resetState(); });
+    afterEach(async () => {
+        vi.unstubAllEnvs();
+        if (app) { await app.close(); app = undefined; }
+        await rm(state.localDir, { recursive: true, force: true });
+    });
 
     it("accepts the encrypted blob from the session owner and stores it under the session prefix", async () => {
         seedSession("s1", "u1");
@@ -274,9 +276,13 @@ describe("attachmentRoutes — PUT (local-mode upload)", () => {
 });
 
 describe("attachmentRoutes — POST request-download", () => {
-    let app: Fastify;
-    beforeEach(() => { resetState(); });
-    afterEach(async () => { if (app) await app.close(); });
+    let app: Fastify | undefined;
+    beforeEach(async () => { await resetState(); });
+    afterEach(async () => {
+        vi.unstubAllEnvs();
+        if (app) { await app.close(); app = undefined; }
+        await rm(state.localDir, { recursive: true, force: true });
+    });
 
     it("returns a server-relative downloadUrl for the session owner in local mode", async () => {
         seedSession("s1", "u1");
@@ -369,14 +375,18 @@ describe("attachmentRoutes — POST request-download", () => {
 });
 
 describe("attachmentRoutes — GET (download)", () => {
-    let app: Fastify;
-    beforeEach(() => { resetState(); });
-    afterEach(async () => { if (app) await app.close(); });
+    let app: Fastify | undefined;
+    beforeEach(async () => { await resetState(); });
+    afterEach(async () => {
+        vi.unstubAllEnvs();
+        if (app) { await app.close(); app = undefined; }
+        await rm(state.localDir, { recursive: true, force: true });
+    });
 
     it("serves the encrypted blob to the session owner in local mode", async () => {
         seedSession("s1", "u1");
         state.useLocalStorage = true;
-        state.uploads.set("sessions/s1/attachments/abc.enc", Buffer.from("payload"));
+        await filesMock.putLocalFile("sessions/s1/attachments/abc.enc", Buffer.from("payload"));
         app = await createApp();
 
         const res = await app.inject({
@@ -387,6 +397,7 @@ describe("attachmentRoutes — GET (download)", () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.headers["content-type"]).toContain("application/octet-stream");
+        expect(res.headers["cache-control"]).toBe("no-store");
         expect(res.rawPayload).toEqual(Buffer.from("payload"));
     });
 
@@ -408,7 +419,7 @@ describe("attachmentRoutes — GET (download)", () => {
     it("returns 404 for non-owner", async () => {
         seedSession("s1", "u1");
         state.useLocalStorage = true;
-        state.uploads.set("sessions/s1/attachments/abc.enc", Buffer.from("payload"));
+        await filesMock.putLocalFile("sessions/s1/attachments/abc.enc", Buffer.from("payload"));
         app = await createApp();
 
         const res = await app.inject({
@@ -443,5 +454,104 @@ describe("attachmentRoutes — GET (download)", () => {
             headers: { "x-user-id": "u1" },
         });
         expect(res.statusCode).toBe(404);
+    });
+
+    it("refuses symlinks, non-regular files, and files above the bounded attachment ceiling on uncapped local GET", async () => {
+        seedSession("s1", "u1");
+        state.useLocalStorage = true;
+        const secretPath = path.join(state.localDir, "outside.txt");
+        await writeFile(secretPath, Buffer.from("secret"));
+        await symlink(secretPath, path.join(state.localDir, "sessions/s1/attachments/link.enc"));
+        await mkdir(path.join(state.localDir, "sessions/s1/attachments/dir.enc"));
+        await writeFile(path.join(state.localDir, "sessions/s1/attachments/huge.enc"), Buffer.alloc(MAX_CAPPED_ATTACHMENT_BYTES + 1));
+        app = await createApp();
+
+        const linkRes = await app.inject({
+            method: "GET",
+            url: "/v1/sessions/s1/attachments/link.enc",
+            headers: { "x-user-id": "u1" },
+        });
+        expect(linkRes.statusCode).toBe(404);
+
+        const dirRes = await app.inject({
+            method: "GET",
+            url: "/v1/sessions/s1/attachments/dir.enc",
+            headers: { "x-user-id": "u1" },
+        });
+        expect(dirRes.statusCode).toBe(503);
+
+        const hugeRes = await app.inject({
+            method: "GET",
+            url: "/v1/sessions/s1/attachments/huge.enc",
+            headers: { "x-user-id": "u1" },
+        });
+        expect(hugeRes.statusCode).toBe(413);
+    });
+});
+
+describe("attachmentRoutes — resolveBaseUrl forwarded header validation", () => {
+    let app: Fastify | undefined;
+    beforeEach(async () => { await resetState(); });
+    afterEach(async () => {
+        vi.unstubAllEnvs();
+        if (app) { await app.close(); app = undefined; }
+        await rm(state.localDir, { recursive: true, force: true });
+    });
+
+    it("accepts validated single/multi-hop forwarded headers and falls back safely on injected headers", async () => {
+        seedSession("s1", "u1");
+        state.useLocalStorage = true;
+        vi.stubEnv("PUBLIC_URL", "");
+        app = await createApp();
+
+        const valid = await app.inject({
+            method: "POST",
+            url: "/v1/sessions/s1/attachments/request-upload",
+            headers: {
+                "x-user-id": "u1",
+                host: "internal:3005",
+                "x-forwarded-host": "relay.example.com, edge.internal",
+                "x-forwarded-proto": "HTTPS, http",
+            },
+            payload: { filename: "pic.png", size: 64 },
+        });
+        expect(valid.statusCode).toBe(200);
+        expect(valid.json().uploadUrl).toMatch(/^https:\/\/relay\.example\.com\/v1\/sessions\/s1\/attachments\//);
+
+        for (const badHeaders of [
+            { host: "trusted.local:3005", "x-forwarded-host": "evil.com/steal?x=", "x-forwarded-proto": "https" },
+            { host: "trusted.local:3005", "x-forwarded-host": "user@evil.com", "x-forwarded-proto": "http" },
+            { host: "trusted.local:3005", "x-forwarded-host": "evil.com:99999", "x-forwarded-proto": "http" },
+            { host: "trusted.local:3005", "x-forwarded-host": "", "x-forwarded-proto": "javascript" },
+        ]) {
+            const res = await app.inject({
+                method: "POST",
+                url: "/v1/sessions/s1/attachments/request-download",
+                headers: { "x-user-id": "u1", ...badHeaders },
+                payload: { ref: "sessions/s1/attachments/abc.enc" },
+            });
+            expect(res.statusCode).toBe(200);
+            const expectedProto = badHeaders["x-forwarded-proto"] === "https" ? "https" : "http";
+            expect(res.json().downloadUrl).toBe(`${expectedProto}://trusted.local:3005/v1/sessions/s1/attachments/abc.enc`);
+        }
+
+        const trailingSlashPublic = await app.inject({
+            method: "POST",
+            url: "/v1/sessions/s1/attachments/request-download",
+            headers: { "x-user-id": "u1", host: "ignored.local" },
+            payload: { ref: "sessions/s1/attachments/abc.enc" },
+        });
+        expect(trailingSlashPublic.statusCode).toBe(200);
+        expect(trailingSlashPublic.json().downloadUrl).toBe("http://ignored.local/v1/sessions/s1/attachments/abc.enc");
+
+        vi.stubEnv("PUBLIC_URL", "https://public.example.com///");
+        const fromEnv = await app.inject({
+            method: "POST",
+            url: "/v1/sessions/s1/attachments/request-download",
+            headers: { "x-user-id": "u1", host: "ignored.local" },
+            payload: { ref: "sessions/s1/attachments/abc.enc" },
+        });
+        expect(fromEnv.statusCode).toBe(200);
+        expect(fromEnv.json().downloadUrl).toBe("https://public.example.com/v1/sessions/s1/attachments/abc.enc");
     });
 });

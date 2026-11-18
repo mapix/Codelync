@@ -7,15 +7,16 @@ Do not post pairing URLs, credentials, conversation bodies, private screenshots
 or provisioning profiles in public issues. Include the Codelync version,
 affected boundary and a minimal synthetic reproduction.
 
-Codelync is an independent preview project, not an OpenAI product. A review,
-signature or notarization is evidence for a particular release; none proves
-that every future configuration is risk-free.
+Codelync is an independent preview project, not an official OpenAI, Anthropic
+or Google product. A review, signature or notarization is evidence for a
+particular release; none proves that every future configuration is risk-free.
 
 ## What you authorize when pairing
 
 - A paired phone is a trusted controller of the Mac's Codelync account and its
-  exposed Codex sessions. There is currently no separate per-project or
-  per-session ACL. Pair only phones you control and trust.
+  exposed desktop sessions (Codex, Antigravity Desktop and Claude Desktop
+  within each owner's confirmed capabilities). There is currently no separate
+  per-project or per-session ACL. Pair only phones you control and trust.
 - QR invitations contain a random 256-bit invitation and a pinned Mac public
   key. The encrypted exchange binds the response to one phone public key.
   Unused invitations expire after three minutes. Same-phone acknowledgment
@@ -23,8 +24,9 @@ that every future configuration is risk-free.
 - Revoke a lost phone from the Mac App. Revocation is persisted before its
   owned gateway sockets are closed. Previously downloaded history on that
   phone is not remotely erased.
-- Original Codex owns the session, runtime and command admission. Codelync
-  does not launch a replacement model runner or modify/restart Codex.
+- The original desktop applications (Codex, Antigravity Desktop and Claude
+  Desktop) own their sessions, runtimes and command admission. Codelync does
+  not launch a replacement model runner or modify/restart those desktop apps.
   Unknown outcomes retain command identity and are not automatically replayed.
 
 ## Encryption, storage and metadata
@@ -80,8 +82,9 @@ budget; connection count, body size, header time and request time are bounded.
 
 Native operations preserve source/host identity, owner generation, leases,
 request ordering and receipt fencing. Missing or unsupported native state is
-unconfirmed, never an invented idle state. The native desktop interface can
-change across Codex versions; unsupported versions must fail visibly.
+unconfirmed, never an invented idle state. The native desktop interfaces can
+change across desktop application versions; unsupported versions must fail
+visibly.
 
 ## Dependency review
 
@@ -99,8 +102,15 @@ advisory allowlist.
 
 `pnpm security:release` retains those raw counts, verifies the configured patch,
 runs its malformed-input regressions, and blocks every other high/critical
-advisory. Its two specific reviewed exceptions are GHSA-5p2g-fcmc-qvqq and
-GHSA-w3rx-r6r6-pgpr; they do not exempt new findings in the same package.
+advisory unless a reviewed upstream finding is strictly confined to build-only
+tooling. Its two specific reviewed exceptions are GHSA-5p2g-fcmc-qvqq and
+GHSA-w3rx-r6r6-pgpr; they do not exempt new findings in the same package. For
+GHSA-fc5q-39xc-vjpf (`picomatch` single-branch extglob ReDoS, which has no
+upstream patched release yet), `pnpm security:release` verifies every reported
+`picomatch` path is rooted under `apps/mobile`'s build-time `@expo/cli` or
+`@expo/metro` tooling (absent from the shipped Mac bundle, relay, wire, and
+compiled iOS bundle), records it under `buildOnlyAdvisories`, and still blocks
+publication if `picomatch` appears in any shipped runtime path.
 
 Remaining moderate stream-json findings concern the optional MinIO backend.
 The distributed Mac uses local file storage and clears inherited S3 host/key

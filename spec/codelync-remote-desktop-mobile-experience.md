@@ -42,9 +42,14 @@ continues to have no bottom navigation.
 - Put pointer modes, zoom, display/quality selection, Spaces and disconnect in
   secondary expandable panels. All touch targets are at least 44 points.
 - Expanded panels stay inside safe areas, scroll when necessary, and do not
-  intercept picture gestures outside their own bounds. Only one panel is open
-  at a time. The fullscreen action hides controls rather than opening another
-  native modal containing another video view; a visible handle restores them.
+  intercept picture gestures outside their own bounds. On compact landscape
+  viewports (`height < 460pt`), panel headers and content padding tighten while
+  preserving at least `44pt` touch targets, single-line panel titles and menu
+  labels truncate cleanly without hiding detail values or chevrons, and the
+  disconnected empty state scrolls cleanly if needed so it never clips behind
+  the bottom dock. Only one panel is open at a time. The fullscreen action hides
+  controls rather than opening another native modal containing another video
+  view; a visible `>= 44pt` restore control brings them back.
 - Keyboard appearance reduces the usable picture area or moves the input
   controls above the keyboard. Preserve correct coordinate mapping after every
   layout change. Keyboard and popover controls cannot obscure each other.
@@ -77,10 +82,12 @@ clears the submitted draft. Rejected or unconfirmed input keeps the draft and
 is never retried automatically. Concurrent edits after submission are retained.
 
 Enter, Tab, Escape, Backspace, arrows and common Command shortcuts have explicit
-accessible controls. They follow the same permission, connection and fresh-view
-guards as pointer input. Respect the current 2,048 UTF-16-unit text limit;
-oversized input is not silently truncated or partially submitted. Local editing
-and keyboard dismissal do not send input to a Desktop session composer.
+accessible controls with localized screen-reader labels across English, Chinese
+and Japanese. The keyboard hint/limit row collapses when empty so normal typing
+preserves picture height. They follow the same permission, connection and
+fresh-view guards as pointer input. Respect the current 2,048 UTF-16-unit text
+limit; oversized input is not silently truncated or partially submitted. Local
+editing and keyboard dismissal do not send input to a Desktop session composer.
 
 Pointer moves and adjacent scrolls in the same direction may coalesce while a
 request is in flight. Keep the scroll total inside the existing 1,200-pixel

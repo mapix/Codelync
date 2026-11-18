@@ -88,7 +88,10 @@ cp .env.example .env
 ```
 
 Edit `.env`. Set domains only for services you will run; leave unused domains
-empty. The configuration script rejects reserved example hostnames.
+empty. The configuration script enforces the `.env` key allowlist (regular
+files only, no control characters) and rejects `.local` and reserved example
+hostnames. `node check.mjs` validates HTTPS endpoints with bounded response
+reads.
 
 | Deployment | `MEDIA_DOMAIN` | `RELAY_DOMAIN` |
 | --- | --- | --- |

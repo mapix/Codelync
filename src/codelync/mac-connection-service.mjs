@@ -19,6 +19,12 @@ import { readLanListenerPorts, writeLanListenerPorts } from './lan-listener-port
 /** @typedef {Record<string,{address:string,family:string|number,internal:boolean}[]|undefined>} Interfaces */
 /** @typedef {{state:string,cloudflared:string,upstream:string,account:Value,devices:import('./device-registry.mjs').DeviceRegistry,invitations:import('./pairing-gateway.mjs').PairingInvitations,daemon:import('./mac-daemon.mjs').CodelyncMacDaemon,metrics?:Pick<import('./gateway-metrics.mjs').GatewayMetrics,'request'|'trackSocket'>,notificationsAvailable?:boolean|(()=>boolean),interfaces?:()=>Interfaces,networkWatchMs?:number,gatewayFactory?:typeof createPairingGateway,managerFactory?:(options:ManagerOptions)=>ConnectionChannelsManager}} Options */
 
+/** @param {unknown} url @returns {string} */
+function localUrlHostname(url) {
+  if (typeof url !== 'string' || !url) return '';
+  try { return new URL(url).hostname; } catch { return ''; }
+}
+
 /** Only real private IPv4 interfaces become LAN listeners; the public entries have separate gateways.
  * @param {Interfaces} [interfaces] */
 export function privateLANAddresses(interfaces = networkInterfaces()) {
@@ -105,7 +111,7 @@ export class MacConnectionService extends EventEmitter {
       const changed = fingerprint !== this.networkFingerprint; this.networkFingerprint = fingerprint;
       if (!this.manager.saved.enabledChannels.includes('local')) return false;
       const entry = this.manager.entries.get('local');
-      const bound = this.manager.candidates().filter(row => row.kind === 'local').map(row => new URL(row.url).hostname).sort();
+      const bound = this.manager.candidates().filter(row => row.kind === 'local').map(row => localUrlHostname(row.url)).sort();
       const complete = JSON.stringify(bound) === fingerprint && (!hosts.length || entry?.state === 'ready');
       if (!changed && complete && !entry?.transport?.needsRefresh?.(hosts)) return false;
       return this.manager.refreshLocal();
@@ -156,7 +162,8 @@ export class MacConnectionService extends EventEmitter {
    * @param {string} path @param {string} method @param {Value} body @param {string} device @returns {Promise<Value>} */
   async peerApi(path, method, body, device, origin = this.primaryOrigin()) {
     if (this.closed || !this.options.devices.publicKey(device)) throw new BridgeError('unknown-device', 'The approved device is unavailable.', 401);
-    const url = new URL(path, 'http://127.0.0.1');
+    let url;
+    try { url = new URL(path, 'http://127.0.0.1'); } catch { throw new BridgeError('invalid-peer-route', 'The peer route is invalid.', 400); }
     if ((!path.startsWith('/api/peer/') && url.pathname !== '/network-probe') || url.origin !== 'http://127.0.0.1') throw new BridgeError('invalid-peer-route', 'The peer route is invalid.', 400);
     if (url.pathname === '/network-probe') {
       if (method !== 'GET') throw new BridgeError('invalid-peer-method', 'The network probe uses GET.', 405);
@@ -176,7 +183,8 @@ export class MacConnectionService extends EventEmitter {
     if (catalog) return this.recent.catalog(params);
     const selected = url.pathname.match(/^\/api\/peer\/sessions\/([^/]+)\/(recent|history)$/u);
     if (!selected || selected[2] === 'recent' && method !== 'POST' || selected[2] === 'history' && method !== 'GET') throw new BridgeError('unsupported-peer-route', 'The peer route is unavailable.', 404);
-    const id = decodeURIComponent(selected[1]);
+    let id;
+    try { id = decodeURIComponent(selected[1]); } catch { throw new BridgeError('invalid-session', 'A selected native session is required.', 400); }
     if (!id || id.length > 200 || id.includes('/')) throw new BridgeError('invalid-session', 'A selected native session is required.');
     if (selected[2] === 'recent' && (!body || Array.isArray(body) || typeof body !== 'object' || Object.keys(body).some(key => !['limit', 'readPolicy'].includes(key))
       || body.readPolicy !== undefined && !['fresh', 'cache-first'].includes(body.readPolicy))) throw new BridgeError('invalid-peer-request', 'The recent request is invalid.');
@@ -220,7 +228,7 @@ export class MacConnectionService extends EventEmitter {
     const currentChannels = () => [...listeners].filter(([, entry]) => entry.gateway.listening)
       .map(([host, entry]) => ({ id: 'lan_' + createHash('sha256').update(host).digest('hex').slice(0, 16), kind: /** @type {'local'} */ ('local'), url: entry.origin, label: 'Local network' })).sort((a, b) => a.id.localeCompare(b.id));
     const transport = Object.assign(new EventEmitter(), { channels: /** @type {{id:string,kind:'local',url:string,label:string}[]} */ ([]),
-      needsRefresh: (/** @type {string[]} */ hosts) => hosts.some(host => !listeners.get(host)?.gateway.listening) || [...listeners].some(([host]) => !hosts.includes(host)),
+      needsRefresh: (/** @type {string[]} */ hosts) => closed || !Array.isArray(hosts) || hosts.some(host => !listeners.get(host)?.gateway.listening) || [...listeners].some(([host]) => !hosts.includes(host)),
       refresh: (/** @type {AbortSignal} */ refreshSignal) => {
         if (refreshFlight) return refreshFlight;
         const refreshing = (async () => {
@@ -234,6 +242,13 @@ export class MacConnectionService extends EventEmitter {
           }));
           await this.lanPortWrites.catch(() => {});
           const saved = await readLanListenerPorts(this.options.state);
+          /** @type {Set<string>} */ const newlyBound = new Set();
+          const dropNewlyBound = async () => {
+            await Promise.allSettled([...newlyBound].map(async host => {
+              const entry = listeners.get(host); if (!entry) return;
+              listeners.delete(host); await this.closeGateway(entry.gateway);
+            }));
+          };
           await Promise.allSettled(hosts.filter(host => !listeners.has(host)).map(async host => {
             let origin = '';
             try {
@@ -246,7 +261,7 @@ export class MacConnectionService extends EventEmitter {
               }
               const address = gateway.address();
               if (cancel.aborted || this.closed || closed || !address || typeof address === 'string') { await this.closeGateway(gateway); throw Error('local-network-unavailable'); }
-              origin = `http://${host}:${address.port}`; listeners.set(host, { gateway, origin, port: address.port });
+              origin = `http://${host}:${address.port}`; listeners.set(host, { gateway, origin, port: address.port }); newlyBound.add(host);
               const owned = gateway;
               owned.once('close', () => {
                 if (this.closed || closed || signal.aborted || listeners.get(host)?.gateway !== owned) return;
@@ -254,7 +269,7 @@ export class MacConnectionService extends EventEmitter {
               });
             } catch { if (!cancel.aborted && !this.closed && !closed) this.emit('diagnostic', { code: 'local-network-unavailable', kind: 'local' }); }
           }));
-          if (cancel.aborted || this.closed || closed) throw Error('local-network-unavailable');
+          if (cancel.aborted || this.closed || closed) { await dropNewlyBound(); throw Error('local-network-unavailable'); }
           // A network can change again while sockets are binding. Never promote
           // a late listener for an interface already absent from the fresh scan.
           const currentHosts = privateLANAddresses(this.options.interfaces?.());
@@ -265,13 +280,14 @@ export class MacConnectionService extends EventEmitter {
           // With no interface, dormant owned-port hints can help the same host
           // return. They never supply a bind or an advertised route by themselves.
           if (listeners.size) {
+            const snapshot = [...listeners].map(([host, entry]) => ({ host, port: entry.port }));
             const saving = this.lanPortWrites.catch(() => {}).then(async () => {
-              if (!cancel.aborted && !this.closed && !closed) await writeLanListenerPorts(this.options.state, [...listeners].map(([host, entry]) => ({ host, port: entry.port })));
+              if (!cancel.aborted && !this.closed && !closed) await writeLanListenerPorts(this.options.state, snapshot);
             });
             this.lanPortWrites = saving;
             await saving.catch(() => { if (!cancel.aborted && !this.closed && !closed) this.emit('diagnostic', { code: 'lan-listener-state-unavailable', kind: 'local' }); });
           }
-          if (cancel.aborted || this.closed || closed) throw Error('local-network-unavailable');
+          if (cancel.aborted || this.closed || closed) { await dropNewlyBound(); transport.channels = currentChannels(); throw Error('local-network-unavailable'); }
           return { channels: transport.channels };
         })().finally(() => { if (refreshFlight === refreshing) refreshFlight = null; });
         refreshFlight = refreshing; return refreshing;

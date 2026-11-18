@@ -24,8 +24,14 @@ flag and optional native event time/agent ID. Dispatch rows carry the child ID,
 name, collection, host, owner and lifecycle status. Their parent and desktop
 runtime come from the envelope. No transcript, output, event buffer, projection
 state, tool input or task log is included in the ongoing envelope. Each list is
-bounded at 128. Invalid, duplicate or overflowing rows remove completeness.
+bounded at 128; when evicting above 128 tasks, active nonterminal tasks
+(`pending`, `running`, `paused`) are retained ahead of terminal or unknown
+historical rows, and restored/reconnected state re-enforces all task, dispatch,
+seen-event and log caps. Invalid, duplicate or overflowing rows remove completeness.
 An unchanged envelope has an unchanged digest and does not force publication.
+Incremental task transfers (`NativeTaskTransfers`) verify snapshot structure
+before byte-budget enforcement, accept only 64-hex `since` digests, and clear
+cached baselines whenever reconnect/query/owner scope changes.
 Directory descriptors omit the task envelope. They carry aggregate attention
 only; the selected-session descriptor supplies the envelope. Opening the
 directory cannot transfer every selected observer's task roster or logs.
@@ -40,7 +46,9 @@ does not create a parent turn or an operable child conversation.
 `native-task-read` accepts the selected envelope's exact `scope`, optional
 materialized baseline digest `since`, and reads current task metadata.
 `native-task-log-read` accepts that scope, optional task
-ID, optional older cursor, and a page size of 1–100 (default 12). It returns only
+ID, optional older cursor, and a page size of 1–100 (default 12; invalid
+non-positive/non-integer limits and malformed/non-positive cursor sequences are
+rejected explicitly). It returns only
 bounded lifecycle metadata logs. Both reads require the selected original source
 and lease before and after I/O; stale owner/query results are rejected. They do
 not load conversation history or create operation receipts. Logs and output are

@@ -40,10 +40,12 @@ export class PairingInvitations {
   constructor(options) {
     this.options = options; this.now = options.now ?? Date.now;
     this.pair = nacl.box.keyPair.fromSecretKey(options.key);
+    this.closed = false;
     /** @type {Map<string,Value>} */ this.invites = new Map();
   }
   /** @param {string} origin @param {Value[]} [channels] */
   issue(origin, channels) {
+    if (this.closed) throw Error('pairing-closed');
     const parsed = new URL(origin);
     const prefix = parsed.pathname === '/' ? '' : parsed.pathname;
     if (!['https:', 'http:'].includes(parsed.protocol) || prefix && !/^\/r\/[a-f0-9]{24}$/u.test(prefix) || parsed.origin + prefix !== origin || parsed.username || parsed.password || parsed.search || parsed.hash) throw Error('invalid-pairing-origin');
@@ -61,6 +63,7 @@ export class PairingInvitations {
   }
   /** @param {{invite:string,publicKey:string,deviceName?:string}} input */
   exchange(input) {
+    if (this.closed) throw Error('pairing-closed');
     const publicKey = bytes(input.publicKey), grant = this.invites.get(input.invite), now = this.now();
     if (!grant || now >= grant.retainUntil || !grant.reply && now >= grant.expires) throw Error('pairing-invitation-expired');
     if (grant.deviceKey && grant.deviceKey !== input.publicKey) throw Error('pairing-invitation-used');
@@ -76,6 +79,7 @@ export class PairingInvitations {
   }
   /** @param {Value} grant @param {Uint8Array} publicKey @param {string} encodedKey @param {Value} credentials */
   reply(grant, publicKey, encodedKey, credentials) {
+    if (this.closed) throw Error('pairing-closed');
     const macKey = Buffer.from(this.pair.publicKey).toString('base64url');
     const peer = grant.channels ? { id: createHash('sha256').update(peerMaterial(macKey, credentials.secret)).digest('hex'), key: macKey, channels: grant.channels } : null;
     const payload = Buffer.from(JSON.stringify({ version: peer ? 2 : 1, origin: grant.origin, macKey,
@@ -89,6 +93,7 @@ export class PairingInvitations {
   }
   /** @param {{publicKey:string,nonce:string,ciphertext:string}} input */
   exchangeEncrypted(input) {
+    if (this.closed) throw Error('pairing-closed');
     const publicKey = bytes(input.publicKey), nonce = Buffer.from(input.nonce, 'base64url'), cipher = Buffer.from(input.ciphertext, 'base64url');
     if (nonce.length !== 24 || cipher.length < 16 || cipher.length > 4096) throw Error('invalid-pairing-request');
     const plain = nacl.box.open(cipher, nonce, publicKey, this.pair.secretKey);
@@ -100,22 +105,53 @@ export class PairingInvitations {
     if (grant && !(grant.channels ? request.version === 2 && grant.channels.some((/** @type {Value} */ choice) => choice.url === request.origin) : request.version === 1 && grant.origin === request.origin)) throw Error('invalid-pairing-origin');
     return this.exchange({ invite: request.invite, publicKey: input.publicKey, deviceName: typeof request.deviceName === 'string' ? request.deviceName.slice(0, 80) : 'Phone' });
   }
-  close() { this.invites.clear(); this.pair.secretKey.fill(0); }
+  close() { if (this.closed) return; this.closed = true; this.invites.clear(); this.pair.secretKey.fill(0); }
+}
+
+/** @param {import('node:http').IncomingMessage} req @param {number} limit @param {string} tooLarge */
+async function readUtf8Body(req, limit, tooLarge) {
+  const chunks = []; let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw Error(tooLarge);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, size).toString('utf8');
 }
 
 /** @param {import('node:http').IncomingMessage} req */
 async function readBody(req) {
-  const chunks = []; let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > 4096) throw Error('pairing-request-too-large');
-    chunks.push(chunk);
-  }
-  const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const value = JSON.parse(await readUtf8Body(req, 4096, 'pairing-request-too-large'));
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).sort().join(',') !== 'ciphertext,nonce,publicKey' ||
       typeof value.nonce !== 'string' || typeof value.ciphertext !== 'string') throw Error('invalid-pairing-request');
   return value;
+}
+
+/** @param {import('node:http').ClientRequest} proxy @param {import('node:stream').Duplex} socket @param {Buffer} head */
+function tunnelUpgrade(proxy, socket, head) {
+  if (socket.destroyed || socket.readableEnded) { socket.destroy(); proxy.destroy(); return; }
+  const abortProxy = () => proxy.destroy();
+  const earlyClose = () => { proxy.destroy(); socket.destroy(); };
+  socket.once('close', abortProxy);
+  socket.once('end', earlyClose);
+  socket.once('error', earlyClose);
+  proxy.on('upgrade', (response, remote, responseHead) => {
+    socket.removeListener('close', abortProxy);
+    socket.removeListener('end', earlyClose);
+    socket.removeListener('error', earlyClose);
+    if (socket.destroyed || remote.destroyed) { socket.destroy(); remote.destroy(); return; }
+    const responseHeaders = Object.entries(response.headers).flatMap(([key, value]) => Array.isArray(value) ? value.map(v => `${key}: ${v}`) : [`${key}: ${value}`]);
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\n${responseHeaders.join('\r\n')}\r\n\r\n`);
+    if (responseHead.length) socket.write(responseHead);
+    if (head.length) remote.write(head);
+    socket.pipe(remote); remote.pipe(socket);
+    socket.on('error', () => remote.destroy()); remote.on('error', () => socket.destroy());
+    socket.on('close', () => remote.destroy()); remote.on('close', () => socket.destroy());
+  });
+  proxy.on('response', response => { response.resume(); socket.destroy(); });
+  proxy.on('error', () => socket.destroy());
+  proxy.end();
 }
 
 /** Only this loopback API is proxied; invitations are exchanged, never enumerated through the public tunnel.
@@ -160,10 +196,8 @@ export function createPairingGateway(options) {
           || req.headers['content-length'] !== undefined && req.headers['content-length'] !== '0')) {
           req.resume(); throw new BridgeError('invalid-peer-request', 'The network probe does not take a body.', 400);
         }
-        const chunks = []; let size = 0;
         const limit = localPath === '/network-probe' ? 0 : localPath === '/api/peer/activity' ? PEER_ACTIVITY_CARRIER_MAX_BYTES : localPath.startsWith('/api/peer/desktop/') ? 16_384 : 4096;
-        if (localPath !== '/network-probe') for await (const chunk of req) { size += chunk.length; if (size > limit) throw Error('request-too-large'); chunks.push(chunk); }
-        const body = Buffer.concat(chunks).toString('utf8');
+        const body = localPath === '/network-probe' ? '' : await readUtf8Body(req, limit, 'request-too-large');
         let input = body ? JSON.parse(body) : {};
         if (localPath === '/api/peer/activity') {
           const requestKey = options.devices.publicKey(device); if (!requestKey) throw Error('unknown-device');
@@ -187,8 +221,7 @@ export function createPairingGateway(options) {
       if (!device) { res.writeHead(401).end(); return; }
       if (req.method !== 'POST') { res.writeHead(405).end(); return; }
       try {
-        let text = ''; for await (const chunk of req) { text += chunk.toString(); if (text.length > 4096) throw Error('request-too-large'); }
-        const value = JSON.parse(text); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('invalid-device-request');
+        const value = JSON.parse(await readUtf8Body(req, 4096, 'request-too-large')); if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('invalid-device-request');
         if (localPath.endsWith('/device')) await options.devices?.registerPush(device, value);
         else options.devices?.viewingPresence(device, value);
         res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store');
@@ -228,8 +261,13 @@ export function createPairingGateway(options) {
     if (path === '/api/peer/desktop/media/rtc' || path === '/api/peer/desktop/media/rtc/v1') {
       const desktopMedia = /** @type {typeof options & {desktopMedia?:(path:string)=>Promise<{origin:string,path:string,device:string}>}} */ (options).desktopMedia;
       if (!desktopMedia) { socket.destroy(); return; }
+      const pendingClose = () => socket.destroy();
+      socket.once('error', pendingClose);
+      socket.once('end', pendingClose);
       void desktopMedia(req.url ?? '').then(target => {
-        if (socket.destroyed) return;
+        socket.removeListener('error', pendingClose);
+        socket.removeListener('end', pendingClose);
+        if (socket.destroyed || socket.readableEnded) { socket.destroy(); return; }
         const media = new URL(target.origin);
         if (media.protocol !== 'http:' || media.hostname !== '127.0.0.1') { socket.destroy(); return; }
         options.devices?.connected(target.device, /** @type {import('node:net').Socket} */ (socket));
@@ -238,17 +276,8 @@ export function createPairingGateway(options) {
           const value = req.headers[key]; if (typeof value === 'string') headers[key] = value;
         }
         const proxy = proxyRequest({ hostname: media.hostname, port: media.port, path: target.path, headers });
-        proxy.on('upgrade', (response, remote, responseHead) => {
-          const responseHeaders = Object.entries(response.headers).flatMap(([key, value]) => Array.isArray(value) ? value.map(v => `${key}: ${v}`) : [`${key}: ${value}`]);
-          socket.write(`HTTP/1.1 101 Switching Protocols\r\n${responseHeaders.join('\r\n')}\r\n\r\n`);
-          if (responseHead.length) socket.write(responseHead); if (head.length) remote.write(head);
-          socket.pipe(remote); remote.pipe(socket);
-          socket.on('error', () => remote.destroy()); remote.on('error', () => socket.destroy());
-          socket.on('close', () => remote.destroy()); remote.on('close', () => socket.destroy());
-        });
-        proxy.on('response', response => { response.resume(); socket.destroy(); });
-        proxy.on('error', () => socket.destroy()); proxy.end();
-      }).catch(() => socket.destroy());
+        tunnelUpgrade(proxy, socket, head);
+      }).catch(() => { socket.removeListener('error', pendingClose); socket.removeListener('end', pendingClose); socket.destroy(); });
       return;
     }
     if (path !== '/v1/updates' && path !== '/v1/updates/') { socket.destroy(); return; }
@@ -257,16 +286,7 @@ export function createPairingGateway(options) {
     if (device) options.devices?.connected(device, /** @type {import('node:net').Socket} */ (socket));
     const proxy = proxyRequest({ hostname: upstream.hostname, port: upstream.port, path: req.url,
       headers: { ...req.headers, host: upstream.host } });
-    proxy.on('upgrade', (response, remote, responseHead) => {
-      const headers = Object.entries(response.headers).flatMap(([key, value]) => Array.isArray(value) ? value.map(v => `${key}: ${v}`) : [`${key}: ${value}`]);
-      socket.write(`HTTP/1.1 101 Switching Protocols\r\n${headers.join('\r\n')}\r\n\r\n`);
-      if (responseHead.length) socket.write(responseHead);
-      if (head.length) remote.write(head);
-      socket.pipe(remote); remote.pipe(socket);
-      socket.on('error', () => remote.destroy()); remote.on('error', () => socket.destroy());
-      socket.on('close', () => remote.destroy()); remote.on('close', () => socket.destroy());
-    });
-    proxy.on('error', () => socket.destroy()); proxy.end();
+    tunnelUpgrade(proxy, socket, head);
   });
   return server;
 }

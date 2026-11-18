@@ -530,6 +530,19 @@ export class CodelyncSessionTransport extends EventEmitter {
     }
   }
 
+  /** @template T @param {Promise<T>} work @param {Error} onClose @returns {Promise<T>} */
+  #untilClose(work, onClose) {
+    if (this.#closed) return Promise.reject(onClose);
+    return new Promise((resolvePromise, rejectPromise) => {
+      const abort = () => { this.removeListener('closing', abort); rejectPromise(onClose); };
+      this.once('closing', abort);
+      work.then(
+        value => { this.removeListener('closing', abort); resolvePromise(value); },
+        error => { this.removeListener('closing', abort); rejectPromise(error); },
+      );
+    });
+  }
+
   /** No automatic retries or offline socket buffering. @param {string} method @param {unknown} params */
   async callRpc(method, params) {
     this.#requireReady();
@@ -537,7 +550,7 @@ export class CodelyncSessionTransport extends EventEmitter {
     if (!socket?.connected) throw new CodelyncTransportError('rpc-disconnected', 'Happy sync is not connected.');
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u.test(method)) throw new CodelyncTransportError('invalid-rpc-method', 'Use a bounded RPC method.');
     let answer;
-    try { answer = await socket.timeout(this.requestTimeoutMs).emitWithAck('rpc-call', { method: `${this.sessionId}:${method}`, params: encryptRecord(params, this.#key, this.#variant) }); }
+    try { answer = await this.#untilClose(socket.timeout(this.requestTimeoutMs).emitWithAck('rpc-call', { method: `${this.sessionId}:${method}`, params: encryptRecord(params, this.#key, this.#variant) }), new CodelyncTransportError('delivery-unknown', 'The RPC may have been delivered; query its stable receipt before retrying.', true)); }
     catch { throw new CodelyncTransportError('delivery-unknown', 'The RPC may have been delivered; query its stable receipt before retrying.', true); }
     if (answer?.ok !== true) {
       if (answer?.error === 'RPC method not available') throw new CodelyncTransportError('rpc-not-available', 'The RPC method is unavailable.');
@@ -568,6 +581,7 @@ export class CodelyncSessionTransport extends EventEmitter {
     const flight = previous.catch(() => {}).then(async () => {
       this.#requireReady();
       for (let attempt = 0; attempt < 5; attempt++) {
+        this.#requireReady();
         const socket = this.#socket;
         if (!socket?.connected) throw new CodelyncTransportError('sync-disconnected', 'Happy sync is not connected.');
         const current = this.#state.fields[field], decoded = current.value ? decryptRecord(current.value, this.#key, this.#variant) : null;
@@ -578,7 +592,7 @@ export class CodelyncSessionTransport extends EventEmitter {
         if (canonical(JSON.parse(jsonText(updated))) === canonical(decoded)) return decoded;
         const encrypted = updated == null ? null : encryptRecord(updated, this.#key, this.#variant);
         let answer;
-        try { answer = await socket.timeout(this.requestTimeoutMs).emitWithAck(field === 'metadata' ? 'update-metadata' : 'update-state', { sid: this.sessionId, expectedVersion: current.version, ...(field === 'metadata' ? { metadata: encrypted } : { agentState: encrypted }) }); }
+        try { answer = await this.#untilClose(socket.timeout(this.requestTimeoutMs).emitWithAck(field === 'metadata' ? 'update-metadata' : 'update-state', { sid: this.sessionId, expectedVersion: current.version, ...(field === 'metadata' ? { metadata: encrypted } : { agentState: encrypted }) }), new CodelyncTransportError('sync-state-unconfirmed', 'The Happy state update result was not confirmed.')); }
         catch { throw new CodelyncTransportError('sync-state-unconfirmed', 'The Happy state update result was not confirmed.'); }
         if (!Number.isSafeInteger(answer?.version) || !['success', 'version-mismatch'].includes(answer?.result)) throw new CodelyncTransportError('invalid-state-update', 'Happy rejected the state update.');
         const returned = field === 'metadata' ? answer.metadata : answer.agentState;
@@ -587,7 +601,7 @@ export class CodelyncSessionTransport extends EventEmitter {
         if (answer.result === 'success') return this.#state.fields[field].value ? decryptRecord(this.#state.fields[field].value, this.#key, this.#variant) : null;
       }
       throw new CodelyncTransportError('state-version-conflict', 'Happy state kept changing; retry after reading its current version.');
-    });
+    }).finally(() => { if (this.#fieldFlights.get(field) === flight) this.#fieldFlights.delete(field); });
     this.#fieldFlights.set(field, flight); return flight;
   }
 
@@ -633,7 +647,9 @@ export class CodelyncSessionTransport extends EventEmitter {
 
   /** @param {string} target @param {RequestInit} options @param {number} limit */
   async #fetch(target, options, limit) {
-    const url = new URL(target);
+    let url;
+    try { url = new URL(target); }
+    catch { throw new CodelyncTransportError('invalid-sync-url', 'Happy returned an invalid transfer URL.'); }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new CodelyncTransportError('invalid-sync-url', 'Happy returned an invalid transfer URL.');
     const controller = new AbortController(); this.#requests.add(controller);
     const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
@@ -645,6 +661,11 @@ export class CodelyncSessionTransport extends EventEmitter {
       try { response = await fetch(url, { ...options, headers, signal: controller.signal, redirect: 'error' }); }
       catch { throw new CodelyncTransportError('sync-network-error', 'The Happy sync request did not complete.'); }
       if (!response.ok) { await response.body?.cancel().catch(() => {}); throw new CodelyncTransportError('sync-http-error', `Happy sync returned HTTP ${response.status}.`); }
+      const rawLength = response.headers.get('content-length');
+      if (rawLength !== null && /^\d+$/u.test(rawLength.trim()) && Number(rawLength.trim()) > limit) {
+        await response.body?.cancel().catch(() => {});
+        throw new CodelyncTransportError('sync-response-limit', 'The Happy response exceeds its bounded size.');
+      }
       const reader = response.body?.getReader();
       if (!reader) return new Uint8Array();
       /** @type {Uint8Array[]} */ const chunks = []; let size = 0;

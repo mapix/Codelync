@@ -115,6 +115,40 @@ export function parseActivityReply(raw: unknown): ActivityReply {
     return { ok: true, version: 1, epoch: value.epoch, sequence: value.sequence!, observedAt: value.observedAt!, groups, ...(value.unchanged === true ? { unchanged: true } : {}) };
 }
 
+function sameActivitySessionList(
+    a?: ReadonlyArray<{ id: string; nativeId: string }>,
+    b?: ReadonlyArray<{ id: string; nativeId: string }>,
+): boolean {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i].id !== b[i].id || a[i].nativeId !== b[i].nativeId) return false;
+    }
+    return true;
+}
+
+export function sameActivityGroupFields(
+    a: Omit<CodelyncProjectDescriptor, 'machineId'>,
+    b: Omit<CodelyncProjectDescriptor, 'machineId'>,
+): boolean {
+    return a.id === b.id
+        && a.projectKey === b.projectKey
+        && a.hostId === b.hostId
+        && a.app === b.app
+        && sameActivitySessionList(a.sessions, b.sessions);
+}
+
+function sameProjectDescriptors(a: readonly CodelyncProjectDescriptor[], b: readonly CodelyncProjectDescriptor[]): boolean {
+    const count = Math.min(a.length, 16);
+    if (count !== b.length) return false;
+    for (let i = 0; i < count; i++) {
+        const left = a[i], right = b[i];
+        if (left === right) continue;
+        if (left.machineId !== right.machineId || !sameActivityGroupFields(left, right)) return false;
+    }
+    return true;
+}
+
 interface ControllerOptions {
     store: CodelyncProjectActivityStore; clientId: string;
     scope: () => Promise<string>;
@@ -133,8 +167,10 @@ export class CodelyncProjectActivityController {
     private lastScope = ''; private lastMachines = new Set<string>();
     constructor(private options: ControllerOptions) {}
     setProjects(projects: CodelyncProjectDescriptor[]) {
-        const next = projects.slice(0, 16).sort((a, b) => a.id.localeCompare(b.id));
-        if (JSON.stringify(next) === JSON.stringify(this.projects)) return;
+        if (sameProjectDescriptors(projects, this.projects)) return;
+        const next = projects.slice(0, 16).map(project => project.sessions
+            ? { ...project, sessions: project.sessions.map(row => ({ id: row.id, nativeId: row.nativeId })) }
+            : { ...project });
         this.projects = next; this.revision++; this.clearTimer();
         if (!next.length) void this.release();
         else if (this.enabled) void this.refresh();

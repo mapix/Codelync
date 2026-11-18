@@ -15,11 +15,59 @@ import { codelyncSavedHistory } from '@/utils/nativeSavedHistory';
 import { nativeReadingIdentity } from '@/utils/nativeReadingWindow';
 import { canWriteNativeModelControls, clampNativeModelEffort, confirmedNativeModelSettings, modelAllowsUnsetEffort, nativeModelControlScopesEqual, readNativeModelControlScope } from '@/utils/nativeModelControls';
 
+const EMPTY_MODELS: ModelMode[] = [];
+const EMPTY_EFFORTS: EffortLevel[] = [];
+
+function sameStringList(a?: readonly string[], b?: readonly string[]): boolean {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
+
+function sameModelModes(a: readonly ModelMode[], b: readonly ModelMode[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        const left = a[i], right = b[i];
+        if (left === right) continue;
+        if (left.key !== right.key
+            || left.modelId !== right.modelId
+            || left.name !== right.name
+            || left.providerId !== right.providerId
+            || left.providerName !== right.providerName
+            || left.defaultThinkingLevel !== right.defaultThinkingLevel
+            || !sameStringList(left.thinkingLevels, right.thinkingLevels)) return false;
+    }
+    return true;
+}
+
+function sameEffortLevels(a: readonly EffortLevel[], b: readonly EffortLevel[]): boolean {
+    if (a === b) return true;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i].key !== b[i].key || a[i].name !== b[i].name) return false;
+    }
+    return true;
+}
+
 export function useCodelyncModelControls(session: Session | null) {
     const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected();
     const native = isNoninvasiveBridge(session?.metadata), controls = session?.metadata?.nativeControls?.model;
     const id = session?.id, app = session?.metadata?.bridge?.source.app, claude = app === 'claude-desktop';
-    const scope = readNativeModelControlScope(session), scopeKey = scope ? JSON.stringify(scope) : null;
+    const rawScope = readNativeModelControlScope(session);
+    const scopeRef = useRef<typeof rawScope>(null);
+    const scope = useMemo(() => {
+        if (!rawScope) {
+            scopeRef.current = null;
+            return null;
+        }
+        if (scopeRef.current && nativeModelControlScopesEqual(scopeRef.current, rawScope)) {
+            return scopeRef.current;
+        }
+        scopeRef.current = rawScope;
+        return rawScope;
+    }, [rawScope]);
     const observed = readNativeObservedModel(session);
     const modelReadSuppressed = nativeSubagentInputReadOnly(session) || !!codelyncSavedHistory(session);
     const canRead = native && socketConnected && !modelReadSuppressed && session?.metadata?.capabilities?.rpcMethods?.includes('codex-controls-read') === true && (!claude || !!scope);
@@ -57,23 +105,50 @@ export function useCodelyncModelControls(session: Session | null) {
             }
         }
         if (readError) throw readError;
-    }, [id, canRead, socketConnected, scopeKey, setSessionStatus]);
+    }, [id, canRead, socketConnected, scope, setSessionStatus]);
     useEffect(() => {
         if (native && canRead && (!controls || claude && controls.catalogAvailable === false)) void refresh().catch(() => {});
     }, [native, canRead, controls, refresh]);
     const compatibility = session?.metadata?.nativeControls?.compatibility;
+    const hasCompatibility = !!compatibility, compatApp = compatibility?.app, compatVersion = compatibility?.appVersion;
+    const rawModels = controls?.models;
     const catalogReadable = !modelReadSuppressed && (!claude || !!scope && controls?.catalogAvailable === true);
-    const models: ModelMode[] = useMemo(() => (catalogReadable ? controls?.models ?? [] : []).map(model => ({ key: model.id, modelId: model.id, name: model.label,
-        ...(compatibility ? { providerId: compatibility.app, providerName: [codelyncSourceAppName(compatibility.app), compatibility.appVersion].filter(Boolean).join(' ') } : {}),
-        thinkingLevels: model.reasoningEfforts, defaultThinkingLevel: model.defaultReasoningEffort })), [catalogReadable, controls, compatibility]);
+    const modelsRef = useRef<ModelMode[]>(EMPTY_MODELS);
+    const models: ModelMode[] = useMemo(() => {
+        if (!catalogReadable || !rawModels?.length) {
+            modelsRef.current = EMPTY_MODELS;
+            return EMPTY_MODELS;
+        }
+        const providerMeta = hasCompatibility ? { providerId: compatApp, providerName: [codelyncSourceAppName(compatApp), compatVersion].filter(Boolean).join(' ') } : undefined;
+        const next: ModelMode[] = rawModels.map(model => ({ key: model.id, modelId: model.id, name: model.label,
+            ...providerMeta,
+            thinkingLevels: model.reasoningEfforts, defaultThinkingLevel: model.defaultReasoningEffort }));
+        if (sameModelModes(modelsRef.current, next)) return modelsRef.current;
+        modelsRef.current = next;
+        return next;
+    }, [catalogReadable, rawModels, hasCompatibility, compatApp, compatVersion]);
     const current = modelReadSuppressed || claude && (!scope || controls?.currentConfirmed !== true) ? null : controls?.current;
     const currentEntry = catalogReadable ? controls?.models.find(model => model.id === current?.model)
         ?? controls?.models.find(model => model.nativeResolvedModel === current?.model) : undefined;
     const selectedModel = current ? currentEntry ? models.find(model => model.key === currentEntry.id) ?? { key: current.model, name: current.model } : { key: current.model, name: current.model }
         : observed?.model ? { key: observed.model, name: observed.model } : null;
     const currentModel = selectedModel && current && controls?.selectionMode === 'next-message' && controls.selectionState === 'staged' ? { ...selectedModel, name: `${selectedModel.name} · ${t('codelyncModels.nextMessage')}` } : selectedModel;
-    const efforts: EffortLevel[] = useMemo(() => currentEntry ? [...(modelAllowsUnsetEffort(app, currentEntry) ? [{ key: '__default__', name: t('codelyncModels.default') }] : []),
-        ...currentEntry.reasoningEfforts.map(key => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1) }))] : [], [app, currentEntry]);
+    const defaultEffortLabel = currentEntry && modelAllowsUnsetEffort(app, currentEntry) ? t('codelyncModels.default') : null;
+    const currentReasoningEfforts = currentEntry?.reasoningEfforts;
+    const effortsRef = useRef<EffortLevel[]>(EMPTY_EFFORTS);
+    const efforts: EffortLevel[] = useMemo(() => {
+        if (!currentEntry || !currentReasoningEfforts) {
+            effortsRef.current = EMPTY_EFFORTS;
+            return EMPTY_EFFORTS;
+        }
+        const next: EffortLevel[] = [
+            ...(defaultEffortLabel !== null ? [{ key: '__default__', name: defaultEffortLabel }] : []),
+            ...currentReasoningEfforts.map(key => ({ key, name: key.charAt(0).toUpperCase() + key.slice(1) })),
+        ];
+        if (sameEffortLevels(effortsRef.current, next)) return effortsRef.current;
+        effortsRef.current = next;
+        return next;
+    }, [currentEntry, currentReasoningEfforts, defaultEffortLabel]);
     const enabled = native && !nativeWriteConnectionBlocked(session?.metadata, socketConnected) && !!current && status !== 'saving' && status !== 'unknown' && !nativeComposerInputReadOnly(session)
         && (claude ? canWriteNativeModelControls(session) : controls?.available === true && session?.metadata?.capabilities?.rpcMethods?.includes('codex-controls-update') === true);
     const change = useCallback(async (model: string, reasoningEffort: string | null) => {
@@ -105,14 +180,14 @@ export function useCodelyncModelControls(session: Session | null) {
             setSessionStatus(id, unknown ? 'unknown' : 'error');
             if (!unknown) { if (pending.current === operation) pending.current = null; void refresh().catch(() => {}); }
         }
-    }, [id, current, enabled, claude, native, session?.metadata, scopeKey, refresh, setSessionStatus]);
+    }, [id, current, enabled, claude, native, session?.metadata, scope, refresh, setSessionStatus]);
     const selectModel = useCallback((model: ModelMode) => {
         if (!current || !enabled) return;
-        const entry = controls?.models.find(candidate => candidate.id === model.key);
+        const entry = rawModels?.find(candidate => candidate.id === model.key);
         if (!entry) return;
         const effort = clampNativeModelEffort(app, entry, current.reasoningEffort);
         if (effort.valid) void change(entry.id, effort.effort);
-    }, [app, controls, current, enabled, change]);
+    }, [app, rawModels, current, enabled, change]);
     const selectEffort = useCallback((effort: EffortLevel) => { if (current && efforts.some(e => e.key === effort.key)) void change(current.model, effort.key === '__default__' ? null : effort.key); }, [current, efforts, change]);
     const currentEffort = current ? efforts.find(e => e.key === (current.reasoningEffort ?? '__default__')) ?? (current.reasoningEffort ? { key: current.reasoningEffort, name: current.reasoningEffort } : null)
         : observed?.effort ? { key: observed.effort, name: observed.effort } : null;

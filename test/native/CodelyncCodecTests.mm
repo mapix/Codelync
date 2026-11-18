@@ -102,6 +102,18 @@ int main(void) {
       Check(AwaitRequest(requestCodec, request, &reason) == nil && [reason isEqualToString:@"E_CODEC_REQUEST"], "async-request-shape");
     }
     Check(AwaitRequest(requestCodec, @{ @"bodyBase64": @"AB==", @"expectedBytes": @1, @"compression": @"none" }, &reason) == nil && [reason isEqualToString:@"E_CODEC_INPUT"], "noncanonical-base64");
+    Check([AwaitRequest(requestCodec, @{ @"bodyBase64": @"AQ==", @"expectedBytes": @1, @"compression": @"none" }, &reason)[@"text"] isEqualToString:@"\x01"] && reason == nil, "canonical-base64-pad2");
+    Check([AwaitRequest(requestCodec, @{ @"bodyBase64": @"AQI=", @"expectedBytes": @2, @"compression": @"none" }, &reason)[@"text"] isEqualToString:@"\x01\x02"] && reason == nil, "canonical-base64-pad1");
+    for (NSString *bad64 in @[@"AQB=", @"AAB=", @"====", @"A===", @"=AAA", @"AA=A", @"AQ==\n", @"AQ ==", @"AQ-_"]) {
+      NSNumber *badBytes = bad64.length == 4 && ![bad64 hasPrefix:@"="] && ![bad64 hasPrefix:@"A="] ? @2 : @1;
+      Check(AwaitRequest(requestCodec, @{ @"bodyBase64": bad64, @"expectedBytes": badBytes, @"compression": @"none" }, &reason) == nil && [reason isEqualToString:@"E_CODEC_INPUT"], "reject-noncanonical-or-bad-base64");
+    }
+    // Exercise non-contiguous UTF-16 CFString chunked fallback path (>4096 chars).
+    unichar *utf16Chars = (unichar *)malloc(sizeof(unichar) * 8192);
+    for (NSUInteger idx = 0; idx < 8192; idx++) utf16Chars[idx] = (idx % 4 == 0) ? 'Q' : 'Q';
+    NSString *nonAsciiPtrBody = [[NSString alloc] initWithCharactersNoCopy:utf16Chars length:8192 freeWhenDone:YES];
+    NSDictionary *chunkedResult = AwaitRequest(requestCodec, @{ @"bodyBase64": nonAsciiPtrBody, @"expectedBytes": @(6144), @"compression": @"none" }, &reason);
+    Check(chunkedResult != nil && [chunkedResult[@"text"] length] == 6144 && reason == nil, "canonical-base64-chunked-utf16");
     NSMutableString *mutableBody = [[unicode base64EncodedStringWithOptions:0] mutableCopy];
     dispatch_semaphore_t copyDone = dispatch_semaphore_create(0); __block NSString *copiedText = nil;
     [requestCodec submitAuthenticatedPayload:@{ @"bodyBase64": mutableBody, @"expectedBytes": @(unicode.length), @"compression": @"none" }

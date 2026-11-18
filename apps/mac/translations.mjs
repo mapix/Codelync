@@ -44,6 +44,7 @@ export const chinese = {
   "Pausing…": "正在暂停…",
   "Connections": "连接方式",
   "Sources": "接入来源",
+  "Codex": "Codex",
   "Antigravity Desktop": "Antigravity Desktop",
   "Claude Desktop (Gateway)": "Claude Desktop（Gateway）",
   "Restore defaults": "恢复默认",
@@ -51,6 +52,8 @@ export const chinese = {
   "Could not save desktop source choices. Try again.": "接入设置保存失败，请重试。",
   "Source choices are saved. Switching is not complete; retry.": "接入设置已保存，切换尚未完成，请重试。",
   "Local network": "本地网络",
+  "Cloudflare": "Cloudflare",
+  "Relay": "Relay",
   "Configure Relay": "配置 Relay",
   "Ready": "已就绪",
   "Off": "已关闭",
@@ -105,6 +108,9 @@ export const chinese = {
   "Uptime": "运行时长",
   "Gateway traffic measured by Codelync. — means not measured.": "统计 Codelync 网关流量。「—」表示尚未测量。",
   "Waiting for gateway measurements…": "正在等待网关统计数据…",
+  "Connection status": "连接状态",
+  "Pairing QR code": "配对二维码",
+  "Device name": "设备名称",
   "/s": "/秒"
 };
 
@@ -126,11 +132,11 @@ export const japanese = {
   "Native sessions from Codex, Antigravity Desktop and Claude Desktop (Gateway). Available actions follow the desktop's current state.": "Codex、Antigravity Desktop、Claude Desktop（Gateway）のネイティブセッション。利用できる操作は元のアプリの状態に応じます。",
   "Start": "開始", "Pause": "一時停止", "Settings": "設定", "Show Codelync": "Codelync を表示", "Quit": "終了", "Quitting…": "終了中…",
   "Settings unavailable": "設定を利用できません", "Phone connected": "iPhone 接続済み", "Ready to connect": "接続可能", "Changes apply when you Start.": "設定はサービスの開始時に適用されます。",
-  "Paused": "一時停止中", "Pausing…": "一時停止中…", "Connections": "接続", "Sources": "接続元", "Antigravity Desktop": "Antigravity Desktop", "Claude Desktop (Gateway)": "Claude Desktop（Gateway）",
+  "Paused": "一時停止中", "Pausing…": "一時停止中…", "Connections": "接続", "Sources": "接続元", "Codex": "Codex", "Antigravity Desktop": "Antigravity Desktop", "Claude Desktop (Gateway)": "Claude Desktop（Gateway）",
   "Restore defaults": "初期設定に戻す", "Could not load desktop source choices. Try again.": "接続元の設定を読み込めません。再試行してください。",
   "Could not save desktop source choices. Try again.": "接続元の設定を保存できません。再試行してください。",
   "Source choices are saved. Switching is not complete; retry.": "接続元の設定は保存済みです。切り替えが完了していません。再試行してください。",
-  "Local network": "ローカルネットワーク", "Configure Relay": "Relay を設定", "Ready": "準備完了", "Off": "オフ", "Starting…": "起動中…", "Reconnecting…": "再接続中…",
+  "Local network": "ローカルネットワーク", "Cloudflare": "Cloudflare", "Relay": "Relay", "Configure Relay": "Relay を設定", "Ready": "準備完了", "Off": "オフ", "Starting…": "起動中…", "Reconnecting…": "再接続中…",
   "Not verified yet": "未検証", "Unavailable": "利用不可", "All connections are off": "すべての接続がオフです", "Waiting for connection verification…": "接続の確認を待機中…",
   "The phone chooses an available connection. You can switch connections there anytime.": "iPhone は利用可能な接続を選びます。iPhone でいつでも切り替えられます。",
   "An address is waiting for verification. The phone can check it when connecting.": "確認待ちのアドレスがあります。iPhone の接続時に確認できます。",
@@ -145,7 +151,8 @@ export const japanese = {
   "Copied": "コピー済み", "Could not update device. Try again.": "デバイスを更新できません。再試行してください。", "Connection ready": "接続準備完了", "View": "表示", "Statistics": "統計", "Pairing": "ペアリング",
   "Gateway traffic": "Gateway の通信量", "Receiving": "受信速度", "Sending": "送信速度", "This connection": "今回の接続", "All time": "累計", "Received": "受信", "Sent": "送信",
   "HTTP requests": "HTTP リクエスト", "RPC calls": "RPC 呼び出し", "Connected devices": "接続中のデバイス", "Uptime": "稼働時間",
-  "Gateway traffic measured by Codelync. — means not measured.": "Codelync が測定した Gateway の通信量です。「—」は未測定を示します。", "Waiting for gateway measurements…": "Gateway の測定値を待機中…", "/s": "/秒"
+  "Gateway traffic measured by Codelync. — means not measured.": "Codelync が測定した Gateway の通信量です。「—」は未測定を示します。", "Waiting for gateway measurements…": "Gateway の測定値を待機中…",
+  "Connection status": "接続状態", "Pairing QR code": "ペアリング用 QR コード", "Device name": "デバイス名", "/s": "/秒"
 };
 export const macTranslations = {
   en: Object.fromEntries(Object.keys(chinese).map(key => [key, key])),

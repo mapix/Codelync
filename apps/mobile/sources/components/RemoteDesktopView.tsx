@@ -166,8 +166,8 @@ export function RemoteDesktopView() {
         style={({ pressed }) => [styles.iconButton, active && styles.selected, pressed && styles.pressed, disabled && styles.disabled]}>
         <Ionicons name={name} size={21} color={active ? COLORS.action : COLORS.foreground} /></Pressable>;
     const menuRow = (name: IconName, title: string, action: () => void, detail?: string, testID?: string) => <Pressable testID={testID}
-        accessibilityRole="button" onPress={action} style={({ pressed }) => [styles.menuRow, pressed && styles.pressed]}>
-        <Ionicons name={name} size={19} color={COLORS.quiet} /><Text style={styles.menuText}>{title}</Text>
+        accessibilityRole="button" accessibilityLabel={detail ? `${title}: ${detail}` : title} onPress={action} style={({ pressed }) => [styles.menuRow, pressed && styles.pressed]}>
+        <Ionicons name={name} size={19} color={COLORS.quiet} /><Text numberOfLines={1} style={styles.menuText}>{title}</Text>
         {detail ? <Text numberOfLines={1} style={styles.menuDetail}>{detail}</Text> : null}<Ionicons name="chevron-forward" size={16} color={COLORS.quiet} />
     </Pressable>;
     const emptyMessage = controller.status?.enabled === false ? labels.disabled : controller.status?.permissions?.screenRecording === false ? labels.permission
@@ -180,6 +180,7 @@ export function RemoteDesktopView() {
     const warning = !!controller.error || !!controller.notice || !inputEnabled;
     const panelTitle = panel === 'display' ? labels.display : panel === 'quality' ? labels.settings : panel === 'spaces' ? labels.desktops
         : panel === 'status' ? labels.connection : labels.controls;
+    const compactLandscape = window.height < 460;
     const popoverWidth = Math.min(360, Math.max(1, window.width - insets.left - insets.right - 24));
     const popoverHeight = Math.max(1, window.height - insets.top - insets.bottom - 92);
     // Android's resize mode already reduces the window for the OS keyboard.
@@ -189,7 +190,11 @@ export function RemoteDesktopView() {
             {connected && controller.room ? <RoomContext.Provider value={controller.room}>
                 <DesktopCanvas controller={controller} zoom={zoom} offset={offset} setZoom={setZoom} setOffset={setOffset} mode={mode}
                     onViewport={onViewport} onTarget={onTarget} />
-            </RoomContext.Provider> : <View style={[styles.empty, { paddingTop: insets.top, paddingLeft: insets.left + 24, paddingRight: insets.right + 24 }]}>
+            </RoomContext.Provider> : <ScrollView testID="desktop-empty-stage" bounces={false} showsVerticalScrollIndicator={false}
+                contentContainerStyle={[styles.empty, compactLandscape && styles.emptyCompact, {
+                    paddingTop: insets.top + (compactLandscape ? 12 : 0),
+                    paddingBottom: Math.max(insets.bottom + 76, compactLandscape ? 76 : 84),
+                    paddingLeft: insets.left + 24, paddingRight: insets.right + 24 }]}>
                 <Ionicons name="desktop-outline" size={38} color={COLORS.quiet} />
                 <Text accessibilityLiveRegion="polite" style={styles.emptyMessage}>{emptyMessage}</Text>
                 {controller.status?.enabled && !controller.status.permissions?.locked && controller.status.permissions?.screenRecording !== false ? <>
@@ -197,16 +202,17 @@ export function RemoteDesktopView() {
                     {button(controller.closing ? labels.disconnecting : controller.busy ? labels.connecting : labels.connect,
                         () => { if (displayId) void controller.connect(displayId); }, !displayId || controller.busy || exiting, false, 'desktop-connect')}
                 </> : button(labels.refresh, () => { void controller.refresh(); }, controller.busy, false, 'desktop-refresh')}
-            </View>}
+            </ScrollView>}
             <View pointerEvents="box-none" style={StyleSheet.absoluteFillObject}>
                 {panel && !keyboardOpen && !immersive ? <Glass testID={`desktop-${panel}-panel`} style={[styles.popover, { width: popoverWidth, maxHeight: popoverHeight,
                     right: insets.right + 12, top: insets.top + 12 }]}>
-                    <View style={styles.panelHeader}>
+                    <View style={[styles.panelHeader, compactLandscape && styles.panelHeaderCompact]}>
                         {panel !== 'controls' ? icon('chevron-back', labels.back, () => setPanel('controls'), 'desktop-panel-back') : null}
-                        <Text style={styles.panelTitle}>{panelTitle}</Text>
+                        <Text numberOfLines={1} style={styles.panelTitle}>{panelTitle}</Text>
                         {icon('close-outline', labels.close, () => setPanel(null), 'desktop-panel-close')}
                     </View>
-                    <ScrollView style={styles.panelScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.panelContent}>
+                    <ScrollView style={styles.panelScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+                        contentContainerStyle={[styles.panelContent, compactLandscape && styles.panelContentCompact]}>
                         {panel === 'controls' ? <>
                             <View style={styles.modeRow}>
                                 {icon('navigate-outline', labels.pointer, () => setMode('pointer'), 'desktop-pointer', !inputEnabled, mode === 'pointer')}
@@ -245,7 +251,7 @@ export function RemoteDesktopView() {
                         </> : null}
                     </ScrollView>
                 </Glass> : null}
-                {immersive ? <Glass style={[styles.restore, { right: insets.right + 12, bottom: insets.bottom + 12 }]}>
+                {immersive ? <Glass testID="desktop-restore-controls" style={[styles.restore, { right: insets.right + 12, bottom: insets.bottom + 12 }]}>
                     {icon('ellipsis-horizontal', labels.showControls, () => setImmersive(false), 'desktop-exit-fullscreen')}
                 </Glass> : !keyboardOpen ? <Glass testID="desktop-control-dock" style={[styles.dock, { bottom: insets.bottom + 12,
                     alignSelf: 'center', maxWidth: window.width - insets.left - insets.right - 24 }]}>
@@ -272,18 +278,18 @@ const styles = StyleSheet.create(() => ({
     root: { flex: 1, backgroundColor: COLORS.canvas }, stage: { flex: 1, minHeight: 1, backgroundColor: COLORS.canvas },
     canvas: { flex: 1, overflow: 'hidden', backgroundColor: COLORS.canvas }, video: { flex: 1 },
     waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }, secondary: { color: COLORS.quiet, fontSize: 13 },
-    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingBottom: 72 }, emptyMessage: { color: COLORS.quiet, fontSize: 14, textAlign: 'center', maxWidth: 440 },
+    empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingBottom: 72 }, emptyCompact: { gap: 10 }, emptyMessage: { color: COLORS.quiet, fontSize: 14, textAlign: 'center', maxWidth: 440 },
     glass: { borderRadius: 18, borderWidth: 1, borderColor: 'rgba(232,238,244,0.14)', overflow: 'hidden' },
     dock: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: 4, padding: 5 }, restore: { position: 'absolute', padding: 4 },
     iconButton: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
     button: { minHeight: 44, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, justifyContent: 'center', backgroundColor: 'rgba(232,238,244,0.07)' },
     buttonText: { color: COLORS.foreground, fontSize: 14, fontWeight: '500' }, selected: { backgroundColor: 'rgba(136,201,229,0.17)' }, selectedText: { color: COLORS.action }, pressed: { opacity: .65 }, disabled: { opacity: .35 },
-    popover: { position: 'absolute' }, panelHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, minHeight: 52, flexShrink: 0, borderBottomWidth: 1, borderBottomColor: 'rgba(232,238,244,0.09)' },
-    panelTitle: { flex: 1, paddingHorizontal: 10, color: COLORS.foreground, fontSize: 15, fontWeight: '600' }, panelContent: { padding: 12, gap: 10 },
+    popover: { position: 'absolute' }, panelHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, minHeight: 52, flexShrink: 0, borderBottomWidth: 1, borderBottomColor: 'rgba(232,238,244,0.09)' }, panelHeaderCompact: { minHeight: 46 },
+    panelTitle: { flex: 1, paddingHorizontal: 10, color: COLORS.foreground, fontSize: 15, fontWeight: '600' }, panelContent: { padding: 12, gap: 10 }, panelContentCompact: { padding: 10, gap: 6 },
     panelScroll: { flexShrink: 1 },
     modeRow: { flexDirection: 'row', justifyContent: 'space-around', gap: 6 }, zoomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4 },
     utility: { color: COLORS.quiet, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', minWidth: 42, textAlign: 'center' },
-    menuRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }, menuText: { color: COLORS.foreground, fontSize: 14, flexShrink: 0 }, menuDetail: { flex: 1, color: COLORS.quiet, fontSize: 12, textAlign: 'right' },
+    menuRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }, menuText: { color: COLORS.foreground, fontSize: 14, flexShrink: 1 }, menuDetail: { flex: 1, color: COLORS.quiet, fontSize: 12, textAlign: 'right' },
     sectionTitle: { color: COLORS.quiet, fontSize: 12, marginTop: 4 }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, statusDetail: { color: COLORS.foreground, fontSize: 14, lineHeight: 20 },
     keyboardContainer: { flexGrow: 0, backgroundColor: COLORS.canvas },
 }));

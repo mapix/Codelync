@@ -144,9 +144,10 @@ describe('chat composer callback boundary', () => {
     function chatBoundary() {
         const composer = { getMessage: vi.fn(() => 'original'), clearMessage: vi.fn() };
         const session = { draft: 'original', draftUpdatedAt: 5, metadata: { client: { id: 'rig' }, rigMetadataVersion: 1 } };
+        const peerConnected = vi.fn(() => true);
         const scope = {
             nativeWriteConnectionBlocked, nativeComposerInputReadOnly, canSendToNoninvasiveSource, handleCodelyncSlashSubmission,
-            apiSocket: { peerConnected: vi.fn(() => true) },
+            apiSocket: { peerConnected, peerWritable: vi.fn(() => peerConnected()) },
             session,
             storage: { getState: () => ({ sessions: { 'original-session': session } }) },
             isRigMetadataV1: () => true,

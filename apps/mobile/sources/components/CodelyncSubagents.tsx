@@ -80,7 +80,7 @@ export function CodelyncSubagentRowsView({ view, onSelect, onRetry }: { view: Co
     const rows = React.useMemo(() => filterCodelyncSubagents(view.failed ? view.rows.map(row => ({ ...row, status: 'unknown' as const })) : view.rows, filter), [view.rows, filter, view.failed]);
     const render = React.useCallback(({ item }: { item: CodelyncSubagentRow }) => <SubagentRow row={item} onSelect={onSelect} language={language} />, [onSelect, language]);
     return <>
-        {view.failed && !view.loading ? <View style={styles.row}><Text style={styles.detail}>{labels.unavailable}</Text>{onRetry ? <Pressable testID="codelync-subagents-read-retry" accessibilityRole="button" style={styles.logAction} disabled={view.loading} onPress={() => { if (!view.loading) onRetry(); }}><Text style={styles.filterLabel}>{t('common.retry')}</Text></Pressable> : null}</View> : null}
+        {view.failed && !view.loading ? <View style={styles.row}><Text style={styles.detail}>{labels.unavailable}</Text>{onRetry ? <Pressable testID="codelync-subagents-read-retry" accessibilityRole="button" accessibilityLabel={t('common.retry')} accessibilityState={{ disabled: view.loading }} style={[styles.logAction, view.loading && styles.actionDisabled]} disabled={view.loading} onPress={() => { if (!view.loading) onRetry(); }}><Text style={styles.filterLabel}>{t('common.retry')}</Text></Pressable> : null}</View> : null}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters} contentContainerStyle={styles.filterContent}>
             {(['all', 'in-progress', 'finished', 'unknown'] as const).map(key => <Pressable key={key} testID={'codelync-subagents-filter:' + key}
                 accessibilityRole="button" accessibilityState={{ selected: filter === key }} onPress={() => setFilter(key)} style={[styles.filter, filter === key && styles.filterSelected]}>
@@ -110,7 +110,7 @@ const SubagentRow = React.memo(({ row, onSelect, language }: { row: CodelyncSuba
             {row.targetSessionId ? <Ionicons name="chevron-forward" size={13} color={theme.colors.textSecondary} /> : null}
         </Pressable>
         <Pressable testID={'codelync-subagent-log:' + row.id} accessibilityRole="button" disabled={!row.targetSessionId} accessibilityState={{ disabled: !row.targetSessionId }}
-            accessibilityLabel={`${codelyncActivityLabels[language].title} · ${row.name}`} style={styles.logAction} onPress={() => { if (row.targetSessionId) onSelect(row.id, row.nativeConversationId, true); }}>
+            accessibilityLabel={`${codelyncActivityLabels[language].title} · ${row.name}`} style={[styles.logAction, !row.targetSessionId && styles.actionDisabled]} onPress={() => { if (row.targetSessionId) onSelect(row.id, row.nativeConversationId, true); }}>
             <Ionicons name="document-text-outline" size={17} color={theme.colors.textSecondary} />
         </Pressable></View>;
 }, (a, b) => a.onSelect === b.onSelect && a.language === b.language && a.row.id === b.row.id && a.row.name === b.row.name && a.row.status === b.row.status
@@ -128,9 +128,9 @@ const styles = StyleSheet.create(theme => ({
     filters: { flexGrow: 0 }, filterContent: { paddingHorizontal: 10, paddingBottom: 8, gap: 6 },
     filter: { minHeight: 44, paddingHorizontal: 12, borderRadius: 14, justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
     filterSelected: { backgroundColor: theme.colors.groupped.background }, filterLabel: { fontSize: 12, color: theme.colors.text },
-    list: { maxHeight: 240, flexGrow: 0 }, listContent: { flexGrow: 0 },
+    list: { maxHeight: 240, flexGrow: 0 }, listContent: { flexGrow: 0, paddingBottom: 8 },
     row: { minHeight: 60, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
-    rowMain: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }, logAction: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
+    rowMain: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }, logAction: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' }, actionDisabled: { opacity: 0.45 },
     identity: { flex: 1, minWidth: 0, gap: 4 }, name: { fontSize: 14, color: theme.colors.text, ...Typography.default() },
     detail: { fontSize: 11, color: theme.colors.textSecondary, ...Typography.default() }, status: { maxWidth: 100, flexShrink: 1, fontSize: 12, color: theme.colors.textSecondary, ...Typography.default() },
     empty: { paddingHorizontal: 14, paddingVertical: 10, color: theme.colors.textSecondary, fontSize: 12, ...Typography.default() },

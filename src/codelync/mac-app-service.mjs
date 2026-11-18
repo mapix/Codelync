@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import { mkdir, open } from 'node:fs/promises';
@@ -55,6 +54,48 @@ let publicOrigin = '', closing = false;
 /** @type {MacSettingsService|null} */ let settingsService = null;
 /** Local UI pipe only; invitations/tokens never enter a public status API or ordinary logs. @param {Value} value */
 function notify(value) { if (!closing && !process.stdout.destroyed) process.stdout.write(JSON.stringify(value) + '\n'); }
+
+const MAX_STDIN_LINE_BYTES = 65_536;
+/** @param {NodeJS.ReadableStream} input @param {(line:string)=>void} onLine @param {()=>void} onClose */
+function readBoundedLines(input, onLine, onClose) {
+  /** @type {Buffer[]} */ let chunks = [];
+  let bufferedBytes = 0, droppingOversized = false, finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true; chunks = []; bufferedBytes = 0; onClose();
+  };
+  const emitBuffer = () => {
+    if (!bufferedBytes) return;
+    const line = Buffer.concat(chunks, bufferedBytes).toString('utf8').replace(/\r$/u, '');
+    chunks = []; bufferedBytes = 0;
+    if (line) onLine(line);
+  };
+  input.on('data', (/** @type {Buffer|string} */ chunk) => {
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+    let offset = 0;
+    while (offset < buf.length) {
+      const nl = buf.indexOf(0x0a, offset);
+      const end = nl === -1 ? buf.length : nl;
+      if (!droppingOversized) {
+        const sliceLen = end - offset;
+        if (bufferedBytes + sliceLen > MAX_STDIN_LINE_BYTES) {
+          chunks = []; bufferedBytes = 0; droppingOversized = true;
+        } else if (sliceLen > 0) {
+          chunks.push(buf.subarray(offset, end)); bufferedBytes += sliceLen;
+        }
+      }
+      if (nl === -1) break;
+      if (droppingOversized) droppingOversized = false;
+      else emitBuffer();
+      offset = nl + 1;
+    }
+  });
+  input.once('end', () => {
+    if (!droppingOversized) emitBuffer();
+    finish();
+  });
+  input.once('close', finish);
+}
 
 function close() {
   if (closeFlight) return closeFlight; closing = true;
@@ -135,9 +176,12 @@ async function main() {
   if (flags.get('--settings-only') === '1') {
     settingsService = new MacSettingsService({ state, notify });
     await settingsService.start();
-    createInterface({ input: process.stdin }).on('line', value => {
-      try { settingsService?.handle(JSON.parse(value)); } catch { /* Local pipe commands remain explicit. */ }
-    }).once('close', () => { close().finally(() => process.exit(0)); });
+    readBoundedLines(process.stdin, value => {
+      try {
+        const command = JSON.parse(value);
+        if (command && typeof command === 'object' && !Array.isArray(command)) settingsService?.handle(command);
+      } catch { /* Local pipe commands remain explicit. */ }
+    }, () => { close().finally(() => process.exit(0)); });
     return;
   }
   await mkdir(join(state, 'connector'), { recursive: true, mode: 0o700 });
@@ -226,9 +270,10 @@ async function main() {
   connections.on('channels', (/** @type {Value} */ value) => { notify({ type: 'access-channels', ...value }); issue(); });
   connections.on('diagnostic', (/** @type {Value} */ value) => notify({ type: 'diagnostic', ...value }));
   renewal = setInterval(() => issue(true), 90000);
-  createInterface({ input: process.stdin }).on('line', value => {
+  readBoundedLines(process.stdin, value => {
     try {
       const command = JSON.parse(value);
+      if (!command || typeof command !== 'object' || Array.isArray(command)) return;
       if (pushConfiguration?.handle(command)) return;
       if (sourceCommands?.handle(command)) return;
       if (command.type === 'refresh-invite') issue(true);
@@ -260,7 +305,7 @@ async function main() {
           .catch(() => notify({ type: 'access-result', requestId, ok: false, code: 'relay-validation-failed' }));
       }
     } catch { /* The local UI pipe accepts only the explicit operations above. */ }
-  }).once('close', () => { close().finally(() => process.exit(0)); });
+  }, () => { close().finally(() => process.exit(0)); });
   // 通道启动由同一配置 owner 独立完成；公网失败不能阻断本地连接，也不能新建第二份会话运行时。
   connections.start().catch(() => { notify({ type: 'access-channels', channels: [], overallState: 'unavailable' }); issue(); });
 }

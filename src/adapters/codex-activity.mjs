@@ -1,4 +1,4 @@
-import { CodexIpcAdapter } from './codex-ipc.mjs';
+import { CodexIpcAdapter, isSupportedCodexStreamVersion } from './codex-ipc.mjs';
 import { BridgeError } from '../errors.mjs';
 import { CodexSubagentProjection } from './native-subagents.mjs';
 import { aggregateNativeActivity } from './native-aggregate-activity.mjs';
@@ -21,8 +21,10 @@ function id(value) {
 }
 /** @param {unknown} value */
 function runtime(value) {
-  if (!record(value) || !Array.isArray(value.activeFlags) || value.activeFlags.length > 16) throw Error('Missing runtime status.');
-  return { type: id(value.type), activeFlags: value.activeFlags.map(id) };
+  if (!record(value)) throw Error('Missing runtime status.');
+  const flags = value.type === 'idle' && value.activeFlags === undefined ? [] : value.activeFlags;
+  if (!Array.isArray(flags) || flags.length > 16) throw Error('Missing runtime status.');
+  return { type: id(value.type), activeFlags: flags.map(id) };
 }
 /** @param {unknown} value */
 function requests(value) {
@@ -174,7 +176,10 @@ function reducePatch(state, patch) {
   if (p[0] === 'threadRuntimeStatus') {
     if (p.length === 1) return { path: p, value: removing ? undefined : runtime(patch.value) };
     if (p[1] === 'type' && p.length === 2) return { path: p, value: id(patch.value) };
-    if (p[1] === 'activeFlags' && p.length <= 3) return { path: p, value: p.length === 2 ? runtime({ type: 'active', activeFlags: patch.value }).activeFlags : id(patch.value) };
+    if (p[1] === 'activeFlags' && p.length === 2) {
+      return { path: p, op: removing ? 'replace' : patch.op, value: removing ? [] : runtime({ type: 'active', activeFlags: patch.value }).activeFlags };
+    }
+    if (p[1] === 'activeFlags' && p.length === 3) return { path: p, value: id(patch.value) };
     throw Error('Unsupported runtime patch.');
   }
   if (p[0] === 'requests') {
@@ -301,7 +306,7 @@ export class CodexActivityObserver {
     if (frame.type !== 'broadcast' || frame.method !== 'thread-stream-state-changed') return;
     try {
       const owner = typeof frame.sourceClientId === 'string' && frame.sourceClientId ? `${this.hostId}:${frame.sourceClientId}` : null;
-      if (!this.liveConnection() || frame.version !== 11 || frame.params?.hostId !== this.hostId || frame.params?.conversationId !== this.id || !owner || this.ipc.generation(this.id) !== owner) throw Error('Unconfirmed native owner.');
+      if (!this.liveConnection() || !isSupportedCodexStreamVersion(frame.version) || frame.params?.hostId !== this.hostId || frame.params?.conversationId !== this.id || !owner || this.ipc.generation(this.id) !== owner) throw Error('Unconfirmed native owner.');
       const change = frame.params?.change;
       if (!record(change) || !Number.isSafeInteger(change.revision) || change.revision < 0) throw Error('Unsupported native revision.');
       if (change.type === 'snapshot') {

@@ -47,9 +47,12 @@ Both `native/codelight-qa` and `native/codelight-native-worker-qa`, together wit
 their Codelync equivalents, remain outside public source and release selection.
 
 Source ZIPs contain the selected regular file bytes only. Omit resource forks,
-extended attributes, quarantine data and AppleDouble/`__MACOSX` sidecars, which
-are outside the source manifest and may contain publisher-specific metadata.
-Check raw ZIP members before extracting. This rule is specific to source exports;
+extended attributes, quarantine data, `.DS_Store`, `website/release.json`,
+`website/downloads/`, and AppleDouble/`__MACOSX` sidecars, which are outside the
+source manifest and may contain publisher-specific metadata. Check raw ZIP members
+before extracting, and verify exported docs (`README*`, `SECURITY.md`,
+`CONTRIBUTING.md`) and `website/testflight.json` contain no private paths, keys,
+or unapproved beta join URLs. This rule is specific to source exports;
 the signed Mac application archive retains its separate notarization rules.
 
 ## CI publication
@@ -81,6 +84,14 @@ minimum headers and complete bounds. Run malformed inputs in bounded child
 processes and retain valid image dimensions. Record patched package versions
 honestly when advisory tools still match the old version number.
 
+Unpatched upstream advisories confined strictly to `apps/mobile`'s build-time
+Expo CLI / Metro bundler (`GHSA-fc5q-39xc-vjpf` in `picomatch` via
+`apps__mobile>expo>@expo/cli` and `apps__mobile>expo>@expo/metro`) must be
+verified by `scripts/audit-public-release.mjs` to have zero paths in the root
+bridge, `packages/relay`, or `packages/wire`, recorded in `buildOnlyAdvisories`
+with raw counts preserved, and documented in `SECURITY.md` until an upstream
+patch release is available.
+
 ```mermaid
 sequenceDiagram
     participant Visitor
@@ -101,6 +112,17 @@ sequenceDiagram
 ```
 
 ## Website and platform truth
+
+### Release 1.0.1 (build 2026111801) — 2026-11-18
+
+Mac and iPhone advance to `1.0.1` (`2026111801`), packaged for Mac as
+`Codelync-1.0.1-macos-arm64.zip`. This release incorporates the 100-round
+UI/performance/stability polish, iPhone pairing QR scanner camera modal and
+permission recovery, Codex Desktop `v13` stream/idle-union compatibility, and
+Antigravity `multicall` discovery exclusion plus active-run monotonic
+`stepCount` freshness. The published `Codelync-1.0.0-macos-arm64.zip` archive
+remains immutable, and `website/testflight.json` continues to reflect only
+Apple's verified external-review build state.
 
 ### Codelync brand, public source and new host — 2026-11-17
 
@@ -223,8 +245,10 @@ Explain both public-access providers: Cloudflare Quick Tunnel addresses can
 renew on restart; an authenticated Relay preserves its independent route across
 reconnections. Phone setup remains the same QR flow, with no provider settings.
 Performance numbers must identify host benchmarks; do not promise cool phones.
-Use no analytics, external fonts or third-party scripts. Respect keyboard focus,
-reduced motion and narrow phone layouts.
+Use no analytics, external fonts or third-party scripts. Respect high-contrast
+keyboard focus across links, buttons, disclosures and selectors, complete
+reduced-motion overrides, and narrow phone layouts (<=375px without horizontal
+overflow, preserving policy/support header links).
 
 Recovery copy follows [error and recovery rules](codelync-error-recovery.md).
 Explain a Mac connection failure separately from an original Desktop app being
@@ -322,13 +346,17 @@ Mac build/signing, device installation and native interaction acceptance remain
 separate evidence. The user performs this candidate's physical-phone acceptance;
 do not replace that record with a health endpoint or pairing bootstrap result.
 
-Native helper builds must use portable source/debug path provenance. Remove
-publisher-specific compiler paths through supported compiler prefix mapping or
-debug stripping before signing; do not patch arbitrary binary strings. Preserve
+Native helper builds and the compiled Mac App executable must use portable
+source/debug path provenance. Remove publisher-specific compiler paths through
+supported compiler prefix mapping or debug stripping before signing, and lint
+generated Info.plist and localization `.strings` resources; do not patch arbitrary binary strings. Preserve
 SDK resource lookup, licenses, pinned dependencies and executable behavior. The
 public Mac artifact requires a fresh hash-bound privacy review after these
 packaging changes, without replacing the installed trial app or restarting any
-original Desktop owner.
+original Desktop owner. Desktop runtime builds verify `desktop-runtime.json`
+SHA-256 digests and bundled LiveKit frameworks/licenses, and
+`CodelyncDesktopHost` discards individual oversized stdin lines (>16 KiB)
+without terminating its command loop.
 
 ## Historical release preparation — 2026-11-16
 
@@ -368,14 +396,21 @@ session is used by that check.
 
 ## Distribution gates
 
-1. Secret/privacy review, source/production dependency audit and scoped regressions.
+1. Secret/privacy review, source/production dependency audit (`scripts/audit-public-release.mjs` including `website/testflight.json` Draft 2020-12 schema check and `apps/mac` EN/ZH/JA localization key parity against `Codelync.swift`) and scoped regressions.
 2. Bridge/mobile/production relay typechecks and root Lint.
-3. Fresh Mac build, expected Developer ID chain and secure timestamp verification.
+3. Fresh Mac build, inside-out Developer ID signing of embedded binaries,
+   `.framework`/`.bundle` bundles and the `.app` bundle, strict verification,
+   and secure timestamp verification.
 4. Apple Accepted result, stapled ticket validation, Gatekeeper acceptance.
-5. Repacked archive integrity, published SHA-256 and reviewed release metadata.
+5. Repacked archive integrity, published SHA-256 and reviewed release metadata
+   (reject symlinked `.app` inputs and validate optional 40-hex `sourceCommit`
+   when recorded in `release.json`).
 6. Public source/license check and successful HTTPS page/download checks.
 7. Kubernetes deployment in a dedicated namespace with a nonroot, read-only
    static container, dropped capabilities, no service-account token, bounded
-   resources, readiness/liveness probes and network policy. Do not change other
+   resources, readiness/liveness probes and network policy. Manifest rendering
+   must reject unresolved `RELEASE_TAG` placeholders across all phases, and
+   nginx static locations must preserve `security-headers.conf` with `GET`-only
+   method guards. Do not change other
    workloads. Validate server-side manifests before applying and verify rollout,
    certificate and external downloads afterwards.

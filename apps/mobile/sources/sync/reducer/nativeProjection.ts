@@ -1,22 +1,57 @@
 import type { NormalizedMessage } from '../typesRaw';
 import type { ReducerState } from './reducer';
 
+const EMPTY_IDS: string[] = [];
+const EMPTY_REPLACEMENTS = { wireIds: EMPTY_IDS, sourceIds: EMPTY_IDS };
+
 /** A consumed provisional alias cannot be claimed by another full native row. */
 function ownedReplacements(state: ReducerState, sourceId: string, wireIds: string[], sourceIds: string[]) {
-    const direct = new Set(sourceIds.filter(id => id !== sourceId && !state.nativeRetiredRowIds.has(id)));
+    if (wireIds.length === 0 && sourceIds.length === 0) return EMPTY_REPLACEMENTS;
+    let direct: Set<string> | null = null;
+    if (sourceIds.length > 0) {
+        for (const id of sourceIds) {
+            if (id !== sourceId && !state.nativeRetiredRowIds.has(id)) {
+                (direct ??= new Set()).add(id);
+            }
+        }
+    }
     const canClaim = (mapped: string | undefined) => {
         if (!mapped) return true;
         const row = state.messages.get(mapped);
         if (row?.tool) return false;
         const owner = row?.meta?.nativeRow?.id;
-        if (owner) return owner === sourceId || direct.has(owner);
+        if (owner) return owner === sourceId || (direct !== null && direct.has(owner));
         // Missing payloads still retain identity mappings; they are not free aliases.
-        return [...state.nativeRowIds].every(([id, target]) => target !== mapped || id === sourceId
-            || state.nativeRetiredRowIds.has(id) || direct.has(id));
+        for (const [id, target] of state.nativeRowIds) {
+            if (target === mapped && id !== sourceId && !state.nativeRetiredRowIds.has(id) && !(direct !== null && direct.has(id))) {
+                return false;
+            }
+        }
+        return true;
     };
-    return { wireIds: wireIds.filter(id => canClaim(state.messageIds.get(id))
-        && [...state.messages.values()].every(row => row.realID !== id || canClaim(row.id))),
-        sourceIds: [...direct].filter(id => canClaim(state.nativeRowIds.get(id))) };
+    let claimedWireIds = EMPTY_IDS;
+    if (wireIds.length > 0) {
+        claimedWireIds = [];
+        for (const id of wireIds) {
+            if (!canClaim(state.messageIds.get(id))) continue;
+            let allowed = true;
+            for (const row of state.messages.values()) {
+                if (row.realID === id && !canClaim(row.id)) {
+                    allowed = false;
+                    break;
+                }
+            }
+            if (allowed) claimedWireIds.push(id);
+        }
+    }
+    let claimedSourceIds = EMPTY_IDS;
+    if (direct !== null) {
+        claimedSourceIds = [];
+        for (const id of direct) {
+            if (canClaim(state.nativeRowIds.get(id))) claimedSourceIds.push(id);
+        }
+    }
+    return { wireIds: claimedWireIds, sourceIds: claimedSourceIds };
 }
 
 function canonicalIdFor(state: ReducerState, sourceId: string) {
@@ -27,25 +62,42 @@ function canonicalIdFor(state: ReducerState, sourceId: string) {
 }
 
 /** Superseded native identities are authoritative aliases, not text-based deduplication. */
-function bindReplacements(state: ReducerState, sourceId: string, wireIds: string[], sourceIds: string[], target: string, changed: Set<string>, removed: string[], replacedRows: string[] = []) {
-    const replaced = new Set(wireIds), aliases = new Set<string>(replacedRows);
+function bindReplacements(state: ReducerState, sourceId: string, wireIds: string[], sourceIds: string[], target: string, changed: Set<string>, removed: string[], replacedRows: string[] = EMPTY_IDS) {
+    if (wireIds.length === 0 && sourceIds.length === 0 && replacedRows.length === 0) return;
+    const replaced = wireIds.length > 0 ? new Set(wireIds) : null;
+    const aliases = new Set<string>(replacedRows);
     for (const id of wireIds) { const mapped = state.messageIds.get(id); if (mapped) aliases.add(mapped); }
     for (const id of sourceIds) { const mapped = state.nativeRowIds.get(id); if (mapped) aliases.add(mapped); }
-    for (const row of state.messages.values()) if (!row.tool && row.realID && replaced.has(row.realID)) aliases.add(row.id);
-    aliases.delete(target);
-    const targetRow = state.messages.get(target);
-    const acceptedInput = [...aliases].map(id => state.messages.get(id)).find(row => row?.role === 'user' && row.meta?.sentFrom !== 'noninvasive-observer'
-        && (replaced.has(row.realID ?? '') || replaced.has(row.localId ?? '')));
-    if (targetRow?.role === 'user' && acceptedInput) {
-        state.messages.set(target, { ...targetRow, createdAt: acceptedInput.createdAt, localId: acceptedInput.localId ?? targetRow.localId,
-            meta: { ...targetRow.meta, ...acceptedInput.meta, nativeRow: targetRow.meta?.nativeRow, nativeTimestamp: targetRow.meta?.nativeTimestamp }, pending: false, deliveryUnconfirmed: false, nativeAdmission: undefined, sendError: undefined, sortAt: acceptedInput.createdAt });
-        changed.add(target);
+    if (replaced) {
+        for (const row of state.messages.values()) {
+            if (!row.tool && row.realID && replaced.has(row.realID)) aliases.add(row.id);
+        }
     }
-    for (const id of aliases) { state.messages.delete(id); changed.delete(id); if (!removed.includes(id)) removed.push(id); }
-    for (const [id, mapped] of state.messageIds) if (aliases.has(mapped)) state.messageIds.set(id, target);
-    for (const [id, mapped] of state.localIds) if (aliases.has(mapped)) state.localIds.set(id, target);
-    for (const [id, mapped] of state.nativeRowIds) if (aliases.has(mapped) && (id === sourceId || sourceIds.includes(id))) {
-        state.nativeRowIds.set(id, target); if (id !== sourceId) state.nativeRetiredRowIds.add(id);
+    aliases.delete(target);
+    if (aliases.size > 0) {
+        const targetRow = state.messages.get(target);
+        if (targetRow?.role === 'user' && replaced) {
+            let acceptedInput: ReturnType<ReducerState['messages']['get']>;
+            for (const id of aliases) {
+                const row = state.messages.get(id);
+                if (row?.role === 'user' && row.meta?.sentFrom !== 'noninvasive-observer'
+                    && (replaced.has(row.realID ?? '') || replaced.has(row.localId ?? ''))) {
+                    acceptedInput = row;
+                    break;
+                }
+            }
+            if (acceptedInput) {
+                state.messages.set(target, { ...targetRow, createdAt: acceptedInput.createdAt, localId: acceptedInput.localId ?? targetRow.localId,
+                    meta: { ...targetRow.meta, ...acceptedInput.meta, nativeRow: targetRow.meta?.nativeRow, nativeTimestamp: targetRow.meta?.nativeTimestamp }, pending: false, deliveryUnconfirmed: false, nativeAdmission: undefined, sendError: undefined, sortAt: acceptedInput.createdAt });
+                changed.add(target);
+            }
+        }
+        for (const id of aliases) { state.messages.delete(id); changed.delete(id); if (!removed.includes(id)) removed.push(id); }
+        for (const [id, mapped] of state.messageIds) if (aliases.has(mapped)) state.messageIds.set(id, target);
+        for (const [id, mapped] of state.localIds) if (aliases.has(mapped)) state.localIds.set(id, target);
+        for (const [id, mapped] of state.nativeRowIds) if (aliases.has(mapped) && (id === sourceId || sourceIds.includes(id))) {
+            state.nativeRowIds.set(id, target); if (id !== sourceId) state.nativeRetiredRowIds.add(id);
+        }
     }
     for (const id of wireIds) state.messageIds.set(id, target);
     for (const id of sourceIds) { state.nativeRowIds.set(id, target); if (id !== sourceId) state.nativeRetiredRowIds.add(id); }
@@ -54,8 +106,20 @@ function bindReplacements(state: ReducerState, sourceId: string, wireIds: string
 /** 原 owner 的修订只替换明确的片段身份；内容相同不代表同一消息。 */
 export function applyNativeProjection(state: ReducerState, messages: NormalizedMessage[], changed: Set<string>) {
     const removed: string[] = [];
-    const updates = messages.filter(m => m.role === 'event' && m.content.type === 'native-row-upsert');
-    for (const message of updates) {
+    let updates: NormalizedMessage[] | null = null;
+    let passthrough: NormalizedMessage[] | null = null;
+    for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
+        const isUpsert = message.role === 'event' && message.content.type === 'native-row-upsert';
+        const isNativeFragment = !isUpsert && !!message.meta?.nativeRow;
+        if (isUpsert) (updates ??= []).push(message);
+        if (isUpsert || isNativeFragment) {
+            if (!passthrough) passthrough = messages.slice(0, i);
+        } else if (passthrough) {
+            passthrough.push(message);
+        }
+    }
+    if (updates) for (const message of updates) {
         if (message.role !== 'event' || message.content.type !== 'native-row-upsert') continue;
         const update = message.content;
         if (update.tools?.length) {
@@ -125,17 +189,38 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
             if ((state.nativeRevisions.get(update.sourceRowId) ?? 0) >= update.revision) continue;
             state.nativeRevisions.set(update.sourceRowId, update.revision);
         }
-        const replaced = new Set(replacements.wireIds);
-        const aliases = new Set([...replacements.wireIds.map(id => state.messageIds.get(id)), ...replacements.sourceIds.map(id => state.nativeRowIds.get(id))].filter(Boolean));
-        // 最近窗口会改变 realID；必须沿原生身份与旧 wire 别名找回同一显示行。
-        const existing = [...state.messages.values()].filter(row => !row.tool && (row.id === currentCanonical || aliases.has(row.id) || !!row.realID && replaced.has(row.realID)));
-        const first = existing.sort((a, b) => a.createdAt - b.createdAt)[0];
+        let existing: Array<NonNullable<ReturnType<ReducerState['messages']['get']>>>;
+        let replaced: Set<string> | null = null;
+        if (replacements.wireIds.length === 0 && replacements.sourceIds.length === 0) {
+            existing = currentCanonical && mappedRow ? [mappedRow] : [];
+        } else {
+            replaced = replacements.wireIds.length > 0 ? new Set(replacements.wireIds) : null;
+            const aliases = new Set<string>();
+            if (currentCanonical) aliases.add(currentCanonical);
+            for (const id of replacements.wireIds) { const mapped = state.messageIds.get(id); if (mapped) aliases.add(mapped); }
+            for (const id of replacements.sourceIds) { const mapped = state.nativeRowIds.get(id); if (mapped) aliases.add(mapped); }
+            // 最近窗口会改变 realID；必须沿原生身份与旧 wire 别名找回同一显示行。
+            existing = [];
+            if (replaced) {
+                for (const row of state.messages.values()) {
+                    if (!row.tool && (aliases.has(row.id) || (!!row.realID && replaced.has(row.realID)))) existing.push(row);
+                }
+            } else {
+                for (const id of aliases) {
+                    const row = state.messages.get(id);
+                    if (row && !row.tool) existing.push(row);
+                }
+            }
+            if (existing.length > 1) existing.sort((a, b) => a.createdAt - b.createdAt);
+        }
+        const first = existing[0];
         const internalId = first?.id ?? canonicalIdFor(state, update.sourceRowId);
         const acceptedInput = update.role === 'user' && first?.role === 'user' && first.meta?.sentFrom !== 'noninvasive-observer'
-            && (replaced.has(first.realID ?? '') || replaced.has(first.localId ?? ''));
+            && replaced !== null && (replaced.has(first.realID ?? '') || replaced.has(first.localId ?? ''));
         // 保存被替换 wire id：历史分页和重新连线不能让旧片段再次出现。
-        for (const id of replaced) state.messageIds.set(id, internalId);
-        for (const row of existing.slice(1)) { state.messages.delete(row.id); changed.delete(row.id); removed.push(row.id); }
+        if (replaced) for (const id of replaced) state.messageIds.set(id, internalId);
+        const replacedRowIds = existing.length > 1 ? existing.slice(1).map(row => row.id) : EMPTY_IDS;
+        for (const id of replacedRowIds) { state.messages.delete(id); changed.delete(id); removed.push(id); }
         state.messages.set(internalId, { ...first, id: internalId, realID: message.id,
             role: update.role === 'user' ? 'user' : 'agent', createdAt: acceptedInput ? first.createdAt : update.snapshotRevision !== undefined ? message.createdAt : first?.createdAt ?? message.createdAt,
             text: update.role === 'reasoning' ? `*${update.text}*` : update.text,
@@ -146,7 +231,7 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
             ...(acceptedInput ? { pending: false, deliveryUnconfirmed: false, sendError: undefined, sortAt: first.createdAt } : {}) });
         state.messageIds.set(message.id, internalId);
         state.nativeRowIds.set(update.sourceRowId, internalId);
-        bindReplacements(state, update.sourceRowId, replacements.wireIds, replacements.sourceIds, internalId, changed, removed, existing.slice(1).map(row => row.id));
+        bindReplacements(state, update.sourceRowId, replacements.wireIds, replacements.sourceIds, internalId, changed, removed, replacedRowIds);
         changed.add(internalId);
     }
     for (const message of messages) {
@@ -164,7 +249,10 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
         const internalId = state.nativeRowIds.get(sourceId) ?? `native:${sourceId}`;
         const currentOwner = state.messages.get(internalId)?.meta?.nativeRow?.id;
         if (currentOwner && currentOwner !== sourceId) continue;
-        for (const [wireId, message] of [...fragments].sort((a, b) => a[1].meta!.nativeRow!.offset - b[1].meta!.nativeRow!.offset)) {
+        const ordered = fragments.size > 1
+            ? [...fragments].sort((a, b) => a[1].meta!.nativeRow!.offset - b[1].meta!.nativeRow!.offset)
+            : fragments;
+        for (const [wireId, message] of ordered) {
             const source = message.meta!.nativeRow!, first = state.messages.get(internalId);
             const part = message.role === 'user' ? message.content.text : message.role === 'agent' ? message.content[0] : null;
             const thinking = typeof part === 'object' && part?.type === 'thinking';
@@ -190,7 +278,7 @@ export function applyNativeProjection(state: ReducerState, messages: NormalizedM
         }
         if (!fragments.size) state.nativeTextFragments.delete(sourceId);
     }
-    return { removed, messages: messages.filter(m => !(m.role === 'event' && m.content.type === 'native-row-upsert') && !m.meta?.nativeRow) };
+    return { removed, messages: passthrough ?? messages };
 }
 
 export function applyNativeToolUpdates(state: ReducerState, changed: Set<string>) {

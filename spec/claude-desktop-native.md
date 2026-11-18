@@ -38,7 +38,16 @@ desktop owner. `runtimeGeneration`, `generation(id)` and view `ownerGeneration`
 agree; `nativeCancel` carries `scope:session-query` and an explicit query token,
 with no fabricated native Turn ID. Code, Cowork/local-agent and ordinary Chat
 capabilities are reported independently. Unsupported or unverified modes remain
-explicitly unavailable instead of falling back to window control or another runner.
+explicitly unavailable instead of falling back to window control or another runner. Task feed requests validate any supplied
+`expectedOwnerGeneration` (nonempty bounded non-control string) and optional
+nullable `expectedExecutionToken` before RPC dispatch, and verified ASAR digest
+caches remain LRU-bounded. Event ring reads (`code.events`, `cowork.events`)
+validate cursor bounds (`invalid-event-cursor` on negative/non-integer/future
+cursors), report `resetRequired` when truncated below the oldest retained
+sequence, enforce any supplied `expectedExecutionToken` fence and exact session
+identity before pagination, and concurrent `sendMessage` / `interrupt` paths
+preserve ref-counted manager wrappers and post-await owner/query fences across
+completion and bridge deactivation.
 
 ## Bridge contract
 
@@ -157,7 +166,11 @@ first successful Claude inventory can reconcile only its own stale mirrors.
 A failed persistence attempt keeps that application eligible for retry.
 
 The bound adapter forwards the expected collection host on every read, stream
-and command, then checks that host before publishing. Older native UUID pages
+and command, then checks that host before publishing. Selected-session `subscribe`
+pollers are keyed by `(expectedHostId, sessionId)` so differing host scopes never
+collide, and every subscriber receives the current cached view (or unavailable state)
+even when joining while a poll is in flight or when no new content stamp changed.
+Older native UUID pages
 are data only: they cannot replace the current status, owner, model, requests or
 input controls. The shared connector requires the returned page owner to match
 the current owner before and after the read. Cursor scope carries that owner,

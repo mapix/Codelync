@@ -23,9 +23,13 @@ export function applyNativeDirectoryAuthority<T extends Omit<Session, 'presence'
         && previous.metadata?.nativeSession?.catalogueAvailable === false
         ? { identity: scope, header: { ...previous.metadata.nativeSession } } : undefined);
     if (catalog && scope && incoming.metadata?.nativeSession && !(catalog === 'cached' && authority?.identity === scope)) {
-        return { ...incoming, nativeDirectory: { identity: scope, header: { ...incoming.metadata.nativeSession } } };
+        const header = { ...incoming.metadata.nativeSession };
+        return { ...incoming, nativeDirectory: { identity: scope, header }, metadata: { ...incoming.metadata, nativeSession: header } };
     }
     if (scope && authority?.identity === scope && incoming.metadata) {
+        if (incoming.metadata.nativeSession === authority.header) {
+            return { ...incoming, nativeDirectory: authority };
+        }
         return { ...incoming, nativeDirectory: authority, metadata: { ...incoming.metadata, nativeSession: authority.header } };
     }
     return { ...incoming, nativeDirectory: undefined };

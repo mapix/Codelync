@@ -5,9 +5,13 @@ import { readOptionalPrivateJson, writeDurablePrivateJson } from './discovery-pe
 /** @typedef {Record<string,any>} Value */
 export class DeviceRegistry extends EventEmitter {
   /** @param {string} path @param {Value[]} [rows] */
-  constructor(path, rows = []) { super(); this.path = path; this.rows = rows; this.tail = Promise.resolve(); this.sockets = /** @type {Map<string,Set<import('node:net').Socket>>} */ (new Map()); }
+  constructor(path, rows = []) { super(); this.path = path; this.rows = rows; this.tail = Promise.resolve(); this.lastSaveError = /** @type {unknown} */ (null); this.sockets = /** @type {Map<string,Set<import('node:net').Socket>>} */ (new Map()); }
   /** @param {string} path */
-  static async load(path) { const saved = await readOptionalPrivateJson(path); return new DeviceRegistry(path, Array.isArray(saved?.devices) ? saved.devices : []); }
+  static async load(path) {
+    const saved = await readOptionalPrivateJson(path);
+    const rows = Array.isArray(saved?.devices) ? saved.devices.filter((/** @type {unknown} */ row) => row && typeof row === 'object' && !Array.isArray(row) && typeof (/** @type {Value} */ (row)).id === 'string') : [];
+    return new DeviceRegistry(path, rows);
+  }
   list() { return this.rows.map(row => ({ id: row.id, name: row.name, createdAt: row.createdAt, lastSeen: row.lastSeen, revoked: row.revoked,
     connected: (this.sockets.get(row.id)?.size ?? 0) > 0, notifications: !row.revoked && row.push?.enabled === true })).sort((a, b) => b.lastSeen - a.lastSeen); }
   notificationDevices() { return this.rows.filter(row => !row.revoked && row.push?.enabled && row.push?.token); }
@@ -51,7 +55,21 @@ export class DeviceRegistry extends EventEmitter {
     row.presence = { active: value.active, sessionId: value.sessionId, at: now, ...(sequence === undefined ? {} : { sequence }) };
     return true;
   }
-  async save() { const snapshot = structuredClone(this.rows); const operation = this.tail.catch(() => {}).then(() => writeDurablePrivateJson(this.path, { version: 1, devices: snapshot })); this.tail = operation; await operation; this.emit('changed', this.list()); }
+  async save() {
+    const snapshot = structuredClone(this.rows);
+    const operation = this.tail.catch(() => {}).then(() => writeDurablePrivateJson(this.path, { version: 1, devices: snapshot }));
+    this.tail = operation;
+    try {
+      await operation;
+      this.lastSaveError = null;
+    } catch (error) {
+      this.lastSaveError = error;
+      const reason = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'save-failed';
+      this.emit('diagnostic', { code: 'device-registry-save-failed', reason });
+      throw error;
+    }
+    this.emit('changed', this.list());
+  }
   /** @param {string} publicKey @param {string} name @param {string} token @param {number} [issuedAt] */
   async approve(publicKey, name, token, issuedAt = Date.now()) {
     const id = createHash('sha256').update(publicKey).digest('hex').slice(0, 24), now = Date.now();
@@ -68,7 +86,8 @@ export class DeviceRegistry extends EventEmitter {
     if (typeof token !== 'string' || !token) return null;
     const digest = createHash('sha256').update(token).digest('hex'), row = this.rows.find(row => row.tokenHash === digest && !row.revoked);
     if (!row) return null;
-    if (Date.now() - row.lastSeen > 10000) { row.lastSeen = Date.now(); this.save().catch(() => {}); }
+    const now = Date.now(), lastSeen = Number.isFinite(row.lastSeen) ? row.lastSeen : 0;
+    if (now - lastSeen > 10000) { row.lastSeen = now; this.save().catch(() => {}); }
     return row.id;
   }
   /** @param {string} id @param {string} name */

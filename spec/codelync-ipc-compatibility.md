@@ -39,8 +39,25 @@ dispatches a native command.
 Native version matching uses the packaged method table, defaulting an unknown
 method to version 0. A follower method with a non-null top-level `hostId` uses
 the base version plus one. A local interruption also accepts legacy version 3
-alongside current version 4. This compatibility matcher is used only to reject
-incoming requests; the existing outbound command surface is not expanded.
+alongside current version 4. Compatibility with Codex Desktop `157.0.8103.78`
+(`ChatGPT.app`) additionally accepts both verified stream/queue versions while
+preserving strict rejection of unverified versions:
+
+- `thread-stream-state-changed` inbound broadcasts and request matching accept
+  verified versions `11` and `13` (failing closed with `codex-version-mismatch`
+  on unsupported versions such as `12`).
+- `thread-follower-set-queued-follow-ups-state` incoming request matching accepts
+  base version `1` or `3` (plus one when `hostId` is non-null).
+- `thread-queued-followups-changed` incoming request matching accepts versions `2`
+  and `3`.
+- In Codex Desktop `157.0.8103.78` (`thread-stream-state-changed` `version: 13`),
+  `threadRuntimeStatus` is a tagged union where `{ "type": "idle" }` omits
+  `activeFlags` (and JSON patches transitioning to/from `idle` may `remove` or
+  `add` `activeFlags`), while `{ "type": "active" }` continues carrying
+  `activeFlags: [...]`.
+
+This compatibility matcher is used only to reject incoming requests; the existing
+outbound command surface is not expanded.
 
 `client-discovery-request` continues to receive
 `client-discovery-response` with `{ "canHandle": false }`. This was already

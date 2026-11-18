@@ -184,9 +184,13 @@ test('unsupported runtime/flags, missing owner, wrong version, and resource limi
   ipc.snapshot({ ...state(), threadRuntimeStatus: { type: 'active', activeFlags: ['background'] } }, 2); assert.equal(observer.status().known, false);
   ipc.owner = null; ipc.snapshot(state(), 3); assert.equal(observer.status().known, false);
   ipc.owner = 'local:original'; ipc.emit({ type: 'snapshot', revision: 4, conversationState: state() }, { version: 12 }); assert.equal(observer.status().known, false);
-  ipc.snapshot({ ...state(), turns: Array.from({ length: 2049 }, (_, i) => ({ turnId: String(i), status: 'completed', items: [] })) }, 5);
+  ipc.emit({ type: 'snapshot', revision: 5, conversationState: state() }, { version: 13 }); assert.equal(observer.status().known, true); assert.equal(observer.status().active, true); assert.equal(observer.status().waiting, false);
+  ipc.emit({ type: 'patches', baseRevision: 5, revision: 6, patches: [{ op: 'add', path: ['threadRuntimeStatus', 'activeFlags', 0], value: 'waitingOnApproval' }] }, { version: 13 });
+  assert.equal(observer.status().known, true); assert.equal(observer.status().active, true); assert.equal(observer.status().waiting, true);
+  ipc.emit({ type: 'snapshot', revision: 7, conversationState: state() }, { version: 12 }); assert.equal(observer.status().known, false);
+  ipc.snapshot({ ...state(), turns: Array.from({ length: 2049 }, (_, i) => ({ turnId: String(i), status: 'completed', items: [] })) }, 8);
   assert.equal(observer.status().known, false); assert.equal(observer.replica, null);
-  ipc.snapshot({ ...state(), requests: [null] }, 6); assert.equal(observer.status().known, false);
+  ipc.snapshot({ ...state(), requests: [null] }, 9); assert.equal(observer.status().known, false);
 });
 
 test('question title removal preserves other question indices and empty latest identity does not revive history', async t => {
@@ -249,4 +253,61 @@ test('scope-valid own idle with incomplete roster keeps observation health witho
   await observer.refresh(); assert.equal(ipc.subscriptions, 2);
   ipc.snapshot(native, 2); assert.equal(observer.observationReady(), true); assert.equal(observer.status().known, false);
   observer.close(); assert.equal(observer.observationReady(), false); assert.equal(observer.needsRefresh(), false);
+});
+
+test('v13 idle runtime union omitting activeFlags stays known across snapshot and transition patches', async t => {
+  const { ipc, observer } = await fixture(t);
+  ipc.emit({
+    type: 'snapshot',
+    revision: 1,
+    conversationState: {
+      threadRuntimeStatus: { type: 'idle' },
+      requests: [],
+      turnHistory: { history: { entitiesByKey: {}, islands: [], isComplete: true } },
+    },
+  }, { version: 13 });
+  assert.deepEqual(
+    { known: observer.status().known, active: observer.status().active, waiting: observer.status().waiting, status: observer.status().status },
+    { known: true, active: false, waiting: false, status: 'ready' },
+  );
+  assert.equal(ipc.refreshes, 0);
+
+  ipc.emit({
+    type: 'patches',
+    baseRevision: 1,
+    revision: 2,
+    patches: [
+      { op: 'replace', path: ['threadRuntimeStatus', 'type'], value: 'active' },
+      { op: 'add', path: ['threadRuntimeStatus', 'activeFlags'], value: ['waitingOnApproval'] },
+    ],
+  }, { version: 13 });
+  assert.equal(observer.status().known, true);
+  assert.equal(observer.status().active, true);
+  assert.equal(observer.status().waiting, true);
+  assert.equal(ipc.refreshes, 0);
+
+  ipc.emit({
+    type: 'patches',
+    baseRevision: 2,
+    revision: 3,
+    patches: [
+      { op: 'replace', path: ['threadRuntimeStatus', 'type'], value: 'idle' },
+      { op: 'remove', path: ['threadRuntimeStatus', 'activeFlags'] },
+    ],
+  }, { version: 13 });
+  assert.equal(observer.status().known, true);
+  assert.equal(observer.status().active, false);
+  assert.equal(observer.status().waiting, false);
+  assert.equal(ipc.refreshes, 0);
+
+  ipc.emit({
+    type: 'snapshot',
+    revision: 4,
+    conversationState: {
+      threadRuntimeStatus: { type: 'active' },
+      requests: [],
+      turnHistory: { history: { entitiesByKey: {}, islands: [], isComplete: true } },
+    },
+  }, { version: 13 });
+  assert.equal(observer.status().known, false);
 });

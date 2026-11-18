@@ -39,7 +39,10 @@ export class GatewayMetrics {
     this.sockets = /** @type {Map<import('node:net').Socket,SocketSample>} */ (new Map());
     this.seen = new WeakSet(); this.closed = false; this.closedAt = /** @type {number|null} */ (null);
     this.flushing = /** @type {Promise<void>|null} */ (null); this.closing = /** @type {Promise<void>|null} */ (null); this.queued = false;
-    this.timer = this.path ? setInterval(() => { void this.flush().catch(() => {}); }, this.flushIntervalMs) : null;
+    this.flushFailures = 0; this.nextFlushAt = 0;
+    this.timer = this.path ? setInterval(() => {
+      if (this.flushFailures === 0 || this.time() >= this.nextFlushAt) void this.flush().catch(() => {});
+    }, this.flushIntervalMs) : null;
     this.timer?.unref();
   }
   /** Resume cumulative bytes only; session counters and monotonic uptime start anew.
@@ -79,7 +82,8 @@ export class GatewayMetrics {
   durable() { return /** @type {Totals} */ ({ version: 1, totalReceivedBytes: add(this.base.totalReceivedBytes, this.receivedBytes), totalSentBytes: add(this.base.totalSentBytes, this.sentBytes) }); }
   dirty() { const value = this.durable(); return value.totalReceivedBytes !== this.persisted.totalReceivedBytes || value.totalSentBytes !== this.persisted.totalSentBytes; }
   maybeFlush() {
-    if (!this.path || this.closed || this.queued) return;
+    if (!this.path || this.closed || this.queued || this.flushing) return;
+    if (this.flushFailures > 0 && this.time() < this.nextFlushAt) return;
     const value = this.durable();
     if (value.totalReceivedBytes - this.persisted.totalReceivedBytes + value.totalSentBytes - this.persisted.totalSentBytes < this.writeThresholdBytes) return;
     this.queued = true;
@@ -108,8 +112,14 @@ export class GatewayMetrics {
     if (this.flushing) return this.flushing;
     if (!this.path || !this.dirty()) return Promise.resolve();
     const value = this.durable(), path = this.path;
-    const operation = Promise.resolve().then(() => this.storage.write(path, value)).then(() => { this.persisted = value; })
-      .finally(() => { if (this.flushing === operation) this.flushing = null; });
+    const operation = Promise.resolve().then(() => this.storage.write(path, value)).then(() => {
+      this.persisted = value; this.flushFailures = 0; this.nextFlushAt = 0;
+    }, error => {
+      this.flushFailures += 1;
+      const backoff = Math.min(60_000, this.flushIntervalMs * Math.pow(2, Math.min(4, this.flushFailures - 1)));
+      this.nextFlushAt = this.time() + backoff;
+      throw error;
+    }).finally(() => { if (this.flushing === operation) this.flushing = null; });
     this.flushing = operation; return operation;
   }
   close() {

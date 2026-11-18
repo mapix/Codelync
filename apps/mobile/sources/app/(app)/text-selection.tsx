@@ -41,6 +41,9 @@ export default function TextSelectionScreen() {
             headerRight: () => (
                 <Pressable
                     onPress={handleCopyAll}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('common.copy')}
+                    accessibilityState={{ disabled: loading || !fullText }}
                     style={({ pressed }) => [
                         styles.copyButton,
                         { opacity: pressed ? 0.7 : 1 }
@@ -88,7 +91,17 @@ export default function TextSelectionScreen() {
 
     return (
         <View style={styles.container}>
-            <MobileGlassSurface enabled={Platform.OS !== 'web'} intensity={58} style={styles.textGlass}>
+            <MobileGlassSurface
+                enabled={Platform.OS !== 'web'}
+                intensity={58}
+                style={[
+                    styles.textGlass,
+                    Platform.OS !== 'web' && {
+                        marginLeft: Math.max(16, insets.left),
+                        marginRight: Math.max(16, insets.right),
+                    },
+                ]}
+            >
             <ScrollView 
                 style={styles.textContainer} 
                 showsVerticalScrollIndicator={true}
@@ -154,6 +167,10 @@ const styles = StyleSheet.create((theme) => ({
         paddingVertical: 0,
     },
     copyButton: {
+        minWidth: 44,
+        minHeight: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
         padding: 8,
         marginRight: 8,
         borderRadius: 8,

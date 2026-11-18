@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Platform, View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/auth/AuthContext';
 import { RoundButton } from '@/components/RoundButton';
@@ -70,6 +71,7 @@ const stylesheet = StyleSheet.create((theme) => ({
  */
 export default function Restore() {
     const { theme } = useUnistyles();
+    const insets = useSafeAreaInsets();
     const styles = stylesheet;
     const auth = useAuth();
     const router = useRouter();
@@ -136,7 +138,17 @@ export default function Restore() {
     }, [keypair]);
 
     return (
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
+        <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[
+                styles.container,
+                {
+                    paddingBottom: Math.max(24, insets.bottom + 16),
+                    paddingLeft: Math.max(32, insets.left + 16),
+                    paddingRight: Math.max(32, insets.right + 16),
+                },
+            ]}
+        >
             <Text style={styles.instruction}>{t('onboarding.restoreScan')}</Text>
             <Text style={styles.path}>{t('onboarding.restoreScanPath')}</Text>
             {authReady ? (

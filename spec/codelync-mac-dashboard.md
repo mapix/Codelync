@@ -47,11 +47,20 @@ through this owned pipe and waits for its existing matching command results.
 Inactive Relay changes validate the address and read-only server information
 before saving for the next Start; they do not claim a live phone connection.
 Inactive media configuration saves settings without starting capture, and
-permission requests remain unavailable while paused.
+permission requests remain unavailable while paused. Saving an external media
+relay requires a non-empty server URL and API key, and media-relay controls are
+disabled while settings are unavailable or a save is in flight.
+While starting or restarting with saved channel configuration, enabled channels
+display Starting… until live channel states arrive rather than Unavailable.
 Pause first waits for the normal service to exit, then starts the settings writer;
 Start waits for that writer to exit before starting the normal service. A failed
 settings writer remains a visible unavailable state with a retry action. Closing
 or reopening a window must not start a second writer or overwrite an input draft.
+Start and Pause clear stale transient command errors and discard only individual
+oversized NDJSON stdout lines (>64 KiB) without dropping valid subsequent lines
+in the same read. Unsaved Relay and Media relay form drafts stay intact while
+controls disable during busy saves, toggling Remote desktop enablement, or
+pausing.
 Source revision ordering is scoped to the current service process. A fresh
 writer may begin at revision 1; its first valid configuration replaces the saved
 projection while subsequent revisions are monotonic within that process. Output
@@ -67,7 +76,9 @@ The main status uses live device connection state for Phone connected. A ready
 enabled gateway without a live phone displays Ready to connect. Saved pairing
 continues to select the statistics panel without implying a live connection.
 Paused settings keep the saved configuration visible while live channel and
-traffic observations and old device connection flags are cleared.
+traffic observations and old device connection flags are cleared. Device
+rename, revocation and pairing-invitation refresh require the active running
+service; revoked devices remain read-only in the paired devices list.
 
 After a device has paired, the Mac App defaults to a statistics dashboard. The
 QR screen remains reachable through a visible switch; renewing an invitation
@@ -104,7 +115,9 @@ the existing counter file. The UI displays those totals as unmeasured.
 
 QR artwork is cached by the complete pairing URL. Rendering is requested only
 while the pairing panel is visible; an unchanged URL reuses the image and Core
-Image context. Metrics samples never regenerate the QR image.
+Image context. Metrics samples never regenerate the QR image. The main service
+status summary, pairing QR artwork, and paired device status expose localized
+VoiceOver accessibility labels without adding decorative visual clutter.
 
 Verify the post-pair default view, QR/statistics switching, persistent cumulative
 totals, real HTTP and WebSocket byte counts, interaction counters, sampling/write

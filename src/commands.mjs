@@ -8,6 +8,37 @@ import { writePrivateJson } from './private-json.mjs';
 /** Preserve only a bounded error code; never persist native message text or private context. @param {unknown} value */
 export function nativeCauseCode(value) { return typeof value === 'string' && /^[a-z][a-z0-9_-]{0,79}$/u.test(value) ? value : undefined; }
 
+/** Deterministic JSON serialization for receipt digest stability regardless of key order.
+ * @param {unknown} value @param {Set<object>} [seen] @returns {string} */
+function canonicalPayload(value, seen = new Set()) {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'bigint') throw new BridgeError('invalid-command-payload', '操作参数格式无效。');
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? 'undefined' : serialized;
+  }
+  const target = /** @type {Record<string,unknown>} */ (value);
+  if (typeof target.toJSON === 'function') return canonicalPayload(target.toJSON(), seen);
+  if (seen.has(value)) throw new BridgeError('invalid-command-payload', '操作参数包含循环引用。');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const items = value.map(item => (item === undefined || typeof item === 'function' || typeof item === 'symbol' ? 'null' : canonicalPayload(item, seen)));
+      return `[${items.join(',')}]`;
+    }
+    const keys = Object.keys(target).sort();
+    const parts = [];
+    for (const key of keys) {
+      const entry = target[key];
+      if (entry === undefined || typeof entry === 'function' || typeof entry === 'symbol') continue;
+      parts.push(`${JSON.stringify(key)}:${canonicalPayload(entry, seen)}`);
+    }
+    return `{${parts.join(',')}}`;
+  } finally {
+    seen.delete(value);
+  }
+}
+
 export class CommandReceipts {
   constructor() {
     /** @type {Map<string,{digest:string,receipt:Receipt,flight:Promise<Receipt>}>} */
@@ -51,7 +82,7 @@ export class CommandReceipts {
   async run(scope, id, payload, execute) {
     if (!/^[a-zA-Z0-9_-]{8,100}$/.test(id)) throw new BridgeError('invalid-command-id', '操作地址无效。');
     const key = `${scope}:${id}`;
-    const hash = createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+    const hash = createHash('sha256').update(canonicalPayload(payload)).digest('hex');
     const previous = this.commands.get(key);
     if (previous) {
       if (previous.digest !== hash) throw new BridgeError('command-conflict', '同一操作编号不能对应不同内容。', 409);

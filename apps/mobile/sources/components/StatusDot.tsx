@@ -7,9 +7,10 @@ export interface StatusDotProps {
     isPulsing?: boolean;
     size?: number;
     style?: ViewStyle;
+    accessibilityLabel?: string;
 }
 
-export const StatusDot = React.memo(({ color, isPulsing, size = 6, style }: StatusDotProps) => {
+export const StatusDot = React.memo(({ color, isPulsing, size = 6, style, accessibilityLabel }: StatusDotProps) => {
     const opacity = useSharedValue(1);
 
     React.useEffect(() => {
@@ -39,6 +40,10 @@ export const StatusDot = React.memo(({ color, isPulsing, size = 6, style }: Stat
 
     return (
         <Animated.View
+            accessible={!!accessibilityLabel}
+            accessibilityRole={accessibilityLabel ? 'text' : undefined}
+            accessibilityLabel={accessibilityLabel}
+            importantForAccessibility={accessibilityLabel ? 'yes' : 'no'}
             style={[
                 baseStyle,
                 animatedStyle,

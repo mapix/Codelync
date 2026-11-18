@@ -7,6 +7,7 @@ import { Text } from './StyledText';
 import { Typography } from '@/constants/Typography';
 import { PickerSheet, PickerSheetOption } from './PickerSheet';
 import { t, getCurrentLanguage } from '@/text';
+import { codelyncChannelLabels } from '@/text/codelyncChannelLabels';
 import type { CodelyncConnectionState } from '@/utils/codelyncConnectionState';
 
 export interface PeerChannelSnapshot {
@@ -47,9 +48,12 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
     const choice = React.useRef<string | null>(null);
     const selected = snapshot.channels.find(channel => channel.id === snapshot.selectedId);
     const actual = snapshot.channels.find(channel => channel.id === (snapshot.activeId ?? snapshot.selectedId));
-    const chinese = getCurrentLanguage().startsWith('zh');
-    const copy = chinese ? { desired: '希望使用', current: '当前连接', failed: '已保存所选方式，当前未接通。', unsaved: '选择尚未保存，请重试。', locate: '当前地址不可用时，请扫描同一台 Mac 的当前二维码，或通过 USB 更新其位置。' }
-        : { desired: 'Selected', current: 'Current connection', failed: 'Choice saved. It is not connected yet.', unsaved: 'The choice was not saved. Try again.', locate: 'If saved addresses are unavailable, scan the current code on the same Mac or update its location over USB.' };
+    const copy = codelyncChannelLabels[getCurrentLanguage()] ?? codelyncChannelLabels.en;
+    const triggerScan = React.useCallback(() => {
+        if (!onScan) return;
+        setOpen(false);
+        onScan();
+    }, [onScan]);
     const scope = JSON.stringify([snapshot.peerId, snapshot.selectedId, snapshot.automatic, selected?.url ?? null, sourceNotice?.scope ?? null]);
     const currentScope = React.useRef(scope); currentScope.current = scope;
     const healthy = !snapshot.connecting && snapshot.writable !== false && actual?.state === 'connected';
@@ -107,13 +111,13 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
             <Pressable testID="codelync-channel-open" accessibilityRole="button" accessibilityLabel={`${t('codelyncChannels.title')}: ${presentation === 'header' && failed ? t('codelyncChannels.failedTitle') : presentation === 'header' && recovering ? t('codelyncChannels.connectingTitle') : label}`}
                 accessibilityState={{ expanded: open, busy: submitting }}
                 onPress={() => { setError(false); setOpen(true); }} style={presentation === 'header' ? styles.headerTrigger : presentation === 'settings' ? styles.settingsTrigger : styles.trigger}>
-                {presentation === 'header' ? <Ionicons testID="codelync-channel-status-icon" name={headerIcon} size={21} color={failed ? theme.colors.textDestructive : theme.colors.textSecondary} /> : snapshot.connecting || submitting ? <ActivityIndicator size="small" color={theme.colors.textSecondary} />
-                    : <Ionicons name={selected?.kind === 'local' ? 'wifi-outline' : selected?.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline'} size={presentation === 'settings' ? 25 : 16} color={theme.colors.textSecondary} />}
+                {presentation === 'header' ? <Ionicons testID="codelync-channel-status-icon" name={headerIcon} size={21} color={failed ? theme.colors.textDestructive : theme.colors.textSecondary} /> : snapshot.connecting || submitting ? <ActivityIndicator style={styles.triggerIcon} size="small" color={theme.colors.textSecondary} />
+                    : <Ionicons style={styles.triggerIcon} name={selected?.kind === 'local' ? 'wifi-outline' : selected?.kind === 'relay' ? 'swap-horizontal-outline' : 'cloud-outline'} size={presentation === 'settings' ? 25 : 16} color={theme.colors.textSecondary} />}
                 {presentation === 'header' ? null : presentation === 'settings' ? <View style={styles.settingsCopy}>
                     <Text style={styles.settingsTitle}>{t('codelyncChannels.title')}</Text>
                     <Text style={styles.settingsDescription} numberOfLines={2}>{label}</Text>
-                </View> : <Text style={styles.triggerText} numberOfLines={1}>{label}</Text>}
-                {presentation !== 'header' ? <Ionicons name={presentation === 'settings' ? 'chevron-forward' : 'chevron-down'} size={presentation === 'settings' ? 18 : 14} color={theme.colors.textSecondary} /> : null}
+                </View> : <Text style={styles.triggerText} numberOfLines={2}>{label}</Text>}
+                {presentation !== 'header' ? <Ionicons style={styles.triggerIcon} name={presentation === 'settings' ? 'chevron-forward' : 'chevron-down'} size={presentation === 'settings' ? 18 : 14} color={theme.colors.textSecondary} /> : null}
             </Pressable>
             {presentation === 'settings' && showDivider ? <View style={styles.settingsDivider} /> : null}
             <PickerSheet visible={open} title={t('codelyncChannels.title')} onClose={() => setOpen(false)}>
@@ -124,7 +128,7 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
                 </View> : null}
                 {hasRoutes ? <PickerSheetOption testID="codelync-channel-auto" label={t('codelyncChannels.automatic')} description={t('codelyncChannels.automaticDetail')}
                     selected={snapshot.automatic} onPress={() => void choose('auto')} />
-                    : onScan ? <PickerSheetOption testID="codelync-channel-scan" label={t('codelyncChannels.scanMac')} selected={false} action onPress={onScan} /> : null}
+                    : onScan ? <PickerSheetOption testID="codelync-channel-scan" label={t('codelyncChannels.scanMac')} selected={false} action onPress={triggerScan} /> : null}
                 {snapshot.channels.map(channel => {
                     const latency = typeof channel.latencyMs === 'number' && Number.isFinite(channel.latencyMs) && channel.latencyMs >= 0
                         ? t('codelyncChannels.latency', { ms: Math.round(channel.latencyMs) }) : t('codelyncChannels.latencyUnknown');
@@ -140,9 +144,9 @@ export function PeerChannelControlView({ snapshot, onSelect, style, presentation
                 {open && snapshot.failureCode === 'connection-failed' ? <View><Text style={styles.error}>{copy.locate}</Text>
                     {onRetry ? <PickerSheetOption testID="codelync-channel-retry" label={t('codelyncChannels.retryConnection')} selected={false} action disabled={submitting}
                         onPress={() => { void onRetry().catch(() => {}); }} /> : null}
-                    {onScan ? <PickerSheetOption testID="codelync-channel-location-scan" label={t('codelyncChannels.scanMac')} selected={false} action onPress={onScan} /> : null}
+                    {onScan ? <PickerSheetOption testID="codelync-channel-location-scan" label={t('codelyncChannels.scanMac')} selected={false} action onPress={triggerScan} /> : null}
                 </View> : null}
-                {open && connectionState?.kind === 'access-ended' && onScan ? <PickerSheetOption testID="codelync-channel-scan" label={t('codelyncChannels.scanMac')} selected={false} action onPress={onScan} /> : null}
+                {open && connectionState?.kind === 'access-ended' && onScan ? <PickerSheetOption testID="codelync-channel-scan" label={t('codelyncChannels.scanMac')} selected={false} action onPress={triggerScan} /> : null}
             </PickerSheet>
         </View>
     );
@@ -159,8 +163,9 @@ const stylesheet = StyleSheet.create(theme => ({
     settingsTitle: { color: theme.colors.text, fontSize: 17, ...Typography.default() },
     settingsDescription: { color: theme.colors.textSecondary, fontSize: 13, ...Typography.default() },
     settingsDivider: { marginLeft: 54, height: StyleSheet.hairlineWidth, backgroundColor: theme.colors.divider },
-    trigger: { minHeight: 44, maxWidth: 300, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 22,
+    trigger: { minHeight: 44, maxWidth: 300, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 22,
         backgroundColor: theme.colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
-    triggerText: { flexShrink: 1, minWidth: 0, fontSize: 13, color: theme.colors.text, ...Typography.default() },
-    error: { marginHorizontal: 24, marginVertical: 12, color: theme.colors.textSecondary, fontSize: 13, ...Typography.default() },
+    triggerIcon: { flexShrink: 0 },
+    triggerText: { flexShrink: 1, minWidth: 0, fontSize: 13, lineHeight: 18, color: theme.colors.text, ...Typography.default() },
+    error: { marginHorizontal: 24, marginVertical: 12, color: theme.colors.textDestructive ?? theme.colors.textSecondary, fontSize: 13, ...Typography.default() },
 }));

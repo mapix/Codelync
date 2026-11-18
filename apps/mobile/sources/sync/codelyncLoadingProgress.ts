@@ -28,6 +28,9 @@ export class CodelyncLoadingProgress {
         const state = this.getSession(id); if (state.generation !== generation || state.phase !== 'complete') return;
         this.sessions.set(id, { ...state, revalidating: pending, revalidationFailed: failed }); this.changed();
     }
+    clearSession(id: string) {
+        if (this.sessions.delete(id)) this.changed();
+    }
 }
 export const codelyncLoadingProgress = new CodelyncLoadingProgress();
 export const useCodelyncDiscoveryProgress = () => useSyncExternalStore(codelyncLoadingProgress.subscribe, codelyncLoadingProgress.getDiscovery);

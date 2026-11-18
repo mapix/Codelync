@@ -81,7 +81,7 @@ function AvatarStyleDropdownValue(props: {
     return (
         <View style={styles.dropdownValue}>
             <AvatarStylePreview style={props.style} monochrome={props.monochrome} />
-            <Text style={styles.dropdownValueText} numberOfLines={1}>
+            <Text style={styles.dropdownValueText} numberOfLines={2}>
                 {getAvatarStyleLabel(props.style)}
             </Text>
             <Ionicons
@@ -105,6 +105,8 @@ function AvatarStyleOption(props: {
     return (
         <Pressable
             onPress={props.onPress}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: props.selected }}
             style={({ pressed }) => [
                 styles.statusPlacementOption,
                 props.selected && styles.statusPlacementOptionSelected,
@@ -112,7 +114,7 @@ function AvatarStyleOption(props: {
             ]}
         >
             <AvatarStylePreview style={props.style} monochrome={props.monochrome} />
-            <Text style={styles.statusPlacementOptionText} numberOfLines={1}>
+            <Text style={styles.statusPlacementOptionText} numberOfLines={2}>
                 {getAvatarStyleLabel(props.style)}
             </Text>
             {props.selected ? (
@@ -169,7 +171,7 @@ function BubbleColorDropdownValue(props: {
     return (
         <View style={styles.dropdownValue}>
             <BubbleColorPreview color={props.color} />
-            <Text style={styles.dropdownValueText} numberOfLines={1}>
+            <Text style={styles.dropdownValueText} numberOfLines={2}>
                 {props.label}
             </Text>
             <Ionicons
@@ -192,6 +194,8 @@ function BubbleColorOption(props: {
     return (
         <Pressable
             onPress={props.onPress}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: props.selected }}
             style={({ pressed }) => [
                 styles.bubbleColorOption,
                 props.selected && styles.bubbleColorOptionSelected,
@@ -199,7 +203,7 @@ function BubbleColorOption(props: {
             ]}
         >
             <BubbleColorPreview color={props.color} />
-            <Text style={styles.bubbleColorOptionText} numberOfLines={1}>
+            <Text style={styles.bubbleColorOptionText} numberOfLines={2}>
                 {getUserMessageBubbleColorLabel(props.color)}
             </Text>
             {props.selected ? (
@@ -556,12 +560,14 @@ const stylesheet = StyleSheet.create((theme) => ({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        minWidth: 0,
         maxWidth: 184,
     },
     dropdownValueText: {
         color: theme.colors.textSecondary,
         fontSize: 15,
         flexShrink: 1,
+        minWidth: 0,
     },
     bubbleColorDropdown: {
         paddingVertical: 6,

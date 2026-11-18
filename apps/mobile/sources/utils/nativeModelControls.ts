@@ -5,8 +5,17 @@ import { currentNativeTaskSignal } from './codelyncNativeTasks';
 import { nativeComposerInputReadOnly } from './nativeComposerInputReadOnly';
 
 export function nativeModelControlScopesEqual(a: NativeModelControlScope, b: NativeModelControlScope): boolean {
-    return JSON.stringify(Object.keys(a).sort().map(key => [key, a[key as keyof NativeModelControlScope]]))
-        === JSON.stringify(Object.keys(b).sort().map(key => [key, b[key as keyof NativeModelControlScope]]));
+    if (a === b) return true;
+    return a.app === b.app
+        && a.appMode === b.appMode
+        && a.nativeCollection === b.nativeCollection
+        && a.nativeConversationId === b.nativeConversationId
+        && a.hostId === b.hostId
+        && a.ownerGeneration === b.ownerGeneration
+        && a.runtimeGeneration === b.runtimeGeneration
+        && a.queryToken === b.queryToken
+        && a.cliSessionId === b.cliSessionId
+        && a.settingsToken === b.settingsToken;
 }
 
 /** Main-runtime identity is independent of the per-session owner epoch. */

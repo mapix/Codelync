@@ -7,7 +7,8 @@ import { layout } from '../layout';
 import { isRunningOnMac } from '@/utils/platform';
 import { useHeaderHeight, useIsTablet } from '@/utils/responsive';
 import { Typography } from '@/constants/Typography';
-import { StyleSheet } from 'react-native-unistyles';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { t } from '@/text';
 import { MobileGlassSurface } from '../MobileGlass';
 import {
     MobileHeaderScrim,
@@ -260,12 +261,15 @@ interface ExtendedNavigationOptions extends Partial<NativeStackHeaderProps['opti
 }
 
 // Default back button component
-const DefaultBackButton: React.FC<{ tintColor?: string; onPress: () => void }> = ({ tintColor = '#000', onPress }) => {
+const DefaultBackButton: React.FC<{ tintColor?: string; onPress: () => void }> = ({ tintColor, onPress }) => {
     const styles = stylesheet;
+    const { theme } = useUnistyles();
+    const resolvedTint = tintColor ?? theme.colors.header?.tint ?? (theme.dark ? '#FFFFFF' : '#000000');
+    const backLabel = t('common.back');
     if (Platform.OS === 'web' || isRunningOnMac()) {
         return (
-            <Pressable onPress={onPress} hitSlop={15}>
-                <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color={tintColor} />
+            <Pressable accessibilityRole="button" accessibilityLabel={backLabel} onPress={onPress} hitSlop={15}>
+                <Ionicons name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'} size={24} color={resolvedTint} />
             </Pressable>
         );
     }
@@ -273,17 +277,21 @@ const DefaultBackButton: React.FC<{ tintColor?: string; onPress: () => void }> =
     if (Platform.OS === 'android') {
         return (
             <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={backLabel}
                 onPress={onPress}
                 hitSlop={8}
                 style={({ pressed }) => [styles.androidBackButton, pressed && styles.controlPressed]}
             >
-                <Ionicons name="arrow-back" size={24} color={tintColor} />
+                <Ionicons name="arrow-back" size={24} color={resolvedTint} />
             </Pressable>
         );
     }
 
     return (
         <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={backLabel}
             onPress={onPress}
             hitSlop={10}
             style={({ pressed }) => [styles.backButton, pressed && styles.controlPressed]}
@@ -297,7 +305,7 @@ const DefaultBackButton: React.FC<{ tintColor?: string; onPress: () => void }> =
                 <Ionicons
                     name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'}
                     size={24}
-                    color={tintColor}
+                    color={resolvedTint}
                 />
             </MobileGlassSurface>
         </Pressable>

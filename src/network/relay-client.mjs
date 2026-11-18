@@ -53,14 +53,18 @@ export class RelayTunnelClient extends EventEmitter {
   }
   activate() { this.active = true; }
   /** @param {boolean} value */
-  pauseReconnect(value) { this.paused = value; if (value && this.timer) { clearTimeout(this.timer); this.timer = null; } else if (!value && !this.ready) this.schedule(); }
+  pauseReconnect(value) { this.paused = value; if (value && this.timer) { clearTimeout(this.timer); this.timer = null; } else if (!value && !this.ready && (!this.socket || this.socket.readyState >= 2)) this.schedule(); }
   connect() {
     if (this.closed) return;
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    const previous = this.socket;
+    if (previous && previous.readyState < 2) previous.terminate();
     const url = new URL(this.origin + '/relay/v1/tunnel'); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url, { headers: { Authorization: 'Bearer ' + this.options.token }, followRedirects: false, handshakeTimeout: 8000, maxPayload: FRAME_BYTES + 17, perMessageDeflate: false });
     this.socket = socket; this.ready = false;
     const timeout = setTimeout(() => socket.close(1008, 'registration-timeout'), 10000); timeout.unref();
     const channel = new RelayChannel(socket, value => {
+      if (this.socket !== socket || this.closed) return;
       if (!this.ready) {
         if (value.type === 'challenge' && value.version === 1 && /^[A-Za-z0-9_-]{43}$/u.test(value.challenge ?? '')) {
           channel.send({ type: 'register', challenge: value.challenge, publicKey: Buffer.from(this.keys.publicKey).toString('base64url'), signature: Buffer.from(nacl.sign.detached(registrationMessage(value.challenge), this.keys.secretKey)).toString('base64url') }); return;
@@ -71,12 +75,17 @@ export class RelayTunnelClient extends EventEmitter {
       this.forward(channel, value);
     });
     this.channel = channel;
-    socket.on('error', () => { this.initialReject?.(Error('relay-connection-failed')); });
+    const failInitial = () => {
+      if (this.socket !== socket) return;
+      const reject = this.initialReject; this.initialReject = null;
+      reject?.(Error('relay-connection-failed'));
+    };
+    socket.on('error', failInitial);
     socket.once('close', () => {
       clearTimeout(timeout); channel.close();
       if (this.socket !== socket) return;
-      this.ready = false; this.initialReject?.(Error('relay-connection-failed')); this.initialReject = null;
-      this.emit('disconnected'); this.schedule();
+      this.ready = false; failInitial();
+      if (!this.closed) { this.emit('disconnected'); this.schedule(); }
     });
   }
   schedule() {
@@ -104,10 +113,11 @@ export class RelayTunnelClient extends EventEmitter {
     if (upgrade) upstream.end();
   }
   close() {
-    if (this.closed) return; this.closed = true; this.active = false;
+    if (this.closed) return; this.closed = true; this.active = false; this.ready = false;
     this.cancel.abort();
     if (this.timer) clearTimeout(this.timer); this.timer = null;
-    this.initialReject?.(Error('relay-closed')); this.initialReject = null;
+    const reject = this.initialReject; this.initialReject = null;
+    reject?.(Error('relay-closed'));
     this.channel?.close(); this.socket?.terminate(); this.keys.secretKey.fill(0);
   }
 }

@@ -80,8 +80,9 @@ cd Codelync/deploy/self-host
 cp .env.example .env
 ```
 
-编辑 `.env`：只填写实际要启动的服务域名，未使用的域名留空。模板会拒绝
-`example.com` 等示例域名。
+编辑 `.env`：只填写实际要启动的服务域名，未使用的域名留空。脚本会强制校验
+`.env` 键名白名单（仅允许普通文件、禁止控制字符），并拒绝 `.local` 与
+`example.com` 等保留示例域名；`node check.mjs` 通过 HTTPS 与有界响应读取执行校验。
 
 ### A. 仅通信 Relay
 

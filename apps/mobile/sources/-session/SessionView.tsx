@@ -478,6 +478,8 @@ export const SessionView = React.memo((props: { id: string }) => {
             {config.noninvasiveLocal || isNoninvasiveBridge(session?.metadata) ? <PeerChannelControl presentation="header" sessionId={sessionId ?? routeId} /> : null}
             {session ? <Pressable
                 onPress={() => router.push(`/session/${session.id}/info`)}
+                accessibilityRole="button"
+                accessibilityLabel={headerProps.title ? `${headerProps.title} · ${t('profile.details')}` : t('profile.details')}
                 style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
             >
                 <Avatar
@@ -575,7 +577,20 @@ export const SessionView = React.memo((props: { id: string }) => {
             </View>
 
             {/* Render the overlay header after the dynamic list so native blur samples its content. */}
-            {!hidesLandscapeHeader && (
+            {!hidesLandscapeHeader && (() => {
+                const nativeMeta = session?.metadata;
+                const isNativeSubagentHeader = nativeMeta?.nativeSession?.isSubagent === true && isNoninvasiveBridge(nativeMeta);
+                const subagentTitle = isNativeSubagentHeader
+                    ? (nativeMeta?.nativeSession?.agentName || nativeMeta?.nativeSession?.title || headerProps.title)
+                    : null;
+                const subagentSubtitle = isNativeSubagentHeader
+                    ? [
+                        codelyncSourceAppName(nativeMeta?.bridge?.source.app),
+                        codelyncSubagentKindLabels[getCurrentLanguage()],
+                        headerSession && isDataReady ? headerGit.subtitle : undefined,
+                    ].filter(Boolean).join(' · ')
+                    : null;
+                return (
                 <View style={{
                     position: 'absolute',
                     top: 0,
@@ -584,18 +599,16 @@ export const SessionView = React.memo((props: { id: string }) => {
                     zIndex: 1000
                 }}>
                     <ChatHeaderView
-                        title={session?.metadata?.nativeSession?.isSubagent === true && isNoninvasiveBridge(session.metadata)
-                            ? `${codelyncSourceAppName(session.metadata.bridge?.source.app)} · ${codelyncSubagentKindLabels[getCurrentLanguage()]} · ${session.metadata.nativeSession.agentName || session.metadata.nativeSession.title || headerProps.title}`
-                            : showTabStrip
+                        title={subagentTitle ?? (showTabStrip
                             ? worktree.workspaceName ?? headerGit.subtitle ?? worktree.projectName
                             : isNoninvasiveBridge(session?.metadata) && codelyncSourceAppName(session?.metadata?.bridge?.source.app)
                                 ? `${codelyncSourceLabel(session?.metadata?.bridge?.source)} · ${headerProps.title}`
-                                : headerProps.title}
-                        subtitle={showTabStrip
+                                : headerProps.title)}
+                        subtitle={subagentSubtitle ?? (showTabStrip
                             ? Platform.OS === 'web'
                                 ? t('sessionsFilter.worktreeTabs', { count: worktree.tabCount })
                                 : `${t('tabs.sessions')} · ${worktree.tabCount}`
-                            : headerSession && isDataReady ? headerGit.subtitle : undefined}
+                            : headerSession && isDataReady ? headerGit.subtitle : undefined)}
                         gitChanges={headerSession && isDataReady ? headerGit.changes : null}
                         backdropVisible={headerBackdropVisible}
                         extraPathSegment={fileViewPath ?? undefined}
@@ -615,7 +628,8 @@ export const SessionView = React.memo((props: { id: string }) => {
                         <VoiceAssistantStatusBar variant="full" />
                     )}
                 </View>
-            )}
+                );
+            })()}
         </>
     );
 
@@ -904,7 +918,7 @@ export function SessionViewLoaded({
     const nativeModels = useCodelyncModelControls(session ?? null);
     useCodelyncSelectedSessionActivity(session ?? null, active);
     const routeState = useCodelyncConnectionState();
-    const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected() && routeState.snapshot.writable !== false;
+    const socketConnected = useSocketStatus().status === 'connected' && apiSocket.peerConnected() && routeState.snapshot?.writable !== false;
     const nativeWritesBlocked = nativeWriteConnectionBlocked(session?.metadata, socketConnected);
     const pendingCommunications = useSessionPendingCommunications(sessionId ?? '');
     const acknowledgedCliVersions = useLocalSetting('acknowledgedCliVersions');
@@ -1404,12 +1418,18 @@ export function SessionViewLoaded({
             {/* CLI Version Warning Overlay - Subtle centered pill */}
             {!isWindowSource && shouldShowCliWarning && !(isLandscape && !isTablet) && (
                 <Pressable
+                    testID="codelync-cli-warning"
+                    accessibilityRole="button"
+                    accessibilityLabel={t('sessionInfo.cliVersionOutdated')}
                     onPress={handleDismissCliWarning}
                     style={{
                         position: 'absolute',
-                        top: 8, // Position at top of content area (padding handled by parent)
+                        // Anchor below the floating glass header when content runs under it.
+                        top: chatListTopContentInset ?? 8,
                         alignSelf: 'center',
-                        backgroundColor: '#FFF3CD',
+                        backgroundColor: theme.dark ? '#2E2308' : '#FFF3CD',
+                        borderWidth: 1,
+                        borderColor: theme.dark ? 'rgba(255, 179, 64, 0.35)' : 'rgba(133, 100, 4, 0.2)',
                         borderRadius: 100, // Fully rounded pill
                         paddingHorizontal: 14,
                         paddingVertical: 7,
@@ -1423,15 +1443,15 @@ export function SessionViewLoaded({
                         elevation: 4,
                     }}
                 >
-                    <Ionicons name="warning-outline" size={14} color="#FF9500" style={{ marginRight: 6 }} />
+                    <Ionicons name="warning-outline" size={14} color={theme.dark ? '#FFB340' : '#B25E00'} style={{ marginRight: 6 }} />
                     <Text style={{
                         fontSize: 12,
-                        color: '#856404',
+                        color: theme.dark ? '#FFE599' : '#7A4F01',
                         fontWeight: '600'
                     }}>
                         {t('sessionInfo.cliVersionOutdated')}
                     </Text>
-                    <Ionicons name="close" size={14} color="#856404" style={{ marginLeft: 8 }} />
+                    <Ionicons name="close" size={14} color={theme.dark ? '#FFE599' : '#7A4F01'} style={{ marginLeft: 8 }} />
                 </Pressable>
             )}
 
@@ -1461,6 +1481,9 @@ export function SessionViewLoaded({
             {
                 isLandscape && !isTablet && Platform.OS === 'ios' && (
                     <Pressable
+                        testID="codelync-landscape-back"
+                        accessibilityRole="button"
+                        accessibilityLabel={t('common.back')}
                         onPress={() => router.back()}
                         style={{
                             position: 'absolute',
@@ -1470,6 +1493,8 @@ export function SessionViewLoaded({
                             height: 44,
                             borderRadius: 22,
                             backgroundColor: `rgba(${theme.dark ? '28, 23, 28' : '255, 255, 255'}, 0.9)`,
+                            borderWidth: 1,
+                            borderColor: theme.dark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(0, 0, 0, 0.08)',
                             alignItems: 'center',
                             justifyContent: 'center',
                             ...Platform.select({
@@ -1489,7 +1514,7 @@ export function SessionViewLoaded({
                         <Ionicons
                             name={Platform.OS === 'ios' ? 'chevron-back' : 'arrow-back'}
                             size={Platform.select({ ios: 28, default: 24 })}
-                            color="#000"
+                            color={theme.colors.header?.tint ?? theme.colors.text}
                         />
                     </Pressable>
                 )

@@ -11,10 +11,10 @@ import { t } from '@/text';
 
 export const CodelyncScanScreen = React.memo(function CodelyncScanScreen() {
     const pairing = useCodelyncPairing();
-    return <OnboardingScreen reserveContent={false} header={<OnboardingHeader />} content={<View>
+    return <OnboardingScreen reserveContent={false} header={<OnboardingHeader />} content={<View style={styles.content}>
         <HappyEngineeringWordmark height={84} />
-        <Image source={require('@/assets/images/codelync-connection.png')} resizeMode="contain" style={{ width: 260, height: 144, marginTop: 18 }} />
-        <Text style={styles.title}>{t('onboarding.linkTitle')}</Text>
+        <Image accessible={false} source={require('@/assets/images/codelync-connection.png')} resizeMode="contain" style={styles.connectionImage} />
+        <Text accessibilityRole="header" style={styles.title}>{t('onboarding.linkTitle')}</Text>
         <Text style={styles.body}>{t('onboarding.openBody')}</Text>
         {pairing.error ? <Text style={styles.error} accessibilityLiveRegion="polite">{pairing.error}</Text> : null}
     </View>} primary={<RoundButton title={t('onboarding.scanButton')} loadingTitle={t('onboarding.linking')}
@@ -25,6 +25,8 @@ export const CodelyncScanScreen = React.memo(function CodelyncScanScreen() {
         } }} />;
 });
 const styles = StyleSheet.create(theme => ({
+    content: { width: '100%', minWidth: 0 },
+    connectionImage: { width: 260, height: 98, maxWidth: '100%', marginTop: 18, borderRadius: 16, overflow: 'hidden' },
     title: { fontSize: 28, lineHeight: 34, fontWeight: '600', color: theme.colors.text, marginTop: 24 },
     body: { fontSize: 17, lineHeight: 24, color: theme.colors.textSecondary, marginTop: 12 },
     error: { fontSize: 15, color: theme.colors.warningCritical, marginTop: 16 },

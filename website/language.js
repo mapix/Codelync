@@ -23,6 +23,8 @@
       select.setAttribute('aria-label', {en:'Language',zh:'语言',ja:'言語'}[language]);
       select.querySelector('[value="system"]').textContent = {en:'System',zh:'跟随系统',ja:'システム'}[language];
     }
+    const nav = document.querySelector('header nav');
+    if (nav) nav.setAttribute('aria-label', {en:'Main navigation',zh:'主导航',ja:'メインナビゲーション'}[language]);
     for (const block of document.querySelectorAll('[data-language]')) block.hidden = block.dataset.language !== language;
     const labels = {en:{home:'Home',privacy:'Privacy',support:'Support'},zh:{home:'首页',privacy:'隐私',support:'支持'},ja:{home:'ホーム',privacy:'プライバシー',support:'サポート'}};
     for (const link of document.querySelectorAll('[data-locale-link]')) link.textContent = labels[language][link.dataset.localeLink];

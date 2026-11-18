@@ -99,7 +99,7 @@ const english = {
 };
 const chinese = Object.fromEntries([...document.querySelectorAll('[data-i18n]')].map(node=>[node.dataset.i18n,node.textContent]));
 const dictionaries = {en: english, zh: chinese, ja: window.CodelyncJapanese};
-let language = window.CodelyncLanguage.getLanguage(), release = null, beta = null;
+let language = window.CodelyncLanguage.getLanguage(), release = null, beta = null, copyResetTimer = null;
 const downloadButton = document.getElementById('download-mac');
 const status = document.getElementById('release-status');
 const hash = document.getElementById('sha256');
@@ -107,6 +107,7 @@ const copyButton = document.getElementById('copy-hash');
 const betaButton = document.getElementById('join-testflight');
 const betaStatus = document.getElementById('testflight-status');
 function applyLanguage() {
+  if (copyResetTimer) { clearTimeout(copyResetTimer); copyResetTimer = null; }
   const strings = dictionaries[language];
   document.documentElement.lang = language === 'zh' ? 'zh-CN' : language;
   document.title = {en:'Codelync — Stay in the flow.', zh:'Codelync — 让思路，继续向前。', ja:'Codelync — 思考は、そのまま。'}[language];
@@ -143,6 +144,7 @@ function verifiedBeta(value) {
   const normalized = {...value,
     appVersion: value.version, publicLink: value.publicURL,
     externalBuildApproved: value.externalApproved, checkedAt: value.publishedAt};
+  if (normalized.status !== 'available' && value.publicURL !== null) throw Error('Unverified beta link');
   if (normalized.status === 'available' && (!normalized.externalGroupEnabled || !normalized.externalGroupContainsBuild || !normalized.externalBuildApproved
     || !/^https:\/\/testflight\.apple\.com\/join\/[A-Za-z0-9]{8}$/.test(normalized.publicLink || '')
     || !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(normalized.appVersion || '') || !/^[0-9]{8,12}$/.test(normalized.build || '')
@@ -163,7 +165,7 @@ function showRelease() {
 }
 window.addEventListener('codelync-languagechange', () => { language = window.CodelyncLanguage.getLanguage(); applyLanguage(); });
 downloadButton.addEventListener('click',event=>{if(!release){event.preventDefault();document.getElementById('download-title').scrollIntoView({block:'center'});}});
-copyButton.addEventListener('click',async()=>{if(!release)return;try{await navigator.clipboard.writeText(release.sha256);copyButton.textContent={en:'Copied',zh:'已复制',ja:'コピー済み'}[language];}catch{copyButton.textContent={en:'Select the checksum to copy',zh:'请选中上方校验值复制',ja:'チェックサムを選択してコピーしてください'}[language];}});
+copyButton.addEventListener('click',async()=>{if(!release)return;if(copyResetTimer){clearTimeout(copyResetTimer);copyResetTimer=null;}try{await navigator.clipboard.writeText(release.sha256);copyButton.textContent={en:'Copied',zh:'已复制',ja:'コピー済み'}[language];}catch{copyButton.textContent={en:'Select the checksum to copy',zh:'请选中上方校验值复制',ja:'チェックサムを選択してコピーしてください'}[language];}finally{copyResetTimer=setTimeout(()=>{copyResetTimer=null;copyButton.textContent=dictionaries[language].copyHash;},2500);}});
 applyLanguage();
 fetch('release.json',{cache:'no-store'}).then(response=>{if(!response.ok)throw Error('Release unavailable');return response.json();}).then(value=>{
   // A download opens only for a reviewed release; manifest fields never become HTML or arbitrary URLs.

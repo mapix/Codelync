@@ -16,7 +16,7 @@ beforeEach(() => { state.values.clear(); vi.clearAllMocks(); });
 
 it.each(['matching', 'foreign', 'missing'])('the public original-command check handles %s without execute, replay or a new ID', async kind => {
     const params = { taskId: 'task', scope: { queryToken: 'query' } }, target = rpcTarget('native-task-stop', params);
-    const key = 'noninvasive-rpc-v3:' + createHash('sha256').update(JSON.stringify(['peer:test', 'parent', target])).digest('hex');
+    const key = 'codelync-noninvasive-rpc-v3:' + createHash('sha256').update(JSON.stringify(['peer:test', 'parent', target])).digest('hex');
     const record = JSON.stringify({ serverUrl: 'peer:test', sessionId: 'parent', method: 'native-task-stop', target,
         commandId: kind === 'foreign' ? 'foreign-command' : 'original-command', digest: 'kept', createdAt: 1 });
     if (kind !== 'missing') state.values.set(key, record);

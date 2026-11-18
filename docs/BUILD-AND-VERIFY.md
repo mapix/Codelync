@@ -12,6 +12,7 @@ native caches stay outside Git. Current scope is defined in
 
 - `pnpm typecheck:all`: bridge, phone and production relay TypeScript.
 - `pnpm lint`: bridge, scripts and root tests.
+- `pnpm security:release`: production dependency gate (`image-size` patch check), `website/testflight.json` schema check, and Mac EN/ZH/JA localization key parity.
 - Targeted native protocol/model/device tests: `node --test test/codex-ipc.test.mjs test/codex-backend.test.mjs test/codex-native-controls.test.mjs test/happy-native-connector.test.mjs test/discovery-daemon.test.mjs test/project-identity.test.mjs test/device-registry.test.mjs test/pairing-gateway.test.mjs`.
 - Mobile paging/progress/navigation/model tests: run the corresponding Vitest files under `apps/mobile/sources`.
 - Project activity checks must cover original-owner status, waiting operations,
@@ -38,7 +39,7 @@ remain visible rather than silently enabling a fallback runner or window mode.
 
 ## Mac
 
-Build helper binaries with `pnpm build:native`, then `pnpm build:mac`. The app contains the relay, bridge, Node and cloudflared. Developer ID signing is explicit through `scripts/sign-mac-app.mjs`. Apple notarization is a separate distribution gate.
+Build helper binaries (`CodelyncDesktopHost`) with `pnpm build:native`, then `pnpm build:mac` (embeds `package.json` version `1.0.1` and `codelyncBuild` `2026111801`, overridable via `CODELYNC_MAC_BUILD`). The app contains the relay, bridge, Node and cloudflared. Developer ID signing is explicit through `scripts/sign-mac-app.mjs`. Apple notarization is a separate distribution gate.
 
 Copy signed bundles with `ditto` or Node `cp(..., { recursive: true,
 verbatimSymlinks: true })`. Changing relative symlink text breaks the resource

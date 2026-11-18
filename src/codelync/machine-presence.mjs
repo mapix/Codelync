@@ -23,8 +23,9 @@ export class CodelyncMachineConnection extends EventEmitter {
     this.socket.on('disconnect', () => this.emit('disconnected'));
     this.socket.on('connect_error', () => this.emit('diagnostic', { code: 'machine-connect-error' }));
     this.socket.on('rpc-request', (/** @type {Value} */ request, /** @type {(reply:string)=>void} */ callback) => {
-      this.serve(request).then(callback).catch(() => {
-        if (options.accountSecret) callback(encryptRecord({ ok: false, error: { code: 'machine-rpc-error', message: 'The machine RPC could not complete.' }, effectMayHaveOccurred: true }, options.accountSecret, 'legacy'));
+      if (this.closed || typeof callback !== 'function') return;
+      this.serve(request).then(reply => { if (!this.closed) callback(reply); }).catch(() => {
+        if (!this.closed && options.accountSecret) callback(encryptRecord({ ok: false, error: { code: 'machine-rpc-error', message: 'The machine RPC could not complete.' }, effectMayHaveOccurred: true }, options.accountSecret, 'legacy'));
       });
     });
     this.timer = setInterval(() => this.alive(), 15000); this.timer.unref(); this.socket.connect();
@@ -43,11 +44,14 @@ export class CodelyncMachineConnection extends EventEmitter {
     });
   }
   async updateMetadata() {
-    if (!this.options.metadata || !this.options.accountSecret || !this.socket.connected) return;
+    if (this.closed || !this.options.metadata || !this.options.accountSecret || !this.socket.connected) return;
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (this.closed || !this.socket.connected) return;
       const reply = /** @type {Value} */ (await this.socket.timeout(this.timeoutMs).emitWithAck('machine-update-metadata', { machineId: this.options.machineId,
         expectedVersion: this.metadataVersion, metadata: encryptRecord(this.options.metadata, this.options.accountSecret, 'legacy') }));
-      if (reply.result === 'success') { this.metadataVersion = reply.version; return; }
+      if (this.closed) return;
+      if (!reply || typeof reply !== 'object') throw Error('Machine metadata could not be updated.');
+      if (reply.result === 'success') { if (Number.isSafeInteger(reply.version)) this.metadataVersion = reply.version; return; }
       if (reply.result !== 'version-mismatch' || !Number.isSafeInteger(reply.version)) throw Error('Machine metadata could not be updated.');
       this.metadataVersion = reply.version;
       const current = decryptRecord(reply.metadata, this.options.accountSecret, 'legacy');
@@ -59,7 +63,7 @@ export class CodelyncMachineConnection extends EventEmitter {
   registerRpc(method, handler) {
     if (this.closed || !this.options.accountSecret || !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u.test(method) || this.handlers.has(method)) throw Error('Register one explicit machine RPC with its account key.');
     this.handlers.set(method, handler); if (this.socket.connected) this.socket.emit('rpc-register', { method: `${this.options.machineId}:${method}` });
-    return () => { if (this.handlers.get(method) !== handler) return; this.handlers.delete(method); this.socket.emit('rpc-unregister', { method: `${this.options.machineId}:${method}` }); };
+    return () => { if (this.handlers.get(method) !== handler) return; this.handlers.delete(method); if (!this.closed && this.socket.connected) this.socket.emit('rpc-unregister', { method: `${this.options.machineId}:${method}` }); };
   }
   /** @param {Value} request */
   async serve(request) {

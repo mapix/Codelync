@@ -2,6 +2,10 @@ export class AsyncLock {
     private permits: number = 1;
     private promiseResolverQueue: Array<(v: boolean) => void> = [];
 
+    isIdle(): boolean {
+        return this.permits === 1 && this.promiseResolverQueue.length === 0;
+    }
+
     async inLock<T>(func: () => Promise<T> | T): Promise<T> {
         try {
             await this.lock();

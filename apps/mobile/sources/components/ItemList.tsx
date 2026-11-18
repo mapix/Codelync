@@ -8,6 +8,7 @@ import {
     ScrollViewProps
 } from 'react-native';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface ItemListProps extends ScrollViewProps {
     children: React.ReactNode;
@@ -29,6 +30,7 @@ const stylesheet = StyleSheet.create((theme, runtime) => ({
 
 export const ItemList = React.memo<ItemListProps>((props) => {
     const { theme } = useUnistyles();
+    const insets = useSafeAreaInsets();
     const styles = stylesheet;
     
     const {
@@ -43,6 +45,7 @@ export const ItemList = React.memo<ItemListProps>((props) => {
     const isWeb = Platform.OS === 'web';
     
     const backgroundColor = theme.colors.groupped.background;
+    const baseBottom = isIOS ? 34 : 16;
 
     return (
         <ScrollView 
@@ -53,11 +56,17 @@ export const ItemList = React.memo<ItemListProps>((props) => {
             ]}
             contentContainerStyle={[
                 styles.contentContainer,
+                {
+                    paddingBottom: Math.max(baseBottom, (insets.bottom ?? 0) + 16),
+                    paddingLeft: insets.left ?? 0,
+                    paddingRight: insets.right ?? 0,
+                },
                 containerStyle
             ]}
             showsVerticalScrollIndicator={scrollViewProps.showsVerticalScrollIndicator !== undefined 
                 ? scrollViewProps.showsVerticalScrollIndicator 
                 : true}
+            keyboardShouldPersistTaps={scrollViewProps.keyboardShouldPersistTaps ?? 'handled'}
             contentInsetAdjustmentBehavior={(isIOS && !isWeb) ? 'automatic' : undefined}
             {...scrollViewProps}
         >

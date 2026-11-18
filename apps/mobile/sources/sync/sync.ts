@@ -60,7 +60,7 @@ import { codelyncLoadingProgress } from './codelyncLoadingProgress';
 import { nativeRecentMessages, peerDescriptorSession, cachedPeerDescriptorSession, peerRecentIsCached, isCurrentNativeRecent, type PeerRecentWindow, type PeerSessionDescriptor } from './codelyncRecent';
 import { captureNativeDispatchContext, matchesNativeDispatchContext } from '@/utils/nativeDispatchContext';
 import { loadCodelyncPeerCatalog, loadCodelyncPeerCatalogState, saveCodelyncPeerCatalog } from './codelyncPeerCatalogCache';
-import { CodelyncPeerCatalogDelta, reconcileCodelyncCatalogSessions } from './codelyncPeerCatalogDelta';
+import { CodelyncPeerCatalogDelta, chunkCatalogDescriptors, reconcileCodelyncCatalogSessions } from './codelyncPeerCatalogDelta';
 import { log } from '@/log';
 import { gitStatusSync } from './gitStatusSync';
 import { AsyncLock } from '@/utils/lock';
@@ -614,6 +614,35 @@ class Sync {
             this.sessionMessageLocks.set(sessionId, lock);
         }
         return lock;
+    }
+
+    private pruneRemovedCatalogSessionSyncs(removedIds?: ReadonlySet<string>) {
+        if (this.messagesSync.size === 0 && this.sendSync.size === 0 && this.sessionMessageLocks.size === 0) return;
+        const { sessions, currentViewingSessionId } = storage.getState();
+        const canPrune = (sessionId: string): boolean => {
+            if (sessionId === currentViewingSessionId) return false;
+            if (this.codelyncEntryFlights.has(sessionId) || this.codelyncPeerReadFlights.has(sessionId) || this.codelyncPeerRevalidations.has(sessionId)) return false;
+            if ((this.pendingOutbox.get(sessionId)?.length ?? 0) > 0 || (this.sessionMessageQueue.get(sessionId)?.length ?? 0) > 0 || this.sessionQueueProcessing.has(sessionId)) return false;
+            const session = sessions[sessionId];
+            return !session || session.metadata?.nativeSession?.catalogueAvailable === false || removedIds?.has(sessionId) === true;
+        };
+        for (const [sessionId, sync] of this.messagesSync) {
+            if (canPrune(sessionId) && sync.isIdle()) {
+                sync.stop();
+                this.messagesSync.delete(sessionId);
+            }
+        }
+        for (const [sessionId, sync] of this.sendSync) {
+            if (canPrune(sessionId) && sync.isIdle()) {
+                sync.stop();
+                this.sendSync.delete(sessionId);
+            }
+        }
+        for (const [sessionId, lock] of this.sessionMessageLocks) {
+            if (canPrune(sessionId) && lock.isIdle()) {
+                this.sessionMessageLocks.delete(sessionId);
+            }
+        }
     }
 
     private scheduleQueuedMessagesProcessing(sessionId: string) {
@@ -1417,7 +1446,9 @@ class Sync {
         if (!config.noninvasiveLocal) {
             const response = await this.requestAccount('/v1/sessions', { headers });
             if (!response.ok) throw new Error(`Failed to fetch sessions: ${response.status}`);
-            await this.hydrateSessionDescriptors((await response.json()).sessions, avatarsBeforeFetch); return;
+            await this.hydrateSessionDescriptors((await response.json()).sessions, avatarsBeforeFetch);
+            this.pruneRemovedCatalogSessionSyncs();
+            return;
         }
         this.codelyncDiscoveryAbort?.abort();
         const abort = new AbortController(); this.codelyncDiscoveryAbort = abort;
@@ -1451,6 +1482,7 @@ class Sync {
             saveCodelyncBackgroundCache({ ...cache, sessions: catalog, catalogWatermark: data.watermark, updatedAt: Date.now() });
             codelyncLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: catalog.length });
             storage.getState().applyReady();
+            this.pruneRemovedCatalogSessionSyncs();
         } catch (error) {
             if (!codelyncLoadingProgress.isCurrent(generation)) return;
             codelyncLoadingProgress.updateDiscovery(generation, { phase: 'error' });
@@ -1483,11 +1515,13 @@ class Sync {
                     const data = await response.json();
                     if (!current()) return;
                     const changed = scan.apply(data);
-                    for (let offset = 0; offset < changed.length; offset += 50) {
+                    const chunks = chunkCatalogDescriptors(changed);
+                    for (let index = 0; index < chunks.length; index++) {
                         if (!current()) return;
                         const sessions = storage.getState().sessions;
-                        this.applySessions(changed.slice(offset, offset + 50).map(value => peerDescriptorSession(value, sessions[value.id], true)), { nativeCatalog: true });
-                        storage.getState().applyReady(); await delay(0);
+                        this.applySessions(chunks[index].map(value => peerDescriptorSession(value, sessions[value.id], true)), { nativeCatalog: true });
+                        storage.getState().applyReady();
+                        if (index + 1 < chunks.length) await delay(0);
                     }
                     found = scan.catalog.size;
                     codelyncLoadingProgress.updateDiscovery(generation, { found, pages: page + 1 });
@@ -1500,6 +1534,7 @@ class Sync {
                 if (!current()) return;
                 const hidden = reconcileCodelyncCatalogSessions(storage.getState().sessions, result);
                 if (hidden.length) { this.applySessions(hidden, { nativeCatalog: true }); storage.getState().applyReady(); }
+                this.pruneRemovedCatalogSessionSyncs(new Set(result.removedIds));
                 if (!result.unchanged) await saveCodelyncPeerCatalog(credentials, result.sessions, current, result.watermark);
                 if (current()) codelyncLoadingProgress.updateDiscovery(generation, { phase: 'complete', found: result.sessions.length });
                 return;
@@ -2491,7 +2526,9 @@ class Sync {
             this.maybeStartBackgroundSendWatchdog();
             throw error;
         } finally {
-            this.sendAbortControllers.delete(sessionId);
+            if (this.sendAbortControllers.get(sessionId) === controller) {
+                this.sendAbortControllers.delete(sessionId);
+            }
         }
 
         if (pending.length === 0) {
@@ -3107,6 +3144,18 @@ class Sync {
             // Clear any cached git status
             gitStatusSync.clearForSession(sessionId);
             this.messagePreloader.cancel(sessionId);
+            this.sendAbortControllers.get(sessionId)?.abort();
+            this.sendAbortControllers.delete(sessionId);
+            this.codelyncActivity.delete(sessionId);
+            this.codelyncCachedMessages.delete(sessionId);
+            this.codelyncEntryFlights.delete(sessionId);
+            this.codelyncPeerReadFlights.delete(sessionId);
+            this.codelyncPeerRevalidations.delete(sessionId);
+            this.codelyncPeerLiveMetadata.delete(sessionId);
+            this.codelyncHistoryCursors.delete(sessionId);
+            this.codelyncHistoryOwners.delete(sessionId);
+            this.olderMessagesPrefetching.delete(sessionId);
+            codelyncLoadingProgress.clearSession(sessionId);
             this.historyPrefetchSessions.delete(sessionId);
             this.olderMessagesPrefetchAttempts.delete(sessionId);
             this.preloadedPlanModes.delete(sessionId);

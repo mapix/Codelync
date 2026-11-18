@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 /** @param {Value} input */
 export function validateMobilePushArtifact({ info, entitlements, profile, config, environment, device }) {
   if (!['development', 'production'].includes(environment)) throw Error('invalid-push-environment');
-  if (info.CFBundleIdentifier !== 'com.learnings.codelync' || info.DTPlatformName !== 'iphoneos') throw Error('push-requires-codelync-device-artifact');
+  if (info.CFBundleIdentifier !== 'com.learnings.codelync' || info.DTPlatformName !== 'iphoneos'
+    || info.CFBundleDisplayName !== undefined && info.CFBundleDisplayName !== 'Codelync') {
+    throw Error('push-requires-codelync-device-artifact');
+  }
+  if (!config || typeof config !== 'object' || Array.isArray(config)) throw Error('push-embedded-config-invalid');
   if (entitlements['aps-environment'] !== environment || profile.Entitlements?.['aps-environment'] !== environment || config.extra?.app?.codelyncPushEnvironment !== environment) throw Error('push-signing-profile-config-mismatch');
   const team = profile.TeamIdentifier?.[0];
   if (!team || entitlements['com.apple.developer.team-identifier'] !== team || entitlements['application-identifier'] !== team + '.com.learnings.codelync' || profile.Entitlements['application-identifier'] !== team + '.com.learnings.codelync') throw Error('push-team-topic-mismatch');
@@ -14,6 +18,17 @@ export function validateMobilePushArtifact({ info, entitlements, profile, config
   if (!Number.isFinite(expires) || expires <= Date.now()) throw Error('push-profile-expired');
   if (device && (!Array.isArray(profile.ProvisionedDevices) || !profile.ProvisionedDevices.includes(device))) throw Error('push-profile-device-missing');
   return { signed: true, environment, profileMatches: true, embeddedConfigMatches: true };
+}
+/** @param {string} app */
+export async function readEmbeddedPushConfig(app) {
+  let raw;
+  try { raw = await readFile(join(app, 'EXConstants.bundle', 'app.config'), 'utf8'); }
+  catch { throw Error('push-embedded-config-missing'); }
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch { throw Error('push-embedded-config-invalid'); }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error('push-embedded-config-invalid');
+  return parsed;
 }
 /** @param {string} executable @param {string[]} args @param {string|Buffer} [input] */
 function run(executable, args, input) {
@@ -34,6 +49,7 @@ export function readProfileProvisionedDevices(profileXml, extract) {
 /** @param {string} app @param {string} environment @param {string} [device] */
 export async function verifyMobilePushArtifact(app, environment, device) {
   const info = plist(await readFile(join(app, 'Info.plist')));
+  if (info.CFBundleDisplayName !== 'Codelync') throw Error('push-requires-codelync-device-artifact');
   const entitlements = plist(run('codesign', ['-d', '--entitlements', ':-', app]));
   const profileXml = run('security', ['cms', '-D', '-i', join(app, 'embedded.mobileprovision')]);
   // Whole-profile JSON conversion rejects Apple's date/data values. Extract
@@ -44,7 +60,7 @@ export async function verifyMobilePushArtifact(app, environment, device) {
     ExpirationDate: run('plutil', ['-extract', 'ExpirationDate', 'raw', '-o', '-', '-'], profileXml).trim(),
     ProvisionedDevices: readProfileProvisionedDevices(profileXml, () => run('plutil', ['-extract', 'ProvisionedDevices', 'json', '-o', '-', '-'], profileXml)),
   };
-  const config = JSON.parse(await readFile(join(app, 'EXConstants.bundle', 'app.config'), 'utf8'));
+  const config = await readEmbeddedPushConfig(app);
   return validateMobilePushArtifact({ info, entitlements, profile, config, environment, device });
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

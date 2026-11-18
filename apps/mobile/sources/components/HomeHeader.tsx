@@ -90,6 +90,8 @@ function HeaderRight() {
         <Pressable
             onPress={() => router.navigate('/new')}
             hitSlop={15}
+            accessibilityRole="button"
+            accessibilityLabel={t('newSession.title')}
             style={[
                 styles.headerButton,
                 shortcutHintsVisible && styles.headerButtonShortcutActive,

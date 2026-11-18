@@ -469,21 +469,21 @@ export default function RootLayout() {
                         : { flex: 1, backgroundColor: theme.colors.groupped.background }}
                 >
                     <AuthProvider initialCredentials={initState.credentials}>
-                        <CodelyncPairingProvider>
                         <ThemeProvider value={navigationTheme}>
                             <StatusBarProvider />
                             <ModalProvider>
-                                <BrowserNavigationShortcuts />
-                                <CommandPaletteProvider>
-                                    <RealtimeProvider>
-                                        <HorizontalSafeAreaWrapper>
-                                            <SidebarNavigator />
-                                        </HorizontalSafeAreaWrapper>
-                                    </RealtimeProvider>
-                                </CommandPaletteProvider>
+                                <CodelyncPairingProvider>
+                                    <BrowserNavigationShortcuts />
+                                    <CommandPaletteProvider>
+                                        <RealtimeProvider>
+                                            <HorizontalSafeAreaWrapper>
+                                                <SidebarNavigator />
+                                            </HorizontalSafeAreaWrapper>
+                                        </RealtimeProvider>
+                                    </CommandPaletteProvider>
+                                </CodelyncPairingProvider>
                             </ModalProvider>
                         </ThemeProvider>
-                        </CodelyncPairingProvider>
                     </AuthProvider>
                 </GestureHandlerRootView>
             </KeyboardProvider>

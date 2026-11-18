@@ -4,9 +4,11 @@ Use English for primary documentation, issues, pull requests and release notes.
 Keep Chinese and Japanese product copy aligned with the English source. New
 installations follow the system language; preserve an explicit language choice.
 
-Codelync currently supports existing desktop Codex sessions connected through
-gateway mode. Other harnesses and window control are deferred. Read `AGENTS.md`,
-`spec/codelync-product.md` and the relevant protocol spec before changing behavior.
+Codelync currently supports existing native sessions from Codex, Antigravity
+Desktop and Claude Desktop (Gateway) within each owner's confirmed capabilities.
+Standalone CLI/TUI families, other harnesses and window control are deferred.
+Read `AGENTS.md`, `spec/codelync-product.md` and the relevant protocol spec
+before changing behavior.
 
 ## Setup
 
@@ -26,10 +28,11 @@ See [build and verification](docs/BUILD-AND-VERIFY.md).
 
 - Update the matching spec first. Identify state ownership, ordering, idempotency,
   foreground/background behavior and the affected native interface.
-- Preserve original Codex ownership, host/source identity, lease and unknown
-  operation outcomes. Do not validate by sending model prompts to an existing
-  personal conversation. Use synthetic tests and an explicitly authorized test
-  session when live write acceptance is needed.
+- Preserve original Desktop ownership (Codex, Antigravity Desktop and Claude
+  Desktop), host/source identity, lease and unknown operation outcomes. Do not
+  validate by sending model prompts to an existing personal conversation. Use
+  synthetic tests and an explicitly authorized test session when live write
+  acceptance is needed.
 - Add scoped regressions for changed protocol/state behavior. For UI changes,
   verify a native or browser view appropriate to the surface, including narrow
   layouts, keyboard access and language switching.
@@ -45,5 +48,5 @@ Use [private security reporting](SECURITY.md) for vulnerabilities.
 ## Licensing
 
 New contributions use MIT, consistent with the repository license. Preserve
-upstream copyright and license notices; do not redistribute installed Codex
+upstream copyright and license notices; do not redistribute installed desktop
 application code or private extracted research artifacts.

@@ -105,13 +105,14 @@ struct ConnectionChannel: Identifiable, Decodable, Equatable {
 }
 
 enum ConnectionStatus {
-    static func label(kind: String, configuration: ConnectionConfiguration, channels: [ConnectionChannel]) -> String {
+    static func label(kind: String, configuration: ConnectionConfiguration, channels: [ConnectionChannel], starting: Bool = false) -> String {
         guard configuration.enabledKinds.contains(kind) else { return "Off" }
         let states = channels.filter { $0.kind == kind }.map { $0.state }
         if states.contains("ready") { return "Ready" }
         if states.contains("starting") { return "Starting…" }
         if states.contains("reconnecting") { return "Reconnecting…" }
         if states.contains("unverified") { return "Not verified yet" }
+        if states.isEmpty && starting { return "Starting…" }
         return "Unavailable"
     }
 }
@@ -139,6 +140,59 @@ enum ServicePhase: String { case starting, running, pausing, paused, failed
     func terminated() -> ServicePhase { self == .pausing ? .paused : .failed }
 }
 // END CODELYNC SERVICE VALUES
+
+// BEGIN CODELYNC NDJSON FRAMER
+struct NDJSONLineSplitter {
+    let maxLineBytes: Int
+    private var buffer = Data()
+    private var discardingOversizedLine = false
+
+    init(maxLineBytes: Int = 65536) {
+        self.maxLineBytes = maxLineBytes
+    }
+
+    mutating func reset() {
+        buffer.removeAll(keepingCapacity: false)
+        discardingOversizedLine = false
+    }
+
+    mutating func append(_ bytes: Data) -> [Data] {
+        var lines: [Data] = []
+        var cursor = bytes.startIndex
+        while cursor < bytes.endIndex {
+            if discardingOversizedLine {
+                guard let end = bytes[cursor...].firstIndex(of: 10) else { return lines }
+                discardingOversizedLine = false
+                cursor = bytes.index(after: end)
+                continue
+            }
+            if let end = bytes[cursor...].firstIndex(of: 10) {
+                let sliceLength = bytes.distance(from: cursor, to: end)
+                if buffer.count + sliceLength > maxLineBytes {
+                    buffer.removeAll(keepingCapacity: true)
+                } else if buffer.isEmpty {
+                    lines.append(Data(bytes[cursor..<end]))
+                } else {
+                    buffer.append(bytes[cursor..<end])
+                    lines.append(buffer)
+                    buffer.removeAll(keepingCapacity: true)
+                }
+                cursor = bytes.index(after: end)
+            } else {
+                let remaining = bytes.distance(from: cursor, to: bytes.endIndex)
+                if buffer.count + remaining > maxLineBytes {
+                    buffer.removeAll(keepingCapacity: true)
+                    discardingOversizedLine = true
+                } else {
+                    buffer.append(bytes[cursor...])
+                }
+                break
+            }
+        }
+        return lines
+    }
+}
+// END CODELYNC NDJSON FRAMER
 
 @MainActor
 final class DashboardMetricsStore: ObservableObject {
@@ -212,7 +266,10 @@ final class ServiceController: ObservableObject {
     @Published var desktopBusy = false
     @Published var desktopError = ""
     private var desktopRequestID = ""
+    private var desktopPendingCommand = ""
+    private var desktopDraftInitialized = false
     private var accessRequestID = ""
+    private var relayDraftInitialized = false
     private var channelsRequestID = ""
     @Published private(set) var selection = DashboardSelection()
     @Published private var cachedPairingImage: NSImage?
@@ -224,7 +281,7 @@ final class ServiceController: ObservableObject {
     private var nextLaunchMode: LaunchMode?
     private var quitCompletions: [() -> Void] = []
     private var input: Pipe?
-    private var buffer = Data()
+    private var lineFramer = NDJSONLineSplitter()
 
     func start() {
         guard !quitting else { return }
@@ -289,17 +346,14 @@ final class ServiceController: ObservableObject {
         }
         launchMode = mode; settingsReady = false; sourceRevisionInProcess = -1
         process = task; input = stdin; phase = mode == .normal ? .starting : .paused
-        buffer.removeAll(); status = mode == .normal ? "Starting Codelync…" : "Paused"
-        metrics.reset(); resetConnectionObservation(preserveConfiguration: true)
+        lineFramer.reset(); status = mode == .normal ? "Starting Codelync…" : "Paused"
+        metrics.reset(); resetConnectionObservation(preserveConfiguration: true); resetTransientErrors()
         do { try task.run() } catch { process = nil; input = nil; phase = .failed; status = "Connection unavailable" }
     }
     private func receive(_ bytes: Data) {
         // 暂停等待完整子进程清理期间，迟到消息不能把用户主动暂停重新显示为连接就绪。
         guard phase != .pausing else { return }
-        buffer.append(bytes)
-        if buffer.count > 65536 { buffer.removeAll(); return }
-        while let end = buffer.firstIndex(of: 10) {
-            let line = buffer.prefix(upTo: end); buffer.removeSubrange(...end)
+        for line in lineFramer.append(bytes) {
             guard let item = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let type = item["type"] as? String else { continue }
             if type == "settings-ready", launchMode == .settings {
                 settingsReady = true; phase = .paused; status = "Paused"
@@ -325,8 +379,13 @@ final class ServiceController: ObservableObject {
                       let configuration = try? JSONDecoder().decode(ConnectionConfiguration.self, from: bytes) {
                 let previousServer = connectionConfiguration.serverUrl
                 connectionConfiguration = configuration; connectionConfigurationKnown = true
-                // 通道勾选回执不能覆盖用户正在编辑的另一个 Relay 地址草稿。
-                if !accessBusy, relayServer.isEmpty || relayServer == previousServer { relayServer = configuration.serverUrl }
+                if !relayDraftInitialized {
+                    relayDraftInitialized = true
+                    if !accessBusy, relayServer.isEmpty { relayServer = configuration.serverUrl }
+                } else if !accessBusy, relayServer == previousServer {
+                    // 通道勾选回执不能覆盖用户正在编辑（包括主动清空）的另一个 Relay 地址草稿。
+                    relayServer = configuration.serverUrl
+                }
             } else if type == "access-channels", let raw = item["channels"],
                       let bytes = try? JSONSerialization.data(withJSONObject: raw),
                       let channels = try? JSONDecoder().decode([ConnectionChannel].self, from: bytes) {
@@ -345,15 +404,27 @@ final class ServiceController: ObservableObject {
             } else if type == "desktop-status", let raw = item["status"],
                       let bytes = try? JSONSerialization.data(withJSONObject: raw),
                       let configuration = try? JSONDecoder().decode(DesktopConfiguration.self, from: bytes) {
-                let first = !desktopKnown
+                let previousDesktop = desktopConfiguration
                 desktopConfiguration = configuration; desktopKnown = true
-                if first { desktopMode = configuration.mode; desktopServer = configuration.url; desktopAPIKey = configuration.apiKey }
+                if !desktopDraftInitialized {
+                    desktopDraftInitialized = true
+                    if !desktopBusy, desktopMode == "local", desktopServer.isEmpty, desktopAPIKey.isEmpty, desktopAPISecret.isEmpty {
+                        desktopMode = configuration.mode; desktopServer = configuration.url; desktopAPIKey = configuration.apiKey
+                    }
+                } else if !desktopBusy, desktopMode == previousDesktop.mode, desktopServer == previousDesktop.url,
+                          desktopAPIKey == previousDesktop.apiKey, desktopAPISecret.isEmpty {
+                    desktopMode = configuration.mode; desktopServer = configuration.url; desktopAPIKey = configuration.apiKey
+                }
                 if item["error"] != nil { desktopError = "Could not load remote desktop settings." }
             } else if type == "desktop-result", item["requestId"] as? String == desktopRequestID {
+                let pendingKind = desktopPendingCommand; desktopPendingCommand = ""
                 desktopBusy = false
                 if item["ok"] as? Bool == true {
-                    desktopError = ""; desktopAPISecret = ""
-                    desktopMode = desktopConfiguration.mode; desktopServer = desktopConfiguration.url; desktopAPIKey = desktopConfiguration.apiKey
+                    desktopError = ""
+                    if pendingKind == "relay" {
+                        desktopAPISecret = ""
+                        desktopMode = desktopConfiguration.mode; desktopServer = desktopConfiguration.url; desktopAPIKey = desktopConfiguration.apiKey
+                    }
                 } else { desktopError = "Could not update remote desktop. Check permissions and server settings." }
             } else if type == "metrics" {
                 // 每秒小样本只通知指标视图，不能使设备输入框和隐藏二维码重新计算。
@@ -386,12 +457,16 @@ final class ServiceController: ObservableObject {
             } else if type == "starting" { status = item["phase"] as? String == "public-connection" ? "Connecting from anywhere…" : "Starting Codelync…" }
         }
     }
+    private func resetTransientErrors() {
+        operationError = ""; sourcesError = ""; channelsError = ""; accessError = ""
+        desktopError = ""; notificationsError = ""; notificationTestAccepted = false
+    }
     private func resetConnectionObservation(preserveConfiguration: Bool = false) {
         connectionChannels = []; channelsBusy = false; accessBusy = false
         devices = devices.map { var device = $0; device.connected = false; return device }
         channelsRequestID = ""; accessRequestID = ""
         sourcesBusy = false; sourcesError = ""; sourcesRequestID = ""; sourcesDesired = nil
-        desktopBusy = false; desktopRequestID = ""
+        desktopBusy = false; desktopRequestID = ""; desktopPendingCommand = ""
         if !preserveConfiguration { connectionConfigurationKnown = false; sourceConfiguration = .unknown; desktopKnown = false }
     }
     func selectPanel(_ panel: DashboardPanel) { selection.select(panel) }
@@ -411,7 +486,10 @@ final class ServiceController: ObservableObject {
         }
         return status
     }
-    func refresh() { try? input?.fileHandleForWriting.write(contentsOf: Data("{\"type\":\"refresh-invite\"}\n".utf8)) }
+    func refresh() {
+        guard running else { return }
+        try? input?.fileHandleForWriting.write(contentsOf: Data("{\"type\":\"refresh-invite\"}\n".utf8))
+    }
     func choosePushKey() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false; panel.allowedContentTypes = [UTType(filenameExtension: "p8") ?? .data]
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -420,7 +498,10 @@ final class ServiceController: ObservableObject {
         if name.hasPrefix("AuthKey_") { pushKeyID = String(name.dropFirst(8)) }
     }
     func configureNotifications() {
-        notificationCommand(["type": "configure-notifications", "configuration": ["keyId": pushKeyID, "teamId": pushTeamID, "environment": pushEnvironment, "keyPath": pushKeyPath]])
+        let keyID = pushKeyID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let teamID = pushTeamID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyID.isEmpty, !teamID.isEmpty else { return }
+        notificationCommand(["type": "configure-notifications", "configuration": ["keyId": keyID, "teamId": teamID, "environment": pushEnvironment, "keyPath": pushKeyPath]])
     }
     func testNotifications(_ id: String) { notificationCommand(["type": "test-notifications", "id": id]) }
     private func notificationCommand(_ command: [String: Any]) {
@@ -433,9 +514,15 @@ final class ServiceController: ObservableObject {
         catch { notificationsBusy = false; notificationsError = "Could not configure or send notifications. Check the Apple key and phone registration." }
     }
     func deviceAction(_ type: String, id: String, name: String? = nil) {
-        var value = ["type": type, "id": id]; if let name = name { value["name"] = name }
+        guard running, let input else { return }
+        var value = ["type": type, "id": id]
+        if let name {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            value["name"] = trimmed
+        }
         guard var bytes = try? JSONSerialization.data(withJSONObject: value) else { return }; bytes.append(10)
-        try? input?.fileHandleForWriting.write(contentsOf: bytes)
+        try? input.fileHandleForWriting.write(contentsOf: bytes)
     }
     func stop() {
         guard phase.canPause, launchMode == .normal, !quitting else { return }
@@ -446,6 +533,7 @@ final class ServiceController: ObservableObject {
         guard let process else { return }
         // 复用服务的 graceful shutdown；Start 只有在 terminationHandler 确认所有 owned writer 退出后才开放。
         phase = .pausing; settingsReady = false; pairingURL = ""; status = quitting ? "Quitting…" : "Pausing…"
+        resetTransientErrors()
         if process.isRunning { process.terminate() }
     }
     func prepareForQuit(_ completion: @escaping () -> Void) {
@@ -506,24 +594,28 @@ final class ServiceController: ObservableObject {
         var configuration: [String: Any]
         if let enabled { configuration = ["enabled": enabled] }
         else {
+            let trimmedServer = desktopServer.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedKey = desktopAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            if desktopMode == "external", (trimmedServer.isEmpty || trimmedKey.isEmpty) { return }
             configuration = ["enabled": desktopConfiguration.enabled, "mode": desktopMode,
-                "url": desktopServer, "apiKey": desktopAPIKey]
+                "url": trimmedServer, "apiKey": trimmedKey]
             if !desktopAPISecret.isEmpty { configuration["apiSecret"] = desktopAPISecret }
         }
-        desktopCommand(["type": "configure-desktop", "configuration": configuration])
+        desktopCommand(["type": "configure-desktop", "configuration": configuration], kind: enabled == nil ? "relay" : "toggle")
     }
     func requestDesktopPermission(_ permission: String) {
         desktopCommand(["type": "desktop-permission", "permission": permission])
     }
-    private func desktopCommand(_ command: [String: Any]) {
+    private func desktopCommand(_ command: [String: Any], kind: String = "") {
         guard !desktopBusy, desktopKnown, settingsAvailable, let input else { return }
         if command["type"] as? String == "desktop-permission", !running { return }
         desktopRequestID = UUID().uuidString
+        desktopPendingCommand = kind
         var value = command; value["requestId"] = desktopRequestID
-        guard var bytes = try? JSONSerialization.data(withJSONObject: value) else { return }; bytes.append(10)
+        guard var bytes = try? JSONSerialization.data(withJSONObject: value) else { desktopPendingCommand = ""; return }; bytes.append(10)
         desktopBusy = true; desktopError = ""
         do { try input.fileHandleForWriting.write(contentsOf: bytes) }
-        catch { desktopBusy = false; desktopError = "Could not update remote desktop. Check permissions and server settings." }
+        catch { desktopBusy = false; desktopPendingCommand = ""; desktopError = "Could not update remote desktop. Check permissions and server settings." }
     }
     func copyLink() {
         NSPasteboard.general.clearContents(); copied = NSPasteboard.general.setString(pairingURL, forType: .string)
@@ -608,6 +700,7 @@ struct ContentView: View {
         ScrollView { VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
                 Image("brand-icon").resizable().frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 8))
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Codelync").font(.system(size: 25, weight: .semibold))
                     Text("Codex, Antigravity and Claude Desktop on your phone").font(.caption).foregroundStyle(.secondary)
@@ -615,6 +708,8 @@ struct ContentView: View {
                 Spacer()
                 Text(LocalizedStringKey(service.publicStatus)).font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 160)
+                    .accessibilityIdentifier("codelync-public-status")
+                    .accessibilityLabel("\(NSLocalizedString("Connection status", comment: "Service status accessibility prefix")): \(NSLocalizedString(service.publicStatus, comment: "Service status value"))")
             }
             HStack(spacing: 12) {
                 Button("Start", systemImage: "play.fill") { service.start() }
@@ -723,7 +818,7 @@ struct PublicAccessView: View {
                     }.toggleStyle(.checkbox).accessibilityIdentifier("codelync-channel-\(kind)")
                         .disabled(service.channelsBusy || !service.settingsAvailable || !service.connectionConfigurationKnown)
                     Spacer()
-                    Text(LocalizedStringKey(service.phase == .paused || service.phase == .pausing ? service.publicStatus : service.connectionConfigurationKnown ? ConnectionStatus.label(kind: kind, configuration: service.connectionConfiguration, channels: service.connectionChannels) : "Starting…"))
+                    Text(LocalizedStringKey(service.phase == .paused || service.phase == .pausing ? service.publicStatus : service.connectionConfigurationKnown ? ConnectionStatus.label(kind: kind, configuration: service.connectionConfiguration, channels: service.connectionChannels, starting: service.phase == .starting) : "Starting…"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -738,8 +833,8 @@ struct PublicAccessView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     RelayDeploymentGuideLink().accessibilityIdentifier("codelync-network-relay-guide")
                     TextField("Relay server address", text: $service.relayServer, prompt: Text("https://relay.example.com"))
-                        .textFieldStyle(.roundedBorder).disabled(service.accessBusy)
-                    SecureField("Access key", text: $service.relayKey).textFieldStyle(.roundedBorder).disabled(service.accessBusy)
+                        .textFieldStyle(.roundedBorder).disabled(service.accessBusy || !service.settingsAvailable)
+                    SecureField("Access key", text: $service.relayKey).textFieldStyle(.roundedBorder).disabled(service.accessBusy || !service.settingsAvailable)
                     if service.accessHasSavedKey, service.relayServer == service.connectionConfiguration.serverUrl { Text("Saved key will be reused for this server.").font(.caption).foregroundStyle(.secondary) }
                     HStack {
                         Button("Validate & save Relay") { service.configureRelay() }.disabled(service.accessBusy || !service.settingsAvailable || service.relayServer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -763,18 +858,21 @@ struct RemoteDesktopSettingsView: View {
             Picker("Media relay", selection: $service.desktopMode) {
                 Text("This Mac").tag("local")
                 Text("Custom server").tag("external")
-            }.pickerStyle(.segmented).disabled(!service.desktopKnown || service.desktopBusy)
+            }.pickerStyle(.segmented).disabled(!service.desktopKnown || !service.settingsAvailable || service.desktopBusy)
                 .accessibilityIdentifier("codelync-desktop-relay-mode")
             if service.desktopMode == "external" {
                 RelayDeploymentGuideLink().accessibilityIdentifier("codelync-media-relay-guide")
                 TextField("LiveKit server URL", text: $service.desktopServer, prompt: Text("wss://media.example.com"))
-                    .textFieldStyle(.roundedBorder).accessibilityIdentifier("codelync-desktop-server")
+                    .textFieldStyle(.roundedBorder).disabled(service.desktopBusy || !service.settingsAvailable)
+                    .accessibilityIdentifier("codelync-desktop-server")
                 TextField("API key", text: $service.desktopAPIKey).textFieldStyle(.roundedBorder)
+                    .disabled(service.desktopBusy || !service.settingsAvailable)
                 SecureField("API secret", text: $service.desktopAPISecret).textFieldStyle(.roundedBorder)
+                    .disabled(service.desktopBusy || !service.settingsAvailable)
             }
             HStack {
                 Button("Save media relay") { service.configureDesktop() }
-                    .disabled(service.desktopBusy || !service.desktopKnown || !service.settingsAvailable)
+                    .disabled(service.desktopBusy || !service.desktopKnown || !service.settingsAvailable || (service.desktopMode == "external" && (service.desktopServer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.desktopAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
                     .accessibilityIdentifier("codelync-desktop-relay-save")
                 if service.desktopBusy { ProgressView().controlSize(.small) }
             }
@@ -868,7 +966,12 @@ struct PairingView: View {
             if let image = service.image {
                 Image(nsImage: image).interpolation(.none).resizable().aspectRatio(contentMode: .fit)
                     .padding(20).background(.white).clipShape(RoundedRectangle(cornerRadius: 16)).frame(width: 300, height: 300)
-            } else { ProgressView().frame(width: 300, height: 300) }
+                    .accessibilityIdentifier("codelync-pairing-qr")
+                    .accessibilityLabel(Text("Pairing QR code"))
+            } else {
+                ProgressView().frame(width: 300, height: 300)
+                    .accessibilityLabel(Text(LocalizedStringKey(service.publicStatus)))
+            }
             Text("Open Codelync on your phone and scan this code. No registration or VPN needed.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 400)
             HStack {
@@ -909,14 +1012,14 @@ struct DevicesView: View {
                     TextField("Apple team ID", text: $service.pushTeamID)
                     TextField("Key ID", text: $service.pushKeyID)
                     Picker("Environment", selection: $service.pushEnvironment) { Text("Development").tag("development"); Text("Production").tag("production") }
-                    Button(service.pushKeyPath.isEmpty ? "Choose Apple push key…" : "Push key selected") { service.choosePushKey() }
+                    Button(LocalizedStringKey(service.pushKeyPath.isEmpty ? "Choose Apple push key…" : "Push key selected")) { service.choosePushKey() }
                 }
                 if !service.notificationsError.isEmpty { Text(LocalizedStringKey(service.notificationsError)).font(.caption).foregroundStyle(.red) }
                 HStack {
                     Button("Cancel") { notificationsSetup = false }.keyboardShortcut(.cancelAction)
                     Spacer()
                     Button("Save notifications") { service.configureNotifications() }.keyboardShortcut(.defaultAction)
-                        .disabled(service.notificationsBusy || service.pushKeyID.isEmpty || service.pushTeamID.isEmpty)
+                        .disabled(service.notificationsBusy || service.pushKeyID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || service.pushTeamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }.padding(24).frame(width: 420)
                 .onChange(of: service.notificationsBusy) { old, busy in if old && !busy && service.notificationsError.isEmpty { notificationsSetup = false } }
@@ -926,19 +1029,34 @@ struct DevicesView: View {
 
 struct DeviceRow: View {
     let device: ServiceController.Device
-    let service: ServiceController
+    @ObservedObject var service: ServiceController
     @State private var name = ""
     @FocusState private var editing: Bool
     var body: some View {
         HStack {
-            Image(systemName: "iphone").foregroundColor(device.revoked ? .secondary : .blue)
+            Image(systemName: "iphone").foregroundStyle(device.revoked ? Color.secondary : Color.blue)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                TextField(device.name, text: $name, onCommit: { if !name.isEmpty { service.deviceAction("rename-device", id: device.id, name: name) } }).focused($editing)
+                TextField(device.name, text: $name)
+                    .accessibilityLabel(Text("Device name"))
+                    .onSubmit {
+                        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty, !device.revoked, service.running {
+                            service.deviceAction("rename-device", id: device.id, name: trimmed)
+                        } else {
+                            name = device.name
+                        }
+                    }
+                    .disabled(device.revoked || !service.running)
+                    .focused($editing)
                 HStack { Text(LocalizedStringKey(device.revoked ? "Access removed" : device.connected ? "Connected" : "Offline")); Text(Date(timeIntervalSince1970: device.lastSeen / 1000), style: .relative) }.font(.caption).foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityHint(Text(device.name))
+                    .accessibilityIdentifier("codelync-device-status-\(device.id)")
             }
             if !device.revoked {
-                Button("Test notification") { service.testNotifications(device.id) }.disabled(service.notificationsBusy || !service.notificationsAvailable || device.notifications != true)
-                Button("Disconnect") { service.deviceAction("revoke-device", id: device.id) }
+                Button("Test notification") { service.testNotifications(device.id) }.disabled(service.notificationsBusy || !service.notificationsAvailable || device.notifications != true || !service.running)
+                Button("Disconnect") { service.deviceAction("revoke-device", id: device.id) }.disabled(!service.running)
             }
         }.onAppear { name = device.name }.onChange(of: device.name) { _, value in if !editing { name = value } }
     }

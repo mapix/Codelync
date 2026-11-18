@@ -43,6 +43,9 @@ export const AgentWorkGroupHeader = React.memo((props: {
         <View style={styles.outerContainer}>
             <View style={styles.innerContainer}>
                 <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={label}
+                    accessibilityState={{ expanded: props.expanded }}
                     onPress={props.onToggle}
                     style={({ pressed }) => [
                         styles.header,
@@ -54,8 +57,9 @@ export const AgentWorkGroupHeader = React.memo((props: {
                     </Text>
                     <Ionicons
                         name={trailing || props.expanded ? 'chevron-up' : 'chevron-forward'}
-                        size={13}
+                        size={14}
                         color={theme.colors.textSecondary}
+                        style={styles.chevron}
                     />
                 </Pressable>
             </View>
@@ -78,21 +82,26 @@ const styles = StyleSheet.create((theme) => ({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        justifyContent: 'space-between',
+        gap: 8,
         alignSelf: 'stretch',
         marginHorizontal: 16,
-        minHeight: 28,
-        paddingVertical: 4,
-        borderRadius: 4,
+        minHeight: 44,
+        paddingVertical: 10,
+        borderRadius: 6,
     },
     headerPressed: {
         opacity: 0.6,
     },
     summaryText: {
-        flexShrink: 1,
+        flex: 1,
         minWidth: 0,
         fontSize: 13,
         lineHeight: 20,
-        color: theme.colors.textSecondary,
+        fontWeight: '500',
+        color: theme.colors.text ?? theme.colors.textSecondary,
+    },
+    chevron: {
+        flexShrink: 0,
     },
 }));

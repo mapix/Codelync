@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 
 const root = dirname(fileURLToPath(import.meta.url));
+const ALLOWED_ENV_KEYS = new Set(['MEDIA_DOMAIN', 'RELAY_DOMAIN', 'TURN_DOMAIN', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'REGISTRATION_TOKEN']);
+const MAX_ENV_BYTES = 65_536;
 
 /** Read private settings without logging their values. @param {string} directory */
 export async function readSettings(directory = root) {
@@ -12,14 +14,19 @@ export async function readSettings(directory = root) {
   const path = join(directory, '.env');
   const metadata = await lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink()) throw Error('.env must be a regular file.');
+  if (metadata.size > MAX_ENV_BYTES) throw Error('.env exceeds the maximum supported size.');
   /** @type {Record<string,string>} */ const settings = {};
   for (const [name, value] of Object.entries(parseEnv(await readFile(path, 'utf8')))) {
-    if (value !== undefined) settings[name] = value;
+    if (!ALLOWED_ENV_KEYS.has(name)) throw Error(`Unknown setting in .env: ${name}.`);
+    if (value !== undefined) {
+      if (/[\r\n\0]/u.test(value)) throw Error(`${name} contains unsupported control characters.`);
+      settings[name] = value;
+    }
   }
   for (const name of ['MEDIA_DOMAIN', 'RELAY_DOMAIN', 'TURN_DOMAIN']) {
     const value = settings[name] ?? '';
     if (value && (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u.test(value)
-      || /(?:^|\.)example\.(?:com|net|org)$/u.test(value) || /\.(?:example|invalid|localhost|test)$/u.test(value))) {
+      || /(?:^|\.)example\.(?:com|net|org)$/u.test(value) || /\.(?:example|invalid|localhost|local|test)$/u.test(value))) {
       throw Error(`Set ${name} to your real DNS hostname, without a scheme or port.`);
     }
     settings[name] = value;

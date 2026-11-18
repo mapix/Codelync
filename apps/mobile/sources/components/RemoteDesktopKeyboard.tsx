@@ -147,6 +147,23 @@ export function RemoteDesktopKeyboard({ visible, enabled, onInput, onClose, hint
     if (!visible) return null;
     const tooLong = text.length > DESKTOP_TEXT_LIMIT;
     const message = [hint, tooLong ? `${text.length} / ${DESKTOP_TEXT_LIMIT}` : null].filter(Boolean).join(' · ');
+    const plainKeyLabels: Record<string, string> = {
+        escape: labels.keyEscape ?? 'Escape',
+        tab: labels.keyTab ?? 'Tab',
+        enter: labels.keyEnter ?? 'Return',
+        backspace: labels.keyBackspace ?? 'Delete',
+        left: labels.keyLeft ?? 'Left arrow',
+        up: labels.keyUp ?? 'Up arrow',
+        down: labels.keyDown ?? 'Down arrow',
+        right: labels.keyRight ?? 'Right arrow',
+    };
+    const commandLabel = labels.keyCommand ?? 'Command';
+    const shiftLabel = labels.keyShift ?? 'Shift';
+    const keyAccessibilityLabel = (entry: (typeof keys)[number]) => {
+        if (!entry.modifiers.length) return plainKeyLabels[entry.key] ?? entry.key;
+        const modParts = entry.modifiers.map(mod => mod === 'shift' ? shiftLabel : commandLabel);
+        return [...modParts, entry.key.toUpperCase()].join(' ');
+    };
     return <BlurView testID="desktop-keyboard-panel" tint="dark" intensity={24} style={styles.panel}>
         <View style={styles.inputRow}>
             <TextInput ref={input} testID="desktop-text-input" accessibilityLabel={labels.text} placeholder={labels.text}
@@ -168,11 +185,11 @@ export function RemoteDesktopKeyboard({ visible, enabled, onInput, onClose, hint
             <Pressable testID="desktop-keyboard-close" accessibilityRole="button" accessibilityLabel={labels.close} onPress={close}
                 style={({ pressed }) => [styles.key, pressed && styles.pressed]}><Ionicons name="chevron-down" size={22} color="#E8EEF4" /></Pressable>
         </View>
-        <Text numberOfLines={1} accessible={!!message} accessibilityLiveRegion={message ? 'polite' : 'none'} style={[styles.hint, tooLong && styles.limit]}>{message}</Text>
+        {message ? <Text numberOfLines={1} accessible accessibilityLiveRegion="polite" style={[styles.hint, tooLong && styles.limit]}>{message}</Text> : null}
         {shortcutsOpen ? <ScrollView horizontal keyboardShouldPersistTaps="always" keyboardDismissMode="none" showsHorizontalScrollIndicator={false}
             style={styles.shortcutStrip} contentContainerStyle={styles.keyRow}>
             {keys.map(key => <Pressable key={key.title} testID={`desktop-key-${key.key}-${key.modifiers.join('-') || 'plain'}`}
-                accessibilityRole="button" accessibilityLabel={key.modifiers.length ? key.title.replace('⌘', 'Command ').replace('⇧', 'Shift ') : key.key}
+                accessibilityRole="button" accessibilityLabel={keyAccessibilityLabel(key)}
                 accessibilityState={{ disabled: !enabled || pending }} disabled={!enabled || pending}
                 onPress={() => sendKey({ action: 'key', key: key.key, modifiers: key.modifiers })}
                 style={({ pressed }) => [styles.key, pressed && styles.pressed, (!enabled || pending) && styles.disabled]}><Text style={styles.keyText}>{key.title}</Text></Pressable>)}

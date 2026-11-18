@@ -114,6 +114,15 @@ export function filterProjectGroupSessions(
     project: ProjectGroupData,
     keep: (session: SessionRowData) => boolean,
 ): ProjectGroupData | null {
+    let anyFiltered = false;
+    for (const workspace of project.workspaces) {
+        if (!workspace.sessions.every(keep)) {
+            anyFiltered = true;
+            break;
+        }
+    }
+    if (!anyFiltered) return project;
+
     const workspaces = project.workspaces
         .map((workspace) => ({
             ...workspace,
@@ -122,12 +131,19 @@ export function filterProjectGroupSessions(
         .filter((workspace) => workspace.sessions.length > 0);
     if (workspaces.length === 0) return null;
 
-    const sessions = workspaces.flatMap((workspace) => workspace.sessions);
+    let sessionCount = 0;
+    let activeCount = 0;
+    for (const workspace of workspaces) {
+        sessionCount += workspace.sessions.length;
+        for (const session of workspace.sessions) {
+            if (session.active) activeCount += 1;
+        }
+    }
     return {
         ...project,
         workspaces,
-        sessionCount: sessions.length,
-        activeCount: sessions.filter((session) => session.active).length,
+        sessionCount,
+        activeCount,
     };
 }
 

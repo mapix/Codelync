@@ -102,6 +102,55 @@ function isSessionArchived(session: Session, archiving: ReadonlySet<string>): bo
 /** For the handful of reads that happen outside a rebuild. */
 const NO_SESSIONS_ARCHIVING: ReadonlySet<string> = new Set<string>();
 
+export const SESSION_FILE_CACHE_MAX_SESSIONS = 12;
+export const SESSION_FILE_CACHE_MAX_FILES_PER_SESSION = 64;
+export const SESSION_FILE_CACHE_MAX_TOTAL_CHARS = 8 * 1024 * 1024;
+export const SESSION_FILE_CACHE_MAX_ENTRY_CHARS = 4 * 1024 * 1024;
+
+type SessionFileCacheEntry = { content: string | null; diff: string | null; isBinary: boolean; cachedAt: number };
+type SessionFileCacheMap = Record<string, Record<string, SessionFileCacheEntry>>;
+
+function sessionListFieldsChanged(oldSession: Session | undefined, newSession: Session): boolean {
+    if (!oldSession) return true;
+    const oldSideChat = Boolean(oldSession.metadata?.isSideChat);
+    const newSideChat = Boolean(newSession.metadata?.isSideChat);
+    if (oldSideChat !== newSideChat) return true;
+    if (newSideChat) return false;
+    if (
+        oldSession.active !== newSession.active
+        || (!newSession.active && oldSession.activeAt !== newSession.activeAt)
+        || oldSession.presence !== newSession.presence
+        || oldSession.thinking !== newSession.thinking
+        || oldSession.createdAt !== newSession.createdAt
+        || oldSession.lastMessageSentAt !== newSession.lastMessageSentAt
+        || Boolean(oldSession.draft) !== Boolean(newSession.draft)
+        || oldSession.projectId !== newSession.projectId
+        || oldSession.metadata !== newSession.metadata
+        || oldSession.todos !== newSession.todos
+        || oldSession.avatar !== newSession.avatar
+        || oldSession.avatarDescriptor !== newSession.avatarDescriptor
+    ) {
+        return true;
+    }
+    if (oldSession.agentState !== newSession.agentState) {
+        const oldState = resolveSessionState({
+            agentState: oldSession.agentState,
+            thinking: oldSession.thinking,
+            isOnline: oldSession.presence === 'online',
+        });
+        const newState = resolveSessionState({
+            agentState: newSession.agentState,
+            thinking: newSession.thinking,
+            isOnline: newSession.presence === 'online',
+        });
+        if (oldState !== newState) return true;
+    }
+    return false;
+}
+
+const fileCacheEntryChars = (entry: Pick<SessionFileCacheEntry, 'content' | 'diff'>) =>
+    (entry.content?.length ?? 0) + (entry.diff?.length ?? 0);
+
 /** "Today", "Yesterday", or "N days ago" for a flat row's date heading. */
 function relativeDayTitle(timestamp: number): string {
     const now = new Date();
@@ -511,6 +560,27 @@ export const storage = create<StorageState>()((set, get) => {
     let purchases = loadPurchases();
     let profile = loadProfile();
     let sessionLastMessageSentAt = loadSessionLastMessageSentAt();
+    let nextFileCacheSeq = 0;
+    const fileCacheAccessSeq = new Map<string, number>();
+    const sessionCacheAccessSeq = new Map<string, number>();
+    const clearTrackedSessionFiles = (sessionId: string) => {
+        sessionCacheAccessSeq.delete(sessionId);
+        const prefix = `${sessionId}\u0000`;
+        for (const key of fileCacheAccessSeq.keys()) {
+            if (key.startsWith(prefix)) fileCacheAccessSeq.delete(key);
+        }
+    };
+    const fileEntryRecency = (sessionId: string, filePath: string, entry: SessionFileCacheEntry) =>
+        fileCacheAccessSeq.get(`${sessionId}\u0000${filePath}`) ?? entry.cachedAt ?? 0;
+    const sessionBucketRecency = (sessionId: string, files: Record<string, SessionFileCacheEntry>) => {
+        const tracked = sessionCacheAccessSeq.get(sessionId);
+        if (tracked !== undefined) return tracked;
+        let newest = 0;
+        for (const entry of Object.values(files)) {
+            if (entry.cachedAt > newest) newest = entry.cachedAt;
+        }
+        return newest;
+    };
     return {
         settings,
         settingsVersion: version,
@@ -576,9 +646,11 @@ export const storage = create<StorageState>()((set, get) => {
 
             // Merge new sessions with existing ones
             const mergedSessions: Record<string, Session> = indexSessionsById(Object.values(state.sessions));
+            const touchedIds = new Set<string>();
 
             // Update sessions with calculated presence using centralized resolver
             sessions.forEach(session => {
+                touchedIds.add(session.id);
                 session = applyNativeDirectoryAuthority(session, state.sessions[session.id], options?.nativeCatalog ?? false);
                 // Use centralized resolver for consistent state management
                 const presence = resolveSessionOnlineState(session);
@@ -659,54 +731,6 @@ export const storage = create<StorageState>()((set, get) => {
                     lastMessageSentAt: resolvedLastMessageSentAt,
                 };
             });
-
-            // Build active set from all sessions (including existing ones)
-            const activeSet = new Set<string>();
-            Object.values(mergedSessions).forEach(session => {
-                if (isSessionActive(session)) {
-                    activeSet.add(session.id);
-                }
-            });
-
-            // Separate active and inactive sessions
-            const activeSessions: Session[] = [];
-            const inactiveSessions: Session[] = [];
-
-            // Process all sessions from merged set
-            Object.values(mergedSessions).forEach(session => {
-                // Side chats are hidden children — never in any session list.
-                if (session.metadata?.isSideChat) {
-                    return;
-                }
-                if (activeSet.has(session.id)) {
-                    activeSessions.push(session);
-                } else {
-                    inactiveSessions.push(session);
-                }
-            });
-
-            // Keep both sections in canonical chat-list order: newest activity first.
-            const sortKey = getSessionActivityAt;
-            activeSessions.sort((a, b) => sortKey(b) - sortKey(a));
-            inactiveSessions.sort((a, b) => sortKey(b) - sortKey(a));
-
-            // Build flat list data for FlashList
-            const listData: SessionListItem[] = [];
-
-            if (activeSessions.length > 0) {
-                listData.push('online');
-                listData.push(...activeSessions);
-            }
-
-            // Legacy sessionsData - to be removed
-            // Machines are now integrated into sessionListViewData
-
-            if (inactiveSessions.length > 0) {
-                listData.push('offline');
-                listData.push(...inactiveSessions);
-            }
-
-            // console.log(`📊 Storage: applySessions called with ${sessions.length} sessions, active: ${activeSessions.length}, inactive: ${inactiveSessions.length}`);
 
             // Process AgentState updates for sessions that already have messages loaded
             const updatedSessionMessages = { ...state.sessionMessages };
@@ -834,14 +858,68 @@ export const storage = create<StorageState>()((set, get) => {
                 archivingSessionIds.delete(sessionId);
             });
 
-            // Build new unified list view data
-            const sessionListViewData = buildSessionListViewData(
-                mergedSessions,
-                unreadSessionIds,
-                state.machines,
-                archivingSessionIds,
-                state.projects,
-            );
+            let anyListChanged = state.sessionsData === null
+                || state.sessionListViewData === null
+                || unreadSessionIds !== state.unreadSessionIds
+                || archivingSessionIds !== state.archivingSessionIds;
+            if (!anyListChanged) {
+                for (const sessionId of touchedIds) {
+                    if (sessionListFieldsChanged(state.sessions[sessionId], mergedSessions[sessionId])) {
+                        anyListChanged = true;
+                        break;
+                    }
+                }
+            }
+
+            let listData = state.sessionsData;
+            let sessionListViewData = state.sessionListViewData;
+            if (anyListChanged) {
+                const activeSet = new Set<string>();
+                Object.values(mergedSessions).forEach(session => {
+                    if (isSessionActive(session)) {
+                        activeSet.add(session.id);
+                    }
+                });
+
+                const activeSessions: Session[] = [];
+                const inactiveSessions: Session[] = [];
+
+                Object.values(mergedSessions).forEach(session => {
+                    // Side chats are hidden children — never in any session list.
+                    if (session.metadata?.isSideChat) {
+                        return;
+                    }
+                    if (activeSet.has(session.id)) {
+                        activeSessions.push(session);
+                    } else {
+                        inactiveSessions.push(session);
+                    }
+                });
+
+                const sortKey = getSessionActivityAt;
+                activeSessions.sort((a, b) => sortKey(b) - sortKey(a));
+                inactiveSessions.sort((a, b) => sortKey(b) - sortKey(a));
+
+                const nextListData: SessionListItem[] = [];
+                if (activeSessions.length > 0) {
+                    nextListData.push('online');
+                    nextListData.push(...activeSessions);
+                }
+                if (inactiveSessions.length > 0) {
+                    nextListData.push('offline');
+                    nextListData.push(...inactiveSessions);
+                }
+                listData = nextListData;
+
+                // Build new unified list view data
+                sessionListViewData = buildSessionListViewData(
+                    mergedSessions,
+                    unreadSessionIds,
+                    state.machines,
+                    archivingSessionIds,
+                    state.projects,
+                );
+            }
 
             for (const session of sessions) persistRigComposerDraft(mergedSessions[session.id]);
 
@@ -866,10 +944,9 @@ export const storage = create<StorageState>()((set, get) => {
             };
             return result;
         }),
-        applyReady: () => set((state) => ({
-            ...state,
-            isDataReady: true
-        })),
+        applyReady: () => set((state) => (
+            state.isDataReady ? state : { ...state, isDataReady: true }
+        )),
         applyMessages: (sessionId: string, messages: NormalizedMessage[], source = 'sync') => {
             let changed = new Set<string>();
             let settledMessageIds: string[] = [];
@@ -1204,16 +1281,79 @@ export const storage = create<StorageState>()((set, get) => {
                 [pathKey]: files
             }
         })),
-        applyFileCache: (sessionId: string, filePath: string, content: string | null, diff: string | null, isBinary: boolean) => set((state) => ({
-            ...state,
-            sessionFileCache: {
-                ...state.sessionFileCache,
-                [sessionId]: {
-                    ...(state.sessionFileCache[sessionId] || {}),
-                    [filePath]: { content, diff, isBinary, cachedAt: Date.now() }
+        applyFileCache: (sessionId: string, filePath: string, content: string | null, diff: string | null, isBinary: boolean) => set((state) => {
+            const entryChars = (content?.length ?? 0) + (diff?.length ?? 0);
+            if (entryChars > SESSION_FILE_CACHE_MAX_ENTRY_CHARS) {
+                return state;
+            }
+            const seq = ++nextFileCacheSeq;
+            fileCacheAccessSeq.set(`${sessionId}\u0000${filePath}`, seq);
+            sessionCacheAccessSeq.set(sessionId, seq);
+
+            const nextCache: SessionFileCacheMap = { ...state.sessionFileCache };
+            const currentBucket = nextCache[sessionId] ? { ...nextCache[sessionId] } : {};
+            currentBucket[filePath] = { content, diff, isBinary, cachedAt: Date.now() };
+
+            const bucketEntries = Object.keys(currentBucket);
+            if (bucketEntries.length > SESSION_FILE_CACHE_MAX_FILES_PER_SESSION) {
+                bucketEntries
+                    .filter((path) => path !== filePath)
+                    .sort((a, b) => fileEntryRecency(sessionId, a, currentBucket[a]) - fileEntryRecency(sessionId, b, currentBucket[b]))
+                    .slice(0, bucketEntries.length - SESSION_FILE_CACHE_MAX_FILES_PER_SESSION)
+                    .forEach((evictPath) => {
+                        delete currentBucket[evictPath];
+                        fileCacheAccessSeq.delete(`${sessionId}\u0000${evictPath}`);
+                    });
+            }
+            nextCache[sessionId] = currentBucket;
+
+            const sessionIds = Object.keys(nextCache);
+            if (sessionIds.length > SESSION_FILE_CACHE_MAX_SESSIONS) {
+                sessionIds
+                    .filter((id) => id !== sessionId)
+                    .sort((a, b) => sessionBucketRecency(a, nextCache[a]) - sessionBucketRecency(b, nextCache[b]))
+                    .slice(0, sessionIds.length - SESSION_FILE_CACHE_MAX_SESSIONS)
+                    .forEach((evictSessionId) => {
+                        delete nextCache[evictSessionId];
+                        clearTrackedSessionFiles(evictSessionId);
+                    });
+            }
+
+            let totalChars = 0;
+            const candidates: Array<{ sid: string; path: string; recency: number; chars: number }> = [];
+            for (const [sid, files] of Object.entries(nextCache)) {
+                for (const [path, entry] of Object.entries(files)) {
+                    const chars = fileCacheEntryChars(entry);
+                    totalChars += chars;
+                    if (sid !== sessionId || path !== filePath) {
+                        candidates.push({ sid, path, recency: fileEntryRecency(sid, path, entry), chars });
+                    }
                 }
             }
-        })),
+            if (totalChars > SESSION_FILE_CACHE_MAX_TOTAL_CHARS) {
+                candidates.sort((a, b) => a.recency - b.recency);
+                for (const victim of candidates) {
+                    if (totalChars <= SESSION_FILE_CACHE_MAX_TOTAL_CHARS) break;
+                    const bucket = nextCache[victim.sid];
+                    if (!bucket || !bucket[victim.path]) continue;
+                    const updatedBucket = bucket === currentBucket ? currentBucket : { ...bucket };
+                    delete updatedBucket[victim.path];
+                    fileCacheAccessSeq.delete(`${victim.sid}\u0000${victim.path}`);
+                    totalChars -= victim.chars;
+                    if (Object.keys(updatedBucket).length === 0) {
+                        delete nextCache[victim.sid];
+                        sessionCacheAccessSeq.delete(victim.sid);
+                    } else {
+                        nextCache[victim.sid] = updatedBucket;
+                    }
+                }
+            }
+
+            return {
+                ...state,
+                sessionFileCache: nextCache,
+            };
+        }),
         applyNativeUpdateStatus: (status: { available: boolean; updateUrl?: string } | null) => set((state) => ({
             ...state,
             nativeUpdateStatus: status
@@ -1512,6 +1652,7 @@ export const storage = create<StorageState>()((set, get) => {
             const { [sessionId]: deletedMessages, ...remainingSessionMessages } = state.sessionMessages;
             
             const { [sessionId]: _fileCache, ...remainingFileCache } = state.sessionFileCache;
+            clearTrackedSessionFiles(sessionId);
 
             // Clear local session data from persistent storage (permission / model / effort
             // picks live in synced session metadata, #1492)
@@ -1524,15 +1665,28 @@ export const storage = create<StorageState>()((set, get) => {
             delete lastMessageSentAt[sessionId];
             saveSessionLastMessageSentAt(lastMessageSentAt);
 
+            let unreadSessionIds = state.unreadSessionIds;
+            if (unreadSessionIds.has(sessionId)) {
+                unreadSessionIds = new Set(unreadSessionIds);
+                unreadSessionIds.delete(sessionId);
+            }
+            let archivingSessionIds = state.archivingSessionIds;
+            if (archivingSessionIds.has(sessionId)) {
+                archivingSessionIds = new Set(archivingSessionIds);
+                archivingSessionIds.delete(sessionId);
+            }
+
             // Rebuild sessionListViewData without the deleted session.
             // Pass unreadSessionIds so the remaining sessions keep their unread badges.
-            const sessionListViewData = buildSessionListViewData(remainingSessions, state.unreadSessionIds, state.machines, state.archivingSessionIds, state.projects);
+            const sessionListViewData = buildSessionListViewData(remainingSessions, unreadSessionIds, state.machines, archivingSessionIds, state.projects);
             
             return {
                 ...state,
                 sessions: remainingSessions,
                 sessionMessages: remainingSessionMessages,
                 sessionFileCache: remainingFileCache,
+                unreadSessionIds,
+                archivingSessionIds,
                 sessionListViewData
             };
         }),

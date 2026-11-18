@@ -139,3 +139,27 @@ test('full rich replacement cannot inherit older killed, interrupted or waiting 
     assert.equal(current.subagents[0].status, 'running'); assert.equal(current.aggregateActivity.waiting, false);
   } finally { await f.backend.dispose(); }
 });
+
+test('running suffix snapshot preserves higher unary stepCount when reactive summary stream lags', async () => {
+  const scope = { hostId: antigravityHostId(runtime), generation: 'owner-one' };
+  const steps = Array.from({ length: 40 }, (_, i) => ({ status: 3, plannerResponse: { response: `step ${i}` } }));
+  let stream;
+  const rpc = { latestRuntime: runtime, generation: () => 'owner-one', dispose: async () => {},
+    /** @param {string} method @param {Value} [body] */
+    call: async (method, body = {}) => {
+      if (method === 'GetAllCascadeTrajectories') return { trajectorySummaries: { 'running-id': { trajectoryId: 'traj-1', stepCount: 40, status: 'CASCADE_RUN_STATUS_RUNNING', notFullyIdle: true } } };
+      if (method === 'GetCascadeTrajectorySteps') return { steps: steps.slice(body.stepOffset) };
+      throw Error(`Unexpected method ${method}`);
+    } };
+  const backend = new AntigravityBackend({ rpc, historyIndex: false,
+    summaryStreamFactory: () => {
+      stream = streamFixture(scope, { 'running-id': { trajectoryId: 'traj-1', stepCount: 32, status: 'CASCADE_RUN_STATUS_RUNNING', notFullyIdle: true } }, () => 1000);
+      return stream;
+    } });
+  try {
+    const view = await backend.freshSnapshot('running-id');
+    assert.equal(view.nativeStepOffset, 24);
+    assert.equal(view.rows.length, 16);
+    assert.equal(backend.residentSummaries['running-id']?.stepCount, 40);
+  } finally { await backend.dispose(); }
+});

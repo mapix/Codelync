@@ -18,6 +18,7 @@ export function antigravityOwnerRows(text, binary) {
     const match = /^\s*(\d+)\s+(.*)$/.exec(line);
     if (!match || !match[2].startsWith(binary + ' ')) return [];
     const args = match[2].slice(binary.length);
+    if (/^\s*multicall(?:\s|$)/.test(args)) return [];
     const csrf = /(?:^|\s)--csrf_token(?:=|\s+)([^\s]+)/.exec(args);
     const appDataDir = /(?:^|\s)--app_data_dir(?:=|\s+)([^\s]+)/.exec(args);
     return [{ pid: Number(match[1]), csrfToken: csrf?.[1], appDataDir: appDataDir?.[1] }];

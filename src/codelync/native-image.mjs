@@ -1,9 +1,10 @@
 import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
-import { basename, isAbsolute } from 'node:path';
+import { basename, extname, isAbsolute } from 'node:path';
 import { BridgeError } from '../errors.mjs';
 
 export const MAX_NATIVE_IMAGE_BYTES = 64 * 1024 * 1024;
+export const MAX_NATIVE_IMAGE_PIXELS = 64_000_000;
 export const MAX_NATIVE_PREVIEW_BYTES = 500000 - 40;
 export const NATIVE_PREVIEW_POLICY = 'jpeg-500000-v1';
 
@@ -30,6 +31,9 @@ export async function readNativeImage(path) {
     if (size !== info.size || after.size !== info.size || after.mtimeMs !== info.mtimeMs) throw new BridgeError('native-image-unavailable', 'The original image changed during read.');
     const bytes = buffer.subarray(0, size), dimensions = imageDimensions(bytes);
     if (dimensions === null) throw new BridgeError('native-image-format', 'The original file is not a supported image.');
+    if (dimensions && dimensions.width * dimensions.height > MAX_NATIVE_IMAGE_PIXELS) {
+      throw new BridgeError('native-image-too-large', 'The original image exceeds the pixel limit.');
+    }
     return { bytes, name: basename(path), ...(dimensions ? { image: dimensions } : {}) };
   } finally { await file.close(); }
 }
@@ -37,20 +41,41 @@ export async function readNativeImage(path) {
 /** The original file remains intact. Only an explicit image read invokes decoding/compression.
  * @param {{bytes:Buffer,name:string}} source @returns {Promise<{bytes:Buffer,name:string,image:{width:number,height:number}}>} */
 export async function compressNativeImage(source) {
+  if (!Buffer.isBuffer(source?.bytes)) throw new BridgeError('native-image-compression-failed', 'The original image could not be prepared.');
+  if (source.bytes.length > MAX_NATIVE_IMAGE_BYTES) throw new BridgeError('native-image-too-large', 'The original image exceeds the attachment limit.');
+  const dimensions = imageDimensions(source.bytes);
+  if (dimensions === null) throw new BridgeError('native-image-compression-failed', 'The original image could not be prepared.');
+  if (dimensions && dimensions.width * dimensions.height > MAX_NATIVE_IMAGE_PIXELS) {
+    throw new BridgeError('native-image-too-large', 'The original image exceeds the pixel limit.');
+  }
   try {
     const { default: sharp } = await import('sharp');
-    const pipeline = sharp(source.bytes, { limitInputPixels: 64000000, failOn: 'error' }).rotate().flatten({ background: '#ffffff' });
+    const pipeline = sharp(source.bytes, { limitInputPixels: MAX_NATIVE_IMAGE_PIXELS, failOn: 'error' }).rotate().flatten({ background: '#ffffff' });
     let edge = 2560, quality = 85;
     for (let attempt = 0; attempt < 8; attempt++) {
       const { data, info } = await pipeline.clone().resize({ width: edge, height: edge, fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality, progressive: true, chromaSubsampling: '4:4:4' }).toBuffer({ resolveWithObject: true });
-      if (data.length <= MAX_NATIVE_PREVIEW_BYTES) return { bytes: data, name: source.name.replace(/\.[^.]*$/u, '') + '.jpg', image: { width: info.width, height: info.height } };
+      if (data.length <= MAX_NATIVE_PREVIEW_BYTES) return { bytes: data, name: previewFilename(source.name), image: { width: info.width, height: info.height } };
       // 先降低画质，再缩小尺寸；每次校验实际字节数，不能以编码参数冒充 500KB 保证。
       if (quality > 50) quality = Math.max(50, quality - 15);
       else edge = Math.floor(edge * 0.7);
     }
-  } catch { throw new BridgeError('native-image-compression-failed', 'The original image could not be prepared.'); }
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    if (error instanceof Error && /pixel limit/iu.test(error.message)) {
+      throw new BridgeError('native-image-too-large', 'The original image exceeds the pixel limit.');
+    }
+    throw new BridgeError('native-image-compression-failed', 'The original image could not be prepared.');
+  }
   throw new BridgeError('native-image-compression-failed', 'The image could not fit the preview limit.');
+}
+
+/** @param {unknown} name @returns {string} */
+function previewFilename(name) {
+  const base = typeof name === 'string' && name.length > 0 ? basename(name) : 'image';
+  const ext = extname(base);
+  const stem = ext ? base.slice(0, -ext.length) : base;
+  return `${stem || 'image'}.jpg`;
 }
 
 /** Header-only format/dimension check; no untrusted image decoding in the bridge.
@@ -61,7 +86,18 @@ function imageDimensions(bytes) {
   }
   if (bytes.length >= 10 && ['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6))) return dimensions(bytes.readUInt16LE(6), bytes.readUInt16LE(8));
   if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
-    if (bytes.length >= 30 && bytes.toString('ascii', 12, 16) === 'VP8X') return dimensions(bytes.readUIntLE(24, 3) + 1, bytes.readUIntLE(27, 3) + 1);
+    if (bytes.length < 16) return null;
+    const chunk = bytes.toString('ascii', 12, 16);
+    if (chunk === 'VP8X') return bytes.length >= 30 ? dimensions(bytes.readUIntLE(24, 3) + 1, bytes.readUIntLE(27, 3) + 1) : null;
+    if (chunk === 'VP8 ') {
+      if (bytes.length < 30 || (bytes[20] & 1) !== 0 || bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return null;
+      return dimensions(bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff);
+    }
+    if (chunk === 'VP8L') {
+      if (bytes.length < 25 || bytes[20] !== 0x2f) return null;
+      const bits = bytes.readUInt32LE(21);
+      return dimensions((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1);
+    }
     return undefined;
   }
   if (bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) {

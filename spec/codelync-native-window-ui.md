@@ -9,7 +9,7 @@
 - 截图只能读该 source 绑定的 encrypted imageRef，手机不传本机路径。放大、平移、关闭复用原生图片预览。
 - 坐标点击使用所见截图的比例和 stamp，图片未加载或不支持坐标控制时关闭点击。放大后的点击需要准确反变换，窗口改变时拒绝旧动作。
 - 控件只来自原应用真实 AX observation。先选择一个可编辑的空输入，明确填入草稿；不自动点击发送、不声称已经进入 Agent。Terminal/iTerm/Warp 的文字能力由 adapter 关闭。
-- window mode 与 chat mode 分开渲染，不出现默认模型选择或假 Native session 状态。锁屏、权限缺失、owner 未连接时显示真实状态并关闭控制。
+- window mode 与 chat mode 分开渲染，不出现默认模型选择或假 Native session 状态。锁屏、权限缺失、owner 未连接时显示真实状态并关闭控制；`NativeWindowPanel` 滚动内容保持底部安全留白，不可用或未满足前置条件的窗口动作/填表按钮降低透明度（`0.45`）并保持 >=44pt 最小点击高度与禁用无障碍状态，操作失败提示使用主题告警色（`warningCritical`）。
 
 2026-10-29 实际原生 ZCode 窗口验收发现：仅替换聊天 content 仍会挂载 AgentContentView 的 EmptyMessages overlay 和聊天 composer，空窗口来源的 Open 按钮因此存在但不可点击。窗口模式必须独占内容 surface，不挂载聊天 placeholder、composer、floating dock、恢复提示、goal/question/activity 或 CLI warning；由 NativeWindowPanel 独立提供状态、草稿和控制。普通 session 模式保留现有聊天 surface，模式切换不能改变 Hook 调用顺序。回归覆盖窗口模式排除聊天 overlay/input、普通模式完整保留聊天，并实际核对原生 Open isHittable 与真实加密窗口预览。
 

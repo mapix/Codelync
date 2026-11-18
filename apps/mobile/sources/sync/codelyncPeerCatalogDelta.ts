@@ -2,6 +2,17 @@ import type { Session } from './storageTypes';
 import type { PeerSessionDescriptor } from './codelyncRecent';
 import { isCodelyncNativeSession } from '@/utils/codelyncSessionBrowser';
 
+export const NATIVE_CATALOG_APPLY_CHUNK_SIZE = 250;
+
+export function chunkCatalogDescriptors<T>(rows: readonly T[], chunkSize: number = NATIVE_CATALOG_APPLY_CHUNK_SIZE): T[][] {
+    const size = Math.max(1, Math.floor(chunkSize));
+    const chunks: T[][] = [];
+    for (let offset = 0; offset < rows.length; offset += size) {
+        chunks.push(rows.slice(offset, offset + size));
+    }
+    return chunks;
+}
+
 export interface NativeCatalogPage {
     version: 1 | 2; sessions: PeerSessionDescriptor[]; hasMore: boolean; nextCursor: string | null;
     mode?: 'full' | 'delta'; watermark?: string; baseWatermark?: string | null; removedIds?: string[]; machineIds?: string[];

@@ -21,6 +21,7 @@ export interface CodelyncSettingsViewProps {
     languageLabel: string;
     version: string;
     remoteDesktopEnabled: boolean;
+    scanBusy?: boolean;
     onRemoteDesktopChange: (enabled: boolean) => void;
     onSelectConnection: (id: string) => Promise<void>;
     onThemeChange: (preference: AppThemePreference) => void;
@@ -32,13 +33,15 @@ export interface CodelyncSettingsViewProps {
 export const CodelyncSettingsView = React.memo(function CodelyncSettingsView(props: CodelyncSettingsViewProps) {
     const { theme } = useUnistyles(), insets = useSafeAreaInsets();
     const [themeOpen, setThemeOpen] = React.useState(false);
-    return <View testID="codelync-settings-page" style={[styles.root, { paddingTop: insets.top }]}>
-        <View style={styles.header}><Text accessibilityRole="header" style={styles.heading}>{t('settings.title')}</Text></View>
-        <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+    const desktopTitle = remoteDesktopLabels().title;
+    const horizontalSafeArea = { paddingLeft: insets.left ?? 0, paddingRight: insets.right ?? 0 };
+    return <View testID="codelync-settings-page" style={[styles.root, { paddingTop: insets.top ?? 0 }]}>
+        <View style={[styles.header, horizontalSafeArea]}><Text accessibilityRole="header" style={styles.heading}>{t('settings.title')}</Text></View>
+        <ScrollView style={styles.content} contentContainerStyle={[styles.scrollContent, horizontalSafeArea]} keyboardShouldPersistTaps="handled">
             <ItemGroup title={t('codelyncChannels.title')} headerStyle={styles.firstGroup}>
-                <PeerChannelControlView snapshot={props.snapshot} onSelect={props.onSelectConnection} presentation="settings" />
+                <PeerChannelControlView snapshot={props.snapshot} onSelect={props.onSelectConnection} presentation="settings" onScan={props.onScan} />
                 <Item title={t('onboarding.scanButton')} icon={<Ionicons name="qr-code-outline" size={25} color={theme.colors.textSecondary} />}
-                    onPress={props.onScan} />
+                    loading={props.scanBusy} disabled={props.scanBusy} onPress={props.onScan} />
             </ItemGroup>
             <ItemGroup title={t('settingsAppearance.display')}>
                 <Item title={t('settings.appearance')} detail={t(`settingsAppearance.themeOptions.${props.themePreference}`)}
@@ -47,8 +50,8 @@ export const CodelyncSettingsView = React.memo(function CodelyncSettingsView(pro
                     icon={<Ionicons name="language-outline" size={25} color={theme.colors.textSecondary} />} onPress={props.onLanguage} />
             </ItemGroup>
             <ItemGroup>
-                <Item title={remoteDesktopLabels().title} icon={<Ionicons name="desktop-outline" size={25} color={theme.colors.textSecondary} />}
-                    showChevron={false} rightElement={<Switch testID="codelync-remote-desktop-feature" accessibilityLabel={remoteDesktopLabels().title}
+                <Item title={desktopTitle} icon={<Ionicons name="desktop-outline" size={25} color={theme.colors.textSecondary} />}
+                    showChevron={false} rightElement={<Switch testID="codelync-remote-desktop-feature" accessibilityLabel={desktopTitle}
                         value={props.remoteDesktopEnabled} onValueChange={props.onRemoteDesktopChange} />} />
             </ItemGroup>
             <ItemGroup title={t('settings.about')} footer={t('settings.aboutFooter')}>

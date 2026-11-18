@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { View, ActivityIndicator, Platform, TextInput } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { t } from '@/text';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Octicons } from '@expo/vector-icons';
@@ -31,6 +32,7 @@ export default React.memo(function FilesScreen() {
     const [isSearching, setIsSearching] = React.useState(false);
     const gitStatus = useSessionGitStatus(sessionId!);
     const { theme } = useUnistyles();
+    const insets = useSafeAreaInsets();
 
     // Refs for shaking deleted file items
     const shakerRefs = React.useRef(new Map<string, ShakeInstance>());
@@ -83,14 +85,14 @@ export default React.memo(function FilesScreen() {
             return (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={{
-                        color: '#FF3B30',
+                        color: theme.colors.textDestructive,
                         fontSize: 12,
                         marginRight: 4,
                         ...Typography.default()
                     }}>
                         {t('files.deleted')}
                     </Text>
-                    <Octicons name="diff-removed" size={16} color="#FF3B30" />
+                    <Octicons name="diff-removed" size={16} color={theme.colors.textDestructive} />
                 </View>
             );
         }
@@ -100,19 +102,19 @@ export default React.memo(function FilesScreen() {
 
         switch (file.status) {
             case 'modified':
-                statusColor = "#FF9500";
+                statusColor = theme.colors.warning;
                 statusIcon = "diff-modified";
                 break;
             case 'added':
-                statusColor = "#34C759";
+                statusColor = theme.colors.success;
                 statusIcon = "diff-added";
                 break;
             case 'renamed':
-                statusColor = "#007AFF";
+                statusColor = theme.colors.textLink;
                 statusIcon = "arrow-right";
                 break;
             case 'untracked':
-                statusColor = theme.dark ? "#b0b0b0" : "#8E8E93";
+                statusColor = theme.colors.textSecondary;
                 statusIcon = "file";
                 break;
             default:
@@ -141,7 +143,7 @@ export default React.memo(function FilesScreen() {
 
     const renderFileIconForSearch = (file: FileItem) => {
         if (file.fileType === 'folder') {
-            return <Octicons name="file-directory" size={29} color="#007AFF" />;
+            return <Octicons name="file-directory" size={29} color={theme.colors.textLink} />;
         }
 
         return <FileIcon fileName={file.fileName} size={29} />;
@@ -178,7 +180,7 @@ export default React.memo(function FilesScreen() {
     };
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { paddingLeft: insets.left, paddingRight: insets.right }]}>
 
             {/* Search Input - Always Visible */}
             <View style={{
@@ -205,9 +207,14 @@ export default React.memo(function FilesScreen() {
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         placeholder={t('files.searchPlaceholder')}
+                        accessibilityLabel={t('files.searchPlaceholder')}
+                        returnKeyType="search"
+                        clearButtonMode="while-editing"
                         style={{
                             flex: 1,
+                            minHeight: 28,
                             fontSize: 16,
+                            color: theme.colors.input.text,
                             ...Typography.default()
                         }}
                         placeholderTextColor={theme.colors.input.placeholder}
@@ -254,9 +261,12 @@ export default React.memo(function FilesScreen() {
             <MobileGlassSurface
                 enabled={Platform.OS !== 'web'}
                 intensity={56}
-                style={styles.fileListGlass}
+                style={[styles.fileListGlass, Platform.OS !== 'web' && { marginBottom: Math.max(12, insets.bottom) }]}
             >
-            <ItemList style={{ flex: 1, backgroundColor: Platform.select({ web: theme.colors.groupped.background, default: 'transparent' }) }}>
+            <ItemList
+                style={{ flex: 1, backgroundColor: Platform.select({ web: theme.colors.groupped.background, default: 'transparent' }) }}
+                keyboardShouldPersistTaps="handled"
+            >
                 {isLoading ? (
                     <View style={{
                         flex: 1,

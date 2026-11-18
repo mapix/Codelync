@@ -154,15 +154,29 @@ export class NativeProjectActivityService {
     return { available, sources, sessionSources };
   }
   ownerAvailable() { try { return this.ownedAvailable() === true; } catch { return false; } }
+  /** Find the latest valid inventory descriptor matching `source` without rebuilding the full catalog inventory.
+   * @param {Value} source @returns {Value|null} */
+  currentSource(source) {
+    let raw;
+    try { raw = this.sources(); } catch { return null; }
+    if (!Array.isArray(raw)) return null;
+    const targetApp = source.app ?? 'codex', targetHost = source.hostId ?? 'local', targetId = source.id;
+    for (let index = raw.length - 1; index >= 0; index -= 1) {
+      const candidate = raw[index];
+      if (candidate && (candidate.app ?? 'codex') === targetApp && (candidate.hostId ?? 'local') === targetHost
+        && candidate.id === targetId && nativeSession(candidate)) return candidate;
+    }
+    return null;
+  }
   /** Read an already admitted same-source replica; never schedule a native read.
    * @param {Value|undefined} source @returns {Value|null} */
   cachedSourceStatus(source) {
     if (this.closed || !this.ownerAvailable() || !source || !nativeSession(source) || !sourceCatalogVisible(source, source.metadata)
       || !this.inventoryAvailable(source.app ?? 'codex')) return null;
-    const identity = key(source), current = this.inventory().sessionSources.find(value => key(value) === identity);
-    if (!current || !sourceCatalogVisible(current, current.metadata) || ['protocol', 'runtimeGeneration', 'appMode', 'nativeCollection'].some(field => current[field] !== source[field])) return null;
-    const entry = this.entries.get(identity);
+    const identity = key(source), entry = this.entries.get(identity);
     if (!entry || entry.closed) return null;
+    const current = this.currentSource(source);
+    if (!current || !sourceCatalogVisible(current, current.metadata) || ['protocol', 'runtimeGeneration', 'appMode', 'nativeCollection'].some(field => current[field] !== source[field])) return null;
     try {
       const status = entry.observer.status(), known = status?.known === true;
       return { sameSource: true, known, active: known && status.active === true, waiting: known && status.waiting === true,
@@ -358,9 +372,9 @@ export class NativeProjectActivityService {
     for (const entry of this.entries.values()) {
       if (entry.queued && (entry.retryAt ?? 0) > now) deadlines.push(/** @type {number} */ (entry.retryAt));
       const at = this.refreshDeadline(entry);
-      // A completion already wakes the shared queue. An overdue peer must not
-      // create a one-millisecond timer loop while all native read slots are busy.
-      if (at !== null && !(at <= now && this.inFlight >= this.concurrency)) deadlines.push(at);
+      // Completion callbacks and next-poll triggers already wake blocked/overdue
+      // entries; only genuine future deadlines should arm the background timer.
+      if (at !== null && at > now) deadlines.push(at);
     }
     if (!deadlines.length) return;
     this.timer = setTimeout(() => {

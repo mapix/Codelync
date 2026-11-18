@@ -123,11 +123,13 @@ asset digest. Keep downloaded binaries and credentials outside Git.
 pnpm install --frozen-lockfile
 pnpm typecheck:all
 pnpm lint
+pnpm security:release
 pnpm build:native
 CODELYNC_NODE_BINARY=/absolute/path/to/verified/node \
 CODELYNC_NODE_LICENSE=/absolute/path/to/Node-LICENSE \
 CODELYNC_CLOUDFLARED_BINARY=/absolute/path/to/verified/cloudflared \
 node scripts/build-mac-app.mjs /absolute/path/to/release/Codelync.app
+# Uses package.json version (1.0.0) and codelyncBuild (2026111705) unless CODELYNC_MAC_BUILD is set.
 node scripts/sign-mac-app.mjs /absolute/path/to/release/Codelync.app \
   'Developer ID Application: Your Name (TEAMID)'
 codesign --verify --deep --strict /absolute/path/to/release/Codelync.app
@@ -194,10 +196,13 @@ Record the resulting website image ID, use a fresh release tag, and import only
 that exact image into the cluster's containerd store.
 
 The supplied manifest targets the existing nginx ingress / `letsencrypt-prod`
-issuer and a dedicated `codelync` namespace. Replace `RELEASE_TAG` with the
-immutable image tag. This cluster's single-node workflow imports the image into
-containerd and uses `imagePullPolicy: Never`; a multi-node deployment must publish
-the image to your registry and update that policy before scheduling elsewhere.
+issuer and a dedicated `codelync` namespace. Render the manifests with
+`python3 deploy/website/render-manifests.py --phase prepare|route|legacy` (which
+rejects unresolved `RELEASE_TAG` placeholders across all phases and substitutes
+the immutable `codelync-website` image tag). This cluster's single-node workflow
+imports the image into containerd and uses `imagePullPolicy: Never`; a multi-node
+deployment must publish the image to your registry and update that policy before
+scheduling elsewhere.
 
 Create the dedicated namespace, validate the rendered manifest server-side, then
 apply it. The website runs without root, a writable root filesystem, Linux
@@ -251,9 +256,12 @@ browser loading after publication; an uncached fetch alone cannot establish that
 the page executed the matching language dictionary.
 
 For a page-only update, `deploy/website/Dockerfile.copy-update` inherits the exact
-previously verified static image and replaces only the four landing assets. Make
-a fresh context containing that Dockerfile plus `site/index.html`, `site/app.js`,
-`site/styles.css` and `site/assets/icon.png`. Verify the selected current image
+previously verified static image and replaces the staged website, metadata and
+nginx security files (`site/index.html`, `site/app.js`, `site/language.js`,
+`site/japanese.js`, `site/styles.css`, `site/assets/icon.png`, `site/privacy.html`,
+`site/support.html`, `site/testflight.json`, `site/release.json`, `nginx.conf`,
+and `security-headers.conf`, keeping `app.js`, `language.js`, `japanese.js`, and
+`styles.css` `?v=` hashes in sync with the HTML). Verify the selected current image
 ID against the running deployment and its retained public archive/checksum.
 Build with `--pull=false` and an explicit verified local `STATIC_IMAGE`; record
 the resulting immutable image ID. This preserves existing `release.json`, all

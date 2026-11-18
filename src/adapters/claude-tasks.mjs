@@ -97,25 +97,48 @@ function dispatchChild(input, parent) {
     parentNativeCollection: parent.nativeCollection, parentOwnerGeneration: parent.ownerGeneration, status: childStatus(native), statusSource: 'native-collection-header' };
 }
 
+/** @param {Map<string,Value>} tasks @returns {Value[]} */
+function retainTasks(tasks) {
+  const all = [...tasks.values()];
+  if (all.length <= CLAUDE_TASK_LIMITS.tasks) return all;
+  const isActive = (/** @type {Value} */ row) => ['pending', 'running', 'paused'].includes(row.status);
+  let drop = all.length - CLAUDE_TASK_LIMITS.tasks;
+  /** @type {Value[]} */ const kept = [];
+  for (const row of all) {
+    if (drop > 0 && !isActive(row)) { drop--; continue; }
+    kept.push(row);
+  }
+  return kept.length > CLAUDE_TASK_LIMITS.tasks ? kept.slice(-CLAUDE_TASK_LIMITS.tasks) : kept;
+}
+
 /** Pure, bounded parent activity projection. `previous` is only a state returned by this function.
  * @param {Value} input @param {Value|null} [previous] @returns {Value} */
 export function projectClaudeTasks(input, previous = null) {
-  const scope = scopeOf(input.scope), observed = scopeOf(input.observedScope), key = scopeKey(scope);
-  const keep = previous?.version === 1 && key !== null && previous.scopeKey === key;
-  const keepChildren = previous?.version === 1 && sameOwner(scope, scopeOf(previous.scope));
-  /** @type {Value} */ const state = { version: 1, scope, scopeKey: key, observationSequence: keep ? previous.observationSequence : null,
-    tasks: keep ? previous.tasks.map((/** @type {Value} */ row) => ({ ...row })) : [],
-    dispatchChildren: keepChildren ? previous.dispatchChildren.map((/** @type {Value} */ row) => ({ ...row })) : [],
-    logs: keep ? previous.logs.map((/** @type {Value} */ row) => ({ ...row })) : [], logSequence: keep ? previous.logSequence : 0,
-    seen: keep ? previous.seen.map((/** @type {Value} */ row) => ({ ...row })) : [], tasksTruncated: keep && previous.tasksTruncated === true, logsTruncated: keep && previous.logsTruncated === true,
+  const src = record(input) ? input : {};
+  const scope = scopeOf(src.scope), observed = scopeOf(src.observedScope), key = scopeKey(scope);
+  const keep = record(previous) && previous.version === 1 && key !== null && previous.scopeKey === key;
+  const keepChildren = record(previous) && previous.version === 1 && sameOwner(scope, scopeOf(previous.scope));
+  const rawLogs = keep && Array.isArray(previous.logs) ? previous.logs.filter(row => record(row) && integer(row.sequence)).map(row => ({ ...row })) : [];
+  const rawSeen = keep && Array.isArray(previous.seen) ? previous.seen.filter(row => record(row) && typeof row.id === 'string').map(row => ({ ...row })) : [];
+  const rawTasks = keep && Array.isArray(previous.tasks) ? previous.tasks.filter(row => record(row) && label(row.nativeTaskId, 256)).map(row => ({ ...row })) : [];
+  const rawChildren = keepChildren && Array.isArray(previous.dispatchChildren) ? previous.dispatchChildren.filter(row => record(row) && label(row.nativeConversationId)).map(row => ({ ...row })) : [];
+  let logSequence = keep && integer(previous.logSequence) ? previous.logSequence : 0;
+  for (const row of rawLogs) if (row.sequence > logSequence) logSequence = row.sequence;
+  /** @type {Value} */ const state = { version: 1, scope, scopeKey: key,
+    observationSequence: keep && integer(previous.observationSequence) ? previous.observationSequence : null,
+    tasks: rawTasks, dispatchChildren: rawChildren.slice(0, CLAUDE_TASK_LIMITS.children),
+    logs: rawLogs.slice(-CLAUDE_TASK_LIMITS.logs), logSequence,
+    seen: rawSeen.slice(-CLAUDE_TASK_LIMITS.seen),
+    tasksTruncated: keep && (previous.tasksTruncated === true || rawTasks.length > CLAUDE_TASK_LIMITS.tasks),
+    logsTruncated: keep && (previous.logsTruncated === true || rawLogs.length > CLAUDE_TASK_LIMITS.logs),
     lastTasksComplete: keep && previous.lastTasksComplete === true, lastBackgroundComplete: keep && previous.lastBackgroundComplete === true };
-  const coverage = record(input.coverage) ? input.coverage : {};
-  const current = !!scope && key === scopeKey(observed) && input.connected === true && input.fresh === true && scope.queryToken !== null;
-  const incomingSequence = integer(input.observationSequence) ? input.observationSequence : null;
+  const coverage = record(src.coverage) ? src.coverage : {};
+  const current = !!scope && key === scopeKey(observed) && src.connected === true && src.fresh === true && scope.queryToken !== null;
+  const incomingSequence = integer(src.observationSequence) ? src.observationSequence : null;
   const replay = incomingSequence !== null && state.observationSequence !== null && incomingSequence < state.observationSequence;
   const duplicateBatch = incomingSequence !== null && state.observationSequence !== null && incomingSequence === state.observationSequence;
-  const available = current && coverage.available === true && (input.events === undefined || Array.isArray(input.events));
-  let invalid = false, overflow = Array.isArray(input.events) && input.events.length > CLAUDE_TASK_LIMITS.events;
+  const available = current && coverage.available === true && (src.events === undefined || Array.isArray(src.events));
+  let invalid = false, overflow = Array.isArray(src.events) && src.events.length > CLAUDE_TASK_LIMITS.events || rawSeen.length > CLAUDE_TASK_LIMITS.seen;
   let backgroundComplete = false, foregroundComplete = false;
   /** @type {Map<string,Value>} */ const tasks = new Map(state.tasks.map((/** @type {Value} */ row) => [row.nativeTaskId, row]));
   /** @type {Set<string>} */ const currentLevelTasks = new Set();
@@ -125,7 +148,7 @@ export function projectClaudeTasks(input, previous = null) {
     for (const [id, row] of tasks) if (['native-background-level', 'native-foreground-level'].includes(row.statusSource) && !TERMINAL.has(row.status)) {
       tasks.set(id, { ...row, status: 'unknown' });
     }
-    for (const native of (input.events ?? []).slice(-CLAUDE_TASK_LIMITS.events)) {
+    for (const native of (src.events ?? []).slice(-CLAUDE_TASK_LIMITS.events)) {
       if (duplicateBatch) continue;
       if (record(native) && native.type === 'system' && native.subtype === 'background_tasks_changed') { level = native; continue; }
       if (!record(native) || native.type !== 'system' || !EVENTS.has(native.subtype)) continue;
@@ -147,8 +170,8 @@ export function projectClaudeTasks(input, previous = null) {
       const row = applyEvent(event, tasks.get(event.taskId) ?? null, scope);
       tasks.delete(event.taskId); tasks.set(event.taskId, row); appendLog(state, event, row);
     }
-    if (input.level !== undefined) level = record(input.level) ? input.level : null;
-    if (input.level !== undefined && !level) invalid = true;
+    if (src.level !== undefined) level = record(src.level) ? src.level : null;
+    if (src.level !== undefined && !level) invalid = true;
     if (level) {
       const validEnvelope = level.type === 'system' && level.subtype === 'background_tasks_changed' && sessionMatches(level, scope) && Array.isArray(level.tasks);
       if (!validEnvelope) invalid = true;
@@ -165,7 +188,7 @@ export function projectClaudeTasks(input, previous = null) {
             nativeEventId: label(level.uuid), nativeStatus: null, isBackgrounded: true, timestamp: label(level.timestamp, 80), name: null }, old, scope);
           row.status = native.status === undefined ? 'running' : taskStatus(native.status);
           row.nativeStatus = label(native.status, 64); row.statusSource = 'native-background-level';
-          tasks.set(native.task_id, row);
+          tasks.delete(native.task_id); tasks.set(native.task_id, row);
         }
         backgroundComplete = coverage.levelComplete === true && !badLevel;
         if (backgroundComplete) for (const [id, row] of tasks) if (row.isBackgrounded === true && !active.has(id) && !TERMINAL.has(row.status)) {
@@ -174,8 +197,8 @@ export function projectClaudeTasks(input, previous = null) {
         invalid ||= badLevel; overflow ||= level.tasks.length > CLAUDE_TASK_LIMITS.tasks;
       }
     }
-    if (input.foregroundLevel !== undefined && input.foregroundLevel !== null) {
-      const foreground = input.foregroundLevel;
+    if (src.foregroundLevel !== undefined && src.foregroundLevel !== null) {
+      const foreground = src.foregroundLevel;
       if (!record(foreground) || !Array.isArray(foreground.tasks)) invalid = true;
       else if (foreground.available === true) {
         /** @type {Set<string>} */ const active = new Set();
@@ -190,7 +213,7 @@ export function projectClaudeTasks(input, previous = null) {
             nativeEventId: null, nativeStatus: null, isBackgrounded: false, timestamp: null, name: null }, old, scope);
           row.status = native.status === undefined ? 'running' : taskStatus(native.status);
           row.nativeStatus = label(native.status, 64); row.statusSource = 'native-foreground-level';
-          tasks.set(native.task_id, row);
+          tasks.delete(native.task_id); tasks.set(native.task_id, row);
         }
         foregroundComplete = coverage.foregroundComplete === true && foreground.complete === true && !badLevel;
         if (foregroundComplete) for (const [id, row] of tasks) if (row.isBackgrounded === false && !active.has(id) && !TERMINAL.has(row.status)) {
@@ -206,13 +229,13 @@ export function projectClaudeTasks(input, previous = null) {
   }
   if (tasks.size > CLAUDE_TASK_LIMITS.tasks) state.tasksTruncated = true;
   state.tasksTruncated ||= overflow;
-  state.tasks = [...tasks.values()].slice(-CLAUDE_TASK_LIMITS.tasks);
-  const childAvailable = !!scope && sameOwner(scope, observed) && input.connected === true && input.fresh === true && coverage.dispatchAvailable === true && Array.isArray(input.dispatchChildren);
-  let childInvalid = false, childOverflow = false;
+  state.tasks = retainTasks(tasks);
+  const childAvailable = !!scope && sameOwner(scope, observed) && src.connected === true && src.fresh === true && coverage.dispatchAvailable === true && Array.isArray(src.dispatchChildren);
+  let childInvalid = false, childOverflow = rawChildren.length > CLAUDE_TASK_LIMITS.children;
   if (childAvailable && scope) {
     /** @type {Map<string,Value>} */ const children = new Map();
-    childOverflow = input.dispatchChildren.length > CLAUDE_TASK_LIMITS.children;
-    for (const native of input.dispatchChildren.slice(0, CLAUDE_TASK_LIMITS.children)) {
+    childOverflow ||= src.dispatchChildren.length > CLAUDE_TASK_LIMITS.children;
+    for (const native of src.dispatchChildren.slice(0, CLAUDE_TASK_LIMITS.children)) {
       const child = dispatchChild(native, scope);
       if (!child) { childInvalid = true; continue; }
       const childKey = digest([child.nativeCollection, child.hostId, child.nativeConversationId]);
@@ -246,23 +269,28 @@ export function projectClaudeTasks(input, previous = null) {
 /** Bounded local metadata log read; no native transcript or operation fetch.
  * @param {Value} state @param {{scope:Value,taskId?:string|null,before?:string|null,limit?:number}} options @returns {Value} */
 export function readClaudeTaskLogPage(state, options) {
-  const scope = scopeOf(options.scope), key = scopeKey(scope), taskId = options.taskId ?? null;
   /** @param {string} status */ const fail = status => ({ status, available: false, logs: [], hasMore: null, nextCursor: null });
-  if (state.version !== 1 || !key || key !== state.scopeKey) return fail('scope-mismatch');
+  if (!record(state) || state.version !== 1 || !integer(state.logSequence) || !Array.isArray(state.logs) || !Array.isArray(state.tasks) || !record(options)) {
+    return fail('scope-mismatch');
+  }
+  const scope = scopeOf(options.scope), key = scopeKey(scope), taskId = options.taskId ?? null;
+  if (!key || key !== state.scopeKey) return fail('scope-mismatch');
   if (taskId !== null && !label(taskId, 256)) return fail('invalid-task');
   if (taskId !== null && !state.tasks.some((/** @type {Value} */ row) => row.nativeTaskId === taskId)) return fail('task-not-found');
+  if (options.limit !== undefined && options.limit !== null && (!Number.isSafeInteger(options.limit) || options.limit < 1)) return fail('invalid-limit');
   const filter = digest(taskId), requested = options.before ?? null;
   let end = state.logSequence + 1;
   if (requested !== null) {
     if (typeof requested !== 'string' || requested.length > 256) return fail('invalid-cursor');
-    const match = /^ct1\.([a-f0-9]{32})\.(\d{1,16})\.([a-f0-9]{32})\.(\d{1,16})$/.exec(requested);
+    const match = /^ct1\.([a-f0-9]{32})\.([1-9]\d{0,15})\.([a-f0-9]{32})\.([1-9]\d{0,15})$/.exec(requested);
     if (!match) return fail('invalid-cursor');
     if (match[1] !== key || match[3] !== filter) return fail('scope-mismatch');
     end = Number(match[2]);
-    if (!integer(end) || !integer(Number(match[4])) || end > Number(match[4]) || Number(match[4]) > state.logSequence) return fail('invalid-cursor');
+    const snapshotSeq = Number(match[4]);
+    if (!integer(end) || !integer(snapshotSeq) || end > snapshotSeq || snapshotSeq > state.logSequence) return fail('invalid-cursor');
     if (!state.logs.some((/** @type {Value} */ row) => row.sequence === end && (taskId === null || row.nativeTaskId === taskId))) return fail('cursor-not-found');
   }
-  const limit = Number.isSafeInteger(options.limit) ? Math.max(1, Math.min(options.limit ?? 50, CLAUDE_TASK_LIMITS.page)) : 50;
+  const limit = Number.isSafeInteger(options.limit) ? Math.min(options.limit ?? 50, CLAUDE_TASK_LIMITS.page) : 50;
   const candidates = state.logs.filter((/** @type {Value} */ row) => row.sequence < end && (taskId === null || row.nativeTaskId === taskId));
   const logs = candidates.slice(-limit).map((/** @type {Value} */ row) => ({ ...row }));
   const hasMore = candidates.length > logs.length;

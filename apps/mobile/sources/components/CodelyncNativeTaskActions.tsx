@@ -96,20 +96,20 @@ export function CodelyncNativeTaskActions({ sessionId, native, scope, task, acti
     return <View>
         <View style={styles.actions}>
             <Pressable testID={'codelync-native-task-output:' + task.nativeTaskId} accessibilityRole="button" accessibilityLabel={`${labels.output} · ${task.name}`}
-                accessibilityState={{ disabled: !canOutput || outputLoading }} disabled={!canOutput || outputLoading} style={styles.action} onPress={() => void readOutput()}>
+                accessibilityState={{ disabled: !canOutput || outputLoading, busy: outputLoading }} disabled={!canOutput || outputLoading} style={[styles.action, (!canOutput || outputLoading) && styles.actionDisabled]} onPress={() => void readOutput()}>
                 <Ionicons name="terminal-outline" size={17} color={theme.colors.textSecondary} /></Pressable>
             <Pressable testID={'codelync-native-task-stop:' + task.nativeTaskId} accessibilityRole="button" accessibilityLabel={`${labels.stop} · ${task.name}`}
-                accessibilityState={{ disabled: !canStop }} disabled={!canStop} style={styles.action} onPress={() => void stopTask()}>
+                accessibilityState={{ disabled: !canStop }} disabled={!canStop} style={[styles.action, !canStop && styles.actionDisabled]} onPress={() => void stopTask()}>
                 <Ionicons name="stop-circle-outline" size={17} color={theme.colors.textSecondary} /></Pressable>
         </View>
         {stop?.key === key && stop.state !== 'pending' ? <View><Text accessibilityLiveRegion="polite" style={styles.detail}>{stop.checking ? labels.checking : stop.state === 'requested' ? labels.requested : stop.state === 'failed' ? labels.stopFailed : !stop.commandId ? labels.unconfirmedInApp : labels.unknown}</Text>
-            {stop.state === 'unknown' && stop.commandId ? <Pressable testID="codelync-native-task-check-result" accessibilityRole="button" disabled={stop.checking || !checkAllowed()} style={styles.action} onPress={() => void checkStop()}><Text style={styles.detail}>{labels.check}</Text></Pressable> : null}</View> : null}
+            {stop.state === 'unknown' && stop.commandId ? <Pressable testID="codelync-native-task-check-result" accessibilityRole="button" accessibilityState={{ disabled: Boolean(stop.checking) || !checkAllowed(), busy: Boolean(stop.checking) }} disabled={stop.checking || !checkAllowed()} style={[styles.action, (stop.checking || !checkAllowed()) && styles.actionDisabled]} onPress={() => void checkStop()}><Text style={styles.detail}>{labels.check}</Text></Pressable> : null}</View> : null}
         {currentOutput ? <Modal visible transparent animationType="fade" onRequestClose={closeOutput}>
             <View style={styles.overlay}><Pressable style={styles.backdrop} accessibilityRole="button" accessibilityLabel={common.close} onPress={closeOutput} />
                 <View testID="codelync-native-task-output-panel" style={styles.sheet}>
                     <View style={styles.header}><Text style={styles.heading}>{labels.output}</Text><Pressable testID="codelync-native-task-output-close" style={styles.close}
                         accessibilityRole="button" accessibilityLabel={common.close} onPress={closeOutput}><Text style={styles.link}>{common.close}</Text></Pressable></View>
-                    {currentOutput.failed ? <View><Text style={styles.detail}>{labels.outputFailed}</Text><Pressable testID="codelync-native-task-output-retry" accessibilityRole="button" disabled={!canOutput} style={styles.action} onPress={() => void readOutput()}><Text style={styles.link}>{t('common.retry')}</Text></Pressable></View> : currentOutput.page ? <ScrollView>
+                    {currentOutput.failed ? <View style={styles.errorRow}><Text style={[styles.detail, { flex: 1 }]}>{labels.outputFailed}</Text><Pressable testID="codelync-native-task-output-retry" accessibilityRole="button" accessibilityLabel={t('common.retry')} accessibilityState={{ disabled: !canOutput }} disabled={!canOutput} style={[styles.action, !canOutput && styles.actionDisabled]} onPress={() => void readOutput()}><Text style={styles.link}>{t('common.retry')}</Text></Pressable></View> : currentOutput.page ? <ScrollView contentContainerStyle={styles.outputContent}>
                         <Text selectable style={styles.body}>{currentOutput.page.output || labels.empty}</Text>
                         {currentOutput.page.truncated ? <Text testID="codelync-native-task-output-truncated" style={styles.detail}>{labels.truncated}</Text> : null}
                     </ScrollView> : <View style={styles.loading}><ActivityIndicator size="small" /><Text style={styles.detail}>{labels.loading}</Text></View>}
@@ -118,11 +118,13 @@ export function CodelyncNativeTaskActions({ sessionId, native, scope, task, acti
 }
 
 const styles = StyleSheet.create(theme => ({
-    actions: { flexDirection: 'row' }, action: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
+    actions: { flexDirection: 'row' }, action: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' }, actionDisabled: { opacity: 0.45 },
     detail: { fontSize: 11, color: theme.colors.textSecondary, paddingHorizontal: 12, paddingVertical: 6 },
-    overlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 20 }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)' },
-    sheet: { maxHeight: '70%', borderRadius: 16, overflow: 'hidden', backgroundColor: theme.colors.surface },
+    errorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingBottom: 14 },
+    overlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 20, paddingTop: 48, paddingBottom: 36 }, backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.dark ? 'rgba(0,0,0,0.56)' : 'rgba(0,0,0,0.28)' },
+    sheet: { maxHeight: '70%', borderRadius: 16, overflow: 'hidden', backgroundColor: theme.colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
     header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingLeft: 14 }, heading: { flex: 1, color: theme.colors.text, fontSize: 14 },
     close: { minHeight: 44, minWidth: 44, justifyContent: 'center', paddingHorizontal: 12 }, link: { color: theme.colors.textLink, fontSize: 13 },
+    outputContent: { paddingBottom: 16 },
     body: { color: theme.colors.text, paddingHorizontal: 14, paddingVertical: 12 }, loading: { flexDirection: 'row', alignItems: 'center', padding: 14 },
 }));

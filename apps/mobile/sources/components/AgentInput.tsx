@@ -28,6 +28,7 @@ import { getPermissionModeMenuLabel, getPermissionModeShortLabel } from '@/utils
 import { getUsageLimitDisplayPercentage, getUsageLimitRows, formatUsageLimitResetTime, type UsageLimitsLike } from '@/utils/sessionStatusBar';
 import { Theme } from '@/theme';
 import { t } from '@/text';
+import { getAgentInputLabels } from '@/text/codelyncAgentInputLabels';
 import { Metadata } from '@/sync/storageTypes';
 import { isRunningOnMac } from '@/utils/platform';
 import { MobileGlassSurface } from './MobileGlass';
@@ -206,7 +207,7 @@ const stylesheet = StyleSheet.create((theme, runtime) => ({
         }),
         borderRadius: MOBILE_COMPOSER_METRICS.shellRadius,
         borderWidth: StyleSheet.hairlineWidth,
-        borderColor: theme.colors.glass.border,
+        borderColor: theme.dark ? theme.colors.glass.border : theme.colors.glass.divider,
         paddingHorizontal: MOBILE_COMPOSER_METRICS.shellInset,
         paddingTop: MOBILE_COMPOSER_METRICS.shellPaddingTop,
         paddingBottom: MOBILE_COMPOSER_METRICS.shellPaddingBottom,
@@ -287,8 +288,13 @@ const stylesheet = StyleSheet.create((theme, runtime) => ({
     },
     overlayDivider: {
         height: 1,
-        backgroundColor: theme.colors.glass.divider,
+        backgroundColor: Platform.OS === 'web' ? theme.colors.divider : theme.colors.glass.divider,
         marginHorizontal: 16,
+    },
+    overlayVerticalDivider: {
+        width: 1,
+        backgroundColor: Platform.OS === 'web' ? theme.colors.divider : theme.colors.glass.divider,
+        marginVertical: 8,
     },
 
     // Selection styles
@@ -472,9 +478,9 @@ const stylesheet = StyleSheet.create((theme, runtime) => ({
         backgroundColor: theme.colors.button.primary.disabled,
     },
     sendButtonLocked: {
-        backgroundColor: theme.colors.surfaceHigh,
+        backgroundColor: theme.colors.surfaceHighest,
         borderWidth: 1,
-        borderColor: theme.colors.divider,
+        borderColor: theme.dark ? 'rgba(255, 255, 255, 0.16)' : theme.colors.glass.divider,
     },
     sendButtonInner: {
         width: '100%',
@@ -734,6 +740,9 @@ const AgentInputUsageRow = React.memo(function AgentInputUsageRow(p: UsageRowPro
                 <Pressable
                     onPress={() => setShowPreciseContext((current) => !current)}
                     hitSlop={{ top: 12, bottom: 14, left: 10, right: 14 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={getAgentInputLabels().toggleContextDetails}
+                    accessibilityState={{ expanded: showPreciseContext }}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
                 >
                     <Text style={{ fontSize: 11, color: p.contextStatus.color, ...Typography.default() }}>
@@ -757,12 +766,16 @@ type ContextChipsProps = {
 
 const AgentInputContextChips = React.memo(function AgentInputContextChips(p: ContextChipsProps) {
     const { theme } = useUnistyles();
+    const inputLabels = getAgentInputLabels();
     if (p.machineName === undefined && !p.currentPath) {
         return null;
     }
+    const machineText = p.machineName === null ? t('agentInput.noMachinesAvailable') : p.machineName;
     return (
         <View style={{
             backgroundColor: theme.colors.surfacePressed,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: theme.colors.glass.divider,
             borderRadius: 12,
             padding: 8,
             marginBottom: 8,
@@ -775,6 +788,8 @@ const AgentInputContextChips = React.memo(function AgentInputContextChips(p: Con
                         p.onMachineClick?.();
                     }}
                     hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${inputLabels.switchMachine}: ${machineText}`}
                     style={(s) => ({
                         flexDirection: 'row',
                         alignItems: 'center',
@@ -793,7 +808,7 @@ const AgentInputContextChips = React.memo(function AgentInputContextChips(p: Con
                         fontWeight: '600',
                         ...Typography.default('semiBold'),
                     }}>
-                        {p.machineName === null ? t('agentInput.noMachinesAvailable') : p.machineName}
+                        {machineText}
                     </Text>
                 </BubblePressable>
             )}
@@ -804,6 +819,8 @@ const AgentInputContextChips = React.memo(function AgentInputContextChips(p: Con
                         p.onPathClick?.();
                     }}
                     hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${inputLabels.switchDirectory}: ${p.currentPath}`}
                     style={(s) => ({
                         flexDirection: 'row',
                         alignItems: 'center',
@@ -847,7 +864,10 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
     // while still occupying its slot. The composer's own popup pickers below render
     // identically and work, so Android uses those instead of the native menu.
     const useNativeSettingsMenus = shouldUseExpoNativeSettingsMenu(Platform.OS, runningOnMac);
+    const inputLabels = getAgentInputLabels();
     const activeSendIconColor = compactMobileComposer ? theme.colors.text : theme.colors.button.primary.tint;
+    const inactiveMobileIconColor = theme.dark ? '#AEAEB2' : '#5C5C60';
+    const lockedIconColor = theme.dark ? '#AEAEB2' : '#636366';
     const isSendBlocked = props.blockSend ?? false;
 
     // `hasText` drives only the send-button appearance/enabled state. It's
@@ -906,10 +926,10 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
             return label;
         }
         if (modeKey === 'bypassPermissions' || modeKey === 'yolo') {
-            return `${label} (sandboxed)`;
+            return inputLabels.sandboxed(label);
         }
         return label;
-    }, [isSandboxEnabled]);
+    }, [inputLabels, isSandboxEnabled]);
 
     // Usage row under the card: week quota + context gauge
     const usageLimitShowRemaining = useSetting('usageLimitShowRemaining');
@@ -1522,6 +1542,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 <Pressable
                                     onPress={handleSettingsPress}
                                     hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t('settings.title')}
+                                    accessibilityState={{ expanded: openPicker === 'permission' }}
                                     style={(p) => ({
                                         flexDirection: 'row',
                                         alignItems: 'center',
@@ -1538,13 +1561,23 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                             )
                         )}
 
-                        {props.agentType && props.onAgentClick && (
+                        {props.agentType && props.onAgentClick && (() => {
+                            const agentLabel = props.agentType === 'claude'
+                                ? t('agentInput.agent.claude')
+                                : props.agentType === 'codex'
+                                    ? t('agentInput.agent.codex')
+                                    : props.agentType === 'openclaw'
+                                        ? t('agentInput.agent.openclaw')
+                                        : t('agentInput.agent.gemini');
+                            return (
                             <Pressable
                                 onPress={() => {
                                     hapticsLight();
                                     props.onAgentClick?.();
                                 }}
                                 hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`${inputLabels.changeAgent}: ${agentLabel}`}
                                 style={(p) => ({
                                     flexDirection: 'row',
                                     alignItems: 'center',
@@ -1564,16 +1597,11 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     fontWeight: '600',
                                     ...Typography.default('semiBold'),
                                 }}>
-                                    {props.agentType === 'claude'
-                                        ? t('agentInput.agent.claude')
-                                        : props.agentType === 'codex'
-                                            ? t('agentInput.agent.codex')
-                                            : props.agentType === 'openclaw'
-                                                ? t('agentInput.agent.openclaw')
-                                                : t('agentInput.agent.gemini')}
+                                    {agentLabel}
                                 </Text>
                             </Pressable>
-                        )}
+                            );
+                        })()}
 
                         {props.onAbort && (
                             <Shaker ref={shakerRef}>
@@ -1591,6 +1619,9 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
                                     onPress={handleAbortPress}
                                     disabled={isAborting}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={inputLabels.abort}
+                                    accessibilityState={{ disabled: isAborting, busy: isAborting }}
                                 >
                                     {isAborting ? (
                                         <ActivityIndicator size="small" color={theme.colors.button.secondary.tint} />
@@ -1607,6 +1638,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                             <Pressable
                                 onPress={props.onPickImages}
                                 hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
+                                accessibilityRole="button"
+                                accessibilityLabel={inputLabels.addPhoto}
                                 style={(p) => ({
                                     flexDirection: 'row',
                                     alignItems: 'center',
@@ -1650,11 +1683,18 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                             hitSlop={{ top: 5, bottom: 10, left: 0, right: 0 }}
                             onPress={handleSendPress}
                             disabled={!desktopCanPressSendButton}
+                            accessibilityRole="button"
+                            accessibilityState={{ disabled: !desktopCanPressSendButton, busy: !!props.isSending }}
+                            accessibilityLabel={props.onMicPress && !props.isMicActive && !hasText && !props.isSending
+                                ? inputLabels.voice
+                                : isSendBlocked
+                                    ? t('codelyncLoading.unavailable')
+                                    : inputLabels.send}
                         >
                             {props.isSending ? (
                                 <ActivityIndicator size="small" color={theme.colors.button.primary.tint} />
                             ) : isSendBlocked ? (
-                                <Ionicons name="lock-closed" size={15} color={theme.colors.textSecondary} />
+                                <Ionicons name="lock-closed" size={15} color={lockedIconColor} />
                             ) : hasText ? (
                                 <Octicons
                                     name="arrow-up"
@@ -1693,6 +1733,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
         <Pressable
             key={key}
             onPress={onPress}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
             style={({ pressed }) => ({
                 flexDirection: 'row',
                 alignItems: 'flex-start',
@@ -1767,7 +1809,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                         ))}
                     </View>
 
-                    <View style={{ height: 1, backgroundColor: theme.colors.divider, marginHorizontal: 16 }} />
+                    <View style={styles.overlayDivider} />
 
                     <View style={{ flexDirection: 'row' }}>
                         <View style={{ paddingVertical: 8, flex: 1 }}>
@@ -1806,7 +1848,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
 
                         {availableEffortLevels.length > 0 && props.onEffortLevelChange && (
                             <>
-                                <View style={{ width: 1, backgroundColor: theme.colors.divider, marginVertical: 8 }} />
+                                <View style={styles.overlayVerticalDivider} />
                                 <View style={{ paddingVertical: 8, flex: 1 }}>
                                     <Text style={{
                                         fontSize: 12,
@@ -2021,7 +2063,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                 hitSlop={6}
                                 style={styles.mobileIconButton}
                                 accessibilityRole="button"
-                                accessibilityLabel="Add photo"
+                                accessibilityLabel={inputLabels.addPhoto}
                             >
                                 <Ionicons
                                     name="add"
@@ -2066,7 +2108,11 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     accessibilityRole="button"
                                     accessibilityLabel={isCodex
                                         ? t('agentInput.codexPermissionMode.title')
-                                        : t('agentInput.permissionMode.title')}
+                                        : isGemini
+                                            ? t('agentInput.geminiPermissionMode.title')
+                                            : t('agentInput.permissionMode.title')}
+                                    accessibilityValue={permissionShortLabel ? { text: permissionShortLabel } : undefined}
+                                    accessibilityState={{ expanded: openPicker === 'permission' }}
                                 >
                                     {renderPermissionValue()}
                                 </BubblePressable>
@@ -2103,6 +2149,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         ]}
                                         accessibilityRole="button"
                                         accessibilityLabel={t('agentInput.model.title')}
+                                        accessibilityValue={{ text: modelName }}
+                                        accessibilityState={{ disabled: !canOpenModelPicker, expanded: openPicker === 'model' }}
                                     >
                                         {renderModelValue()}
                                     </BubblePressable>
@@ -2140,6 +2188,8 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             ]}
                                             accessibilityRole="button"
                                             accessibilityLabel={t('agentInput.effort.title')}
+                                            accessibilityValue={effortLabel ? { text: effortLabel } : undefined}
+                                            accessibilityState={{ disabled: !canOpenEffortPicker, expanded: openPicker === 'effort' }}
                                         >
                                             {renderEffortValue()}
                                         </BubblePressable>
@@ -2197,7 +2247,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                     accessibilityRole="button"
                                     accessibilityState={{ disabled: agentInputPrimaryActionDisabled(primaryAction, canPressSendButton, props.editable === false), busy: isAborting }}
                                     accessibilityLabel={agentInputPrimaryActionLabel(primaryAction, isSendBlocked, props.editable === false, {
-                                        send: 'Send', stop: 'Stop', voice: 'Voice',
+                                        send: inputLabels.send, stop: inputLabels.stop, voice: inputLabels.voice,
                                         readOnly: t('agentInput.codexPermissionMode.readOnly'), unavailable: t('codelyncLoading.unavailable'),
                                     })}
                                 >
@@ -2216,7 +2266,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         <Ionicons
                                             name="lock-closed"
                                             size={14}
-                                            color={theme.colors.textSecondary}
+                                            color={lockedIconColor}
                                         />
                                     ) : shouldShowVoiceButton ? (
                                         props.isMicActive ? (
@@ -2232,7 +2282,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                         <Octicons
                                             name="arrow-up"
                                             size={16}
-                                            color={canPressSendButton ? activeSendIconColor : theme.colors.textSecondary}
+                                            color={canPressSendButton ? activeSendIconColor : inactiveMobileIconColor}
                                             // The color has to travel in `style`, not just the
                                             // `color` prop: @expo/vector-icons builds
                                             // `[styleDefaults, style, ...]` (create-icon-set.js),
@@ -2242,7 +2292,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                                             // discarded and the arrow painted white on the
                                             // near-white glass composer, i.e. invisible.
                                             style={{
-                                                color: canPressSendButton ? activeSendIconColor : theme.colors.textSecondary,
+                                                color: canPressSendButton ? activeSendIconColor : inactiveMobileIconColor,
                                                 marginTop: Platform.OS === 'web' ? 2 : 0,
                                             }}
                                         />

@@ -45,7 +45,7 @@ export class CodelyncMacDaemon extends EventEmitter {
   /** @type {Set<string>} */ archivedKeys = new Set();
   capacityTail = Promise.resolve();
   /** @type {Map<string,Value>} */ pendingDisabledBindings = new Map();
-  /** @type {Map<string,{actor:Value,flight:Promise<void>}>} */ sourceClosures = new Map();
+  /** @type {Map<string,Set<{actor:Value,flight:Promise<void>}>>} */ sourceClosures = new Map();
   /** @type {WeakMap<Value,number>} */ actorRevisions = new WeakMap();
   subscriptionTail = Promise.resolve();
   lastEnabledApps = new Set(DESKTOP_SOURCE_APPS);
@@ -123,6 +123,22 @@ export class CodelyncMacDaemon extends EventEmitter {
     }
     if (changed) await this.saveRestored();
   }
+  /** @param {string} key @param {Value} actor */
+  trackSourceClosure(key, actor) {
+    let closures = this.sourceClosures.get(key);
+    if ([...(closures ?? [])].some(item => item.actor === actor)) return;
+    if (!closures) { closures = new Set(); this.sourceClosures.set(key, closures); }
+    /** @type {{actor:Value,flight:Promise<void>}} */
+    const item = { actor, flight: Promise.resolve() };
+    let flight;
+    try { flight = Promise.resolve(actor.close()); } catch (error) { flight = Promise.reject(error); }
+    item.flight = flight;
+    closures.add(item);
+    flight.then(() => {
+      closures?.delete(item);
+      if (closures && !closures.size && this.sourceClosures.get(key) === closures) this.sourceClosures.delete(key);
+    }, () => {});
+  }
   /** Immediate admission and catalog fence; never stops an original session. */
   fenceSourceSubscriptions() {
     const enabled = DESKTOP_SOURCE_APPS.filter(app => this.sourceEnabled({ app }));
@@ -133,11 +149,7 @@ export class CodelyncMacDaemon extends EventEmitter {
     for (const [key, entry] of this.sources) if (!this.sourceEnabled(entry.source)) {
       const actor = this.actors.get(key);
       if (actor || entry.binding.metadata?.nativeSession?.sourceDisabled === true) this.pendingDisabledBindings.set(key, entry.binding);
-      if (actor && !this.sourceClosures.has(key)) {
-        let flight;
-        try { flight = Promise.resolve(actor.close()); } catch (error) { flight = Promise.reject(error); }
-        flight.catch(() => {}); this.sourceClosures.set(key, { actor, flight });
-      }
+      if (actor) this.trackSourceClosure(key, actor);
       this.sources.delete(key); this.actors.delete(key); this.lastUsed.delete(key); this.restored.delete(key);
     }
     this.inventoryAvailable = this.sourceConfigurationKnown() && enabled.every(app => this.inventoryApps.has(app));
@@ -167,9 +179,22 @@ export class CodelyncMacDaemon extends EventEmitter {
       };
       for (let offset = 0; offset < metadataJobs.length; offset += 4) await Promise.all(metadataJobs.slice(offset, offset + 4).map(updateBinding));
       await this.restoreRegisteredSources(); this.emit('source-subscriptions');
-      for (const [key, closing] of this.sourceClosures) {
-        try { await closing.flight; this.sourceClosures.delete(key); }
-        catch { failures.push('observer'); closing.flight = Promise.resolve().then(() => closing.actor.close()); closing.flight.catch(() => {}); }
+      for (const [key, closures] of [...this.sourceClosures]) {
+        for (const closing of [...closures]) {
+          try {
+            await closing.flight;
+            closures.delete(closing);
+            if (!closures.size && this.sourceClosures.get(key) === closures) this.sourceClosures.delete(key);
+          } catch {
+            failures.push('observer');
+            const retry = Promise.resolve().then(() => closing.actor.close());
+            closing.flight = retry;
+            retry.then(() => {
+              closures.delete(closing);
+              if (!closures.size && this.sourceClosures.get(key) === closures) this.sourceClosures.delete(key);
+            }, () => {});
+          }
+        }
       }
       await this.scanFlight?.catch(() => {});
       try { await this.options.discovery.reconcileSubscriptions?.(); } catch { failures.push('provider'); }
@@ -243,7 +268,8 @@ export class CodelyncMacDaemon extends EventEmitter {
       this.sources.delete(key); this.archivedKeys.add(key);
       const actor = this.actors.get(key);
       if (actor && typeof actor.tryCloseIfIdle === 'function' && await actor.tryCloseIfIdle()) {
-        this.actors.delete(key); this.lastUsed.delete(key); this.restored.delete(key); await this.saveRestored();
+        if (this.actors.get(key) === actor) this.actors.delete(key);
+        this.lastUsed.delete(key); this.restored.delete(key); await this.saveRestored();
       }
     }
     for (const source of found.sources) {
@@ -321,7 +347,8 @@ export class CodelyncMacDaemon extends EventEmitter {
         || typeof actor.tryCloseIfIdle !== 'function') continue;
       if (this.sourceIsBusy(key)) continue;
       if (!await actor.tryCloseIfIdle()) continue;
-      this.actors.delete(key); this.lastUsed.delete(key); this.restored.delete(key);
+      if (this.actors.get(key) === actor) this.actors.delete(key);
+      this.lastUsed.delete(key); this.restored.delete(key);
       await this.saveRestored();
     }
   }
@@ -355,7 +382,10 @@ export class CodelyncMacDaemon extends EventEmitter {
         if (!this.sourceCurrent(entry.source, revision)) throw new BridgeError('source-unavailable', 'The desktop source choice changed.');
         if (this.latestSelection.get(input.selectionClient) !== input.selectionSeq) throw new BridgeError('selection-superseded', 'A newer phone selection superseded this request.');
         this.restored.add(value.sourceKey); await this.saveRestored();
-        if (!this.sourceCurrent(entry.source, revision)) throw new BridgeError('source-unavailable', 'The desktop source choice changed.');
+        if (!this.sourceCurrent(entry.source, revision)) {
+          this.restored.delete(value.sourceKey); await this.saveRestored().catch(() => {});
+          throw new BridgeError('source-unavailable', 'The desktop source choice changed.');
+        }
         if (this.latestSelection.get(input.selectionClient) !== input.selectionSeq) throw new BridgeError('selection-superseded', 'A newer phone selection superseded this request.');
         void this.startSource(value.sourceKey, actor).catch(() => this.emit('diagnostic', { code: 'source-observation-pending' }));
         const desktopSwitchRequested = actor.supportsDesktopNavigation !== false;
@@ -372,6 +402,12 @@ export class CodelyncMacDaemon extends EventEmitter {
       { sourceKey: value.sourceKey, action: 'observe-source' }, () => this.useSource(value.sourceKey, async () => {
         if (!entry || !this.sourceCurrent(entry.source, revision)) throw new BridgeError('source-unavailable', 'The desktop source choice changed.');
         const actor = await this.prepareSource(value.sourceKey);
+        if (!this.sourceCurrent(entry.source, revision)) throw new BridgeError('source-unavailable', 'The desktop source choice changed.');
+        this.restored.add(value.sourceKey); await this.saveRestored();
+        if (!this.sourceCurrent(entry.source, revision)) {
+          this.restored.delete(value.sourceKey); await this.saveRestored().catch(() => {});
+          throw new BridgeError('source-unavailable', 'The desktop source choice changed.');
+        }
         void this.startSource(value.sourceKey, actor).catch(() => this.emit('diagnostic', { code: 'source-observation-pending' }));
         return { sourceKey: value.sourceKey, syncStarting: true };
       })));
@@ -386,8 +422,8 @@ export class CodelyncMacDaemon extends EventEmitter {
     const value = validateParams(params, true);
     if (!this.sources.has(value.sourceKey) || this.closed || !this.ownsLease) throw new BridgeError('source-unavailable', 'This Codelync source is unavailable.');
     const receipt = await /** @type {CommandReceipts} */ (this.receipts).run(`codelync-machine:${this.machine?.id}`, value.commandId, { sourceKey: value.sourceKey, action: 'close-source' }, async () => {
-      await Promise.allSettled([this.activating.get(value.sourceKey), this.preparing.get(value.sourceKey), this.starts.get(value.sourceKey)]);
-      const actor = this.actors.get(value.sourceKey); if (actor) { await actor.close(); this.actors.delete(value.sourceKey); }
+      await Promise.allSettled([this.activating.get(value.sourceKey), this.preparing.get(value.sourceKey), this.starts.get(value.sourceKey), ...[...(this.sourceClosures.get(value.sourceKey) ?? [])].map(item => item.flight)]);
+      const actor = this.actors.get(value.sourceKey); if (actor) { await actor.close(); if (this.actors.get(value.sourceKey) === actor) this.actors.delete(value.sourceKey); }
       this.starts.delete(value.sourceKey); this.restored.delete(value.sourceKey); await this.saveRestored();
       return { sourceKey: value.sourceKey, observerClosed: true, originalAgentStopped: false };
     });
@@ -436,6 +472,20 @@ export class CodelyncMacDaemon extends EventEmitter {
     const pending = this.preparing.get(key); if (pending) return pending;
     // 旧实现保留每次成功启动的 actor，第17次切换就永久撞容量；单飞预留并回收无用户/操作占用的旧 observer。
     const flight = this.capacityTail.then(async () => {
+      if (!this.sourceCurrent(entry.source, revision)) throw new BridgeError('source-unavailable', 'This source is unavailable.');
+      const pendingClosures = this.sourceClosures.get(key);
+      if (pendingClosures) {
+        for (const closing of [...pendingClosures]) {
+          try { await closing.flight; }
+          catch {
+            const retry = Promise.resolve().then(() => closing.actor.close());
+            closing.flight = retry; retry.catch(() => {});
+            await retry;
+          }
+          pendingClosures.delete(closing);
+        }
+        if (!pendingClosures.size && this.sourceClosures.get(key) === pendingClosures) this.sourceClosures.delete(key);
+      }
       if (!this.sourceCurrent(entry.source, revision)) throw new BridgeError('source-unavailable', 'This source is unavailable.');
       const stale = this.actors.get(key);
       if (stale && (this.actorRevisions.get(stale) ?? revision) !== revision) { await stale.close(); if (this.actors.get(key) === stale) this.actors.delete(key); }
@@ -489,8 +539,8 @@ export class CodelyncMacDaemon extends EventEmitter {
   async close() {
     if (this.closed) return; this.closed = true; this.ownsLease = false; if (this.timer) clearInterval(this.timer); this.connection?.close();
     await this.activity?.close();
-    await Promise.allSettled([this.scanFlight, ...this.activating.values(), ...this.preparing.values(), ...this.starts.values(), this.activeSave, this.subscriptionTail, ...[...this.sourceClosures.values()].map(value => value.flight)]);
-    await Promise.allSettled([...this.actors.values()].map(actor => actor.close())); this.actors.clear();
+    await Promise.allSettled([this.scanFlight, ...this.activating.values(), ...this.preparing.values(), ...this.starts.values(), this.activeSave, this.subscriptionTail, ...[...this.sourceClosures.values()].flatMap(set => [...set].map(value => value.flight))]);
+    await Promise.allSettled([...this.actors.values()].map(actor => actor.close())); this.actors.clear(); this.sourceClosures.clear();
     await this.options.discovery.close?.(); await this.releaseLease?.().catch(() => {}); this.releaseLease = null;
   }
 }

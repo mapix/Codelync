@@ -173,6 +173,10 @@ test('forwarded requests receive native error envelopes without any session admi
     { method: 'thread-follower-interrupt-turn', version: 5, hostId: 'local', error: 'no-handler-for-request' },
     { method: 'thread-follower-interrupt-turn', version: 3, hostId: 'local', error: 'request-version-mismatch' },
     { method: 'thread-follower-load-complete-history', version: 1, error: 'no-handler-for-request' },
+    { method: 'thread-follower-set-queued-follow-ups-state', version: 1, error: 'no-handler-for-request' },
+    { method: 'thread-follower-set-queued-follow-ups-state', version: 3, error: 'no-handler-for-request' },
+    { method: 'thread-follower-set-queued-follow-ups-state', version: 2, hostId: 'remote', error: 'no-handler-for-request' },
+    { method: 'thread-follower-set-queued-follow-ups-state', version: 4, hostId: 'remote', error: 'no-handler-for-request' },
     { method: 'thread-follower-remove-queued-message', version: 2, hostId: 'remote', error: 'no-handler-for-request' },
     { method: 'thread-follower-future-method', version: 1, hostId: 'remote', error: 'no-handler-for-request' },
   ];
@@ -330,6 +334,26 @@ test('response method and owner mismatch are rejected', async (t) => {
     return true;
   });
   await assert.rejects(adapter.send('test-session', 'fixture input', 'wrong-response'), { code: 'codex-protocol-error' });
+});
+
+test('supported stream state version 13 delivers snapshots and patches while unsupported version 12 closes connection', async (t) => {
+  const { adapter, sockets } = await fixture(t);
+  /** @type {Frame[]} */ const received = [];
+  await adapter.subscribe('test-session', (frame) => { if (frame.type === 'broadcast') received.push(frame); });
+  const socket = [...sockets][0];
+  socket.write(encode({ type: 'broadcast', method: 'thread-stream-state-changed', version: 13,
+    sourceClientId: 'desktop-owner', params: { conversationId: 'test-session', hostId: 'local',
+      change: { type: 'snapshot', revision: 1, conversationState: { title: 'Fixture v13' } } } }));
+  socket.write(encode({ type: 'broadcast', method: 'thread-stream-state-changed', version: 13,
+    sourceClientId: 'desktop-owner', params: { conversationId: 'test-session', hostId: 'local',
+      change: { type: 'patches', baseRevision: 1, revision: 2, patches: [] } } }));
+  await until(() => received.length === 2);
+  assert.equal(received[0].version, 13);
+  assert.equal(received[1].params.change.type, 'patches');
+  socket.write(encode({ type: 'broadcast', method: 'thread-stream-state-changed', version: 12,
+    sourceClientId: 'desktop-owner', params: { conversationId: 'test-session', hostId: 'local',
+      change: { type: 'snapshot', revision: 3, conversationState: {} } } }));
+  await until(() => adapter.socket === null);
 });
 
 test('unsupported selected-session stream version closes connection', async (t) => {

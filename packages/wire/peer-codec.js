@@ -78,6 +78,18 @@ export function compactPeerBody(payload) {
   return { body, compact };
 }
 
+/** @param {Uint8Array} bytes @param {number} offset */
+function readUint32LE(bytes, offset) {
+  if (!(bytes instanceof Uint8Array) || offset < 0 || offset + 4 > bytes.byteLength) throw Error('invalid-peer-frame');
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
+}
+
+/** @param {Uint8Array} body @param {number} expected @param {string} [code] */
+function assertValidGzipBody(body, expected, code = 'invalid-peer-compression') {
+  if (!(body instanceof Uint8Array) || body.byteLength < 18 || body[0] !== 31 || body[1] !== 139 || body[2] !== 8 || body[3] !== 0
+    || readUint32LE(body, body.byteLength - 4) !== expected) throw Error(code);
+}
+
 /** The compressor runs on the Mac before NaCl sealing. A portable decoder does
  * not depend on Node, browser compression streams or native gzip APIs. */
 export function encodeCompactPeerPlaintext(peerId, payload, compress) {
@@ -87,11 +99,15 @@ export function encodeCompactPeerPlaintext(peerId, payload, compress) {
   if (typeof compress === 'function' && body.length >= 256) {
     const candidate = compress(body);
     if (!(candidate instanceof Uint8Array)) throw Error('invalid-peer-compressor');
-    if (candidate.length + 32 <= body.length) { encoded = candidate; flags |= 1; }
+    if (candidate.length + 32 <= body.length) {
+      assertValidGzipBody(candidate, body.length, 'invalid-peer-compressor');
+      encoded = candidate;
+      flags |= 1;
+    }
   }
   const plain = new Uint8Array(PEER_COMPACT_PREFIX_BYTES + encoded.length); plain[0] = flags;
   for (let index = 0; index < 32; index++) plain[index + 1] = parseInt(peerId.slice(index * 2, index * 2 + 2), 16);
-  new DataView(plain.buffer).setUint32(33, body.length, true);
+  new DataView(plain.buffer, plain.byteOffset, plain.byteLength).setUint32(33, body.length, true);
   plain.set(encoded, PEER_COMPACT_PREFIX_BYTES); return plain;
 }
 
@@ -102,13 +118,11 @@ export function inspectCompactPeerPlaintext(plain, expectedPeerId) {
     || plain[0] > 3 || typeof expectedPeerId !== 'string' || !/^[a-f0-9]{64}$/.test(expectedPeerId)) throw Error('invalid-peer-frame');
   let peerId = ''; for (let index = 1; index <= 32; index++) peerId += plain[index].toString(16).padStart(2, '0');
   if (peerId !== expectedPeerId) throw Error('foreign-peer-frame');
-  const expected = new DataView(plain.buffer, plain.byteOffset, plain.byteLength).getUint32(33, true);
+  const expected = readUint32LE(plain, 33);
   if (expected < 2 || expected > MAX_BODY) throw Error('peer-response-too-large');
   const body = plain.subarray(PEER_COMPACT_PREFIX_BYTES), compressed = (plain[0] & 1) !== 0;
-  if (compressed) {
-    if (body.length < 18 || body[0] !== 31 || body[1] !== 139 || body[2] !== 8 || body[3] !== 0
-      || new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(body.length - 4, true) !== expected) throw Error('invalid-peer-compression');
-  } else if (body.length !== expected) throw Error('invalid-peer-length');
+  if (compressed) assertValidGzipBody(body, expected);
+  else if (body.length !== expected) throw Error('invalid-peer-length');
   return { body, expectedBytes: expected, compressed, compact: (plain[0] & 2) !== 0 };
 }
 
@@ -126,15 +140,13 @@ export function decodeCompactPeerPlaintext(plain, expectedPeerId, options = {}) 
   const frame = inspectCompactPeerPlaintext(plain, expectedPeerId), expected = frame.expectedBytes;
   let body = frame.body;
   if (frame.compressed) {
-    if (body.length < 18 || body[0] !== 31 || body[1] !== 139 || body[2] !== 8 || body[3] !== 0
-      || new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(body.length - 4, true) !== expected) throw Error('invalid-peer-compression');
     // fflate honors a fixed output buffer and truncates larger streams. One extra
     // byte makes an oversized expansion detectable while keeping allocation bound.
-    const checksum = new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(body.length - 8, true);
+    const checksum = readUint32LE(body, body.byteLength - 8);
     body = timedDecode('inflate', () => gunzipSync(body, { out: new Uint8Array(expected + 1) }), options.onStage);
+    if (body.length !== expected) throw Error('invalid-peer-length');
     if (timedDecode('checksum', () => crc32(body), options.onStage) !== checksum) throw Error('invalid-peer-compression');
-  }
-  if (body.length !== expected) throw Error('invalid-peer-length');
+  } else if (body.length !== expected) throw Error('invalid-peer-length');
   let text; try {
     text = timedDecode('utf8', () => typeof options.decodeText === 'function' ? options.decodeText(body) : new TextDecoder().decode(body), options.onStage);
   } catch { throw Error('invalid-peer-json'); }

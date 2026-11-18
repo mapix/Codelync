@@ -34,7 +34,7 @@ const modules: Record<string, any> = {
     'expo-router': { useRouter: () => ({ push: noop, back: noop, replace: state.replace }) },
     '@react-navigation/native': { useIsFocused: () => true, useFocusEffect: noop },
     '@/config': { config: { noninvasiveLocal: true } },
-    '@/sync/apiSocket': { apiSocket: { peerConnected: () => state.connected } },
+    '@/sync/apiSocket': { apiSocket: { peerConnected: () => state.connected, peerWritable: () => state.connected } },
     '@/sync/storage': { storage: { getState: () => ({ sessions: state.sessions }) }, useSocketStatus: () => ({ status: state.connected ? 'connected' : 'error' }),
         useSession: (id: string) => state.sessions[id] ?? null, useRealtimeStatus: () => 'disconnected', useSessionMessages: () => ({ messages: [{ id: 'kept', kind: 'agent-text', text: 'Retained body' }], isLoaded: state.loaded, isLoadingOlder: state.older }),
         useSessionPendingCommunications: () => [], useLocalSetting: (key: string) => key === 'acknowledgedCliVersions' ? {} : key === 'sidebarPanelsOpen' ? [] : false,

@@ -38,6 +38,8 @@ export class LocalSourceDiscovery {
     this.allowDeferredSources = options.allowDeferredSources === true;
     this.windowAdapters = /** @type {Map<string,Value>} */ (new Map());
     this.pendingProviderDisposals = /** @type {Set<Value>} */ (new Set());
+    this.disposalFlights = /** @type {WeakMap<Value, Promise<void>>} */ (new WeakMap());
+    this.providerEpoch = 0;
   }
   /** @param {string} app */
   sourceEnabled(app) { return !this.closed && DESKTOP_SOURCE_APPS.includes(app) && (this.sourceSubscriptions?.isEnabled(app) ?? true); }
@@ -67,31 +69,45 @@ export class LocalSourceDiscovery {
   }
   /** Consumers are fenced/closed by the daemon before disposing these clients. */
   async reconcileSubscriptions() {
-    if (!this.sourceEnabled('codex') && this.codex) { this.pendingProviderDisposals.add(this.codex); this.codex = null; }
-    if (!this.sourceEnabled('antigravity') && this.antigravity) { this.pendingProviderDisposals.add(this.antigravity); this.antigravity = null; }
+    let invalidated = false;
+    if (!this.sourceEnabled('codex') && this.codex) { this.pendingProviderDisposals.add(this.codex); this.codex = null; invalidated = true; }
+    if (!this.sourceEnabled('antigravity') && this.antigravity) { this.pendingProviderDisposals.add(this.antigravity); this.antigravity = null; invalidated = true; }
     if (!this.sourceEnabled('claude-desktop') && this.claudeInitialized) {
       const backends = this.claude; this.claude = []; this.claudeInitialized = false;
       for (const backend of backends) this.pendingProviderDisposals.add(backend);
+      invalidated = true;
     }
+    if (invalidated) this.providerEpoch++;
     const results = await Promise.allSettled([...this.pendingProviderDisposals].map(async backend => {
-      await backend.dispose?.(); this.pendingProviderDisposals.delete(backend);
+      let flight = this.disposalFlights.get(backend);
+      if (!flight) {
+        flight = Promise.resolve().then(() => backend.dispose?.()).finally(() => {
+          if (this.disposalFlights.get(backend) === flight) this.disposalFlights.delete(backend);
+        });
+        this.disposalFlights.set(backend, flight);
+      }
+      await flight; this.pendingProviderDisposals.delete(backend);
     }));
     if (results.some(result => result.status === 'rejected')) throw new BridgeError('source-subscriptions-apply-pending', 'The source choices are saved but switching is not complete.', 503);
   }
   /** @returns {Promise<DiscoveryResult>} */
   async discover() {
     if (this.closed) throw new BridgeError('source-unavailable', 'Codelync discovery is closed.', 503);
-    const revision = this.revision(), enabledApps = DESKTOP_SOURCE_APPS.filter(app => this.sourceEnabled(app));
+    const revision = this.revision(), epoch = this.providerEpoch;
+    const isStale = () => this.closed || revision !== this.revision() || epoch !== this.providerEpoch;
+    const staleResult = () => ({ sources: [], errors: [], inventoryApps: [], activityInventoryApps: [], hiddenSources: [], enabledApps: DESKTOP_SOURCE_APPS.filter(app => this.sourceEnabled(app)), stale: true });
+    const enabledApps = DESKTOP_SOURCE_APPS.filter(app => this.sourceEnabled(app));
     /** @type {{app:string,read:Promise<any>}[]} */ const jobs = [];
-    if (enabledApps.includes('codex')) jobs.push({ app: 'codex', read: Promise.resolve().then(() => { this.ensureProvider('codex'); return this.storage.list('codex'); }) });
-    if (enabledApps.includes('antigravity')) jobs.push({ app: 'antigravity', read: Promise.resolve().then(() => this.discoverAntigravity()) });
+    if (enabledApps.includes('codex')) jobs.push({ app: 'codex', read: Promise.resolve().then(() => { if (isStale()) return null; this.ensureProvider('codex'); return this.storage.list('codex'); }) });
+    if (enabledApps.includes('antigravity')) jobs.push({ app: 'antigravity', read: Promise.resolve().then(() => isStale() ? null : this.discoverAntigravity(revision, epoch)) });
     if (enabledApps.includes('claude-desktop')) jobs.push({ app: 'claude-desktop', read: Promise.resolve().then(async () => {
+      if (isStale()) return null;
       const adapters = /** @type {Value[]} */ (this.ensureProvider('claude-desktop'));
       return { adapters, results: await Promise.allSettled(adapters.map(adapter => adapter.list())) };
     }) });
-    if (this.allowDeferredSources) jobs.push({ app: 'windows', read: this.windows() });
+    if (this.allowDeferredSources) jobs.push({ app: 'windows', read: Promise.resolve().then(() => isStale() ? null : this.windows()) });
     const results = await Promise.allSettled(jobs.map(job => job.read));
-    if (this.closed || revision !== this.revision()) return { sources: [], errors: [], inventoryApps: [], activityInventoryApps: [], hiddenSources: [], enabledApps: DESKTOP_SOURCE_APPS.filter(app => this.sourceEnabled(app)), stale: true };
+    if (isStale()) return staleResult();
     /** @type {Value[]} */ const sources = [];
     /** @type {string[]} */ const errors = [];
     const inventoryApps = /** @type {Set<string>} */ (new Set()), activityInventoryApps = /** @type {Set<string>} */ (new Set());
@@ -126,19 +142,21 @@ export class LocalSourceDiscovery {
       } else if (Array.isArray(result.value)) sources.push(...result.value);
       else errors.push('local-window-discovery-unavailable');
     }
+    if (isStale()) return staleResult();
     return { sources: sources.filter(source => this.sourceEnabled(source.app) || this.allowDeferredSources && !DESKTOP_SOURCE_APPS.includes(source.app)).filter(source => !sourceArchived(source, source.metadata)), errors,
       inventoryApps: [...inventoryApps], activityInventoryApps: [...activityInventoryApps], enabledApps,
       hiddenSources: this.sourceEnabled('antigravity') && Array.isArray(this.antigravity?.excludedSources) ? this.antigravity.excludedSources : [] };
   }
-  async discoverAntigravity() {
-    this.ensureProvider('antigravity');
-    if (!this.antigravity) return [];
-    try { return await this.antigravity.list({ fresh: true }); }
+  async discoverAntigravity(revision = this.revision(), epoch = this.providerEpoch) {
+    const backend = /** @type {Value|null} */ (this.ensureProvider('antigravity'));
+    if (!backend) return [];
+    try { return await backend.list({ fresh: true }); }
     catch (error) {
-      if (this.antigravity.activityInventoryComplete === true && Array.isArray(this.antigravity.residentCatalog)) {
-        this.antigravity.inventoryComplete = false; return structuredClone(this.antigravity.residentCatalog);
+      if (this.closed || revision !== this.revision() || epoch !== this.providerEpoch || this.antigravity !== backend || !this.sourceEnabled('antigravity')) throw error;
+      if (backend.activityInventoryComplete === true && Array.isArray(backend.residentCatalog)) {
+        backend.inventoryComplete = false; return structuredClone(backend.residentCatalog);
       }
-      if (!this.antigravityConfigured && !this.antigravity.rpc?.latestRuntime && /** @type {Value} */ (error)?.code === 'antigravity-unavailable') return [];
+      if (!this.antigravityConfigured && !backend.rpc?.latestRuntime && /** @type {Value} */ (error)?.code === 'antigravity-unavailable') return [];
       throw error;
     }
   }
@@ -158,7 +176,7 @@ export class LocalSourceDiscovery {
     return adapter;
   }
   async close() {
-    if (this.closed) return; this.closed = true;
+    if (this.closed) return; this.closed = true; this.providerEpoch++;
     try { await this.reconcileSubscriptions(); }
     finally { await Promise.allSettled([...this.windowAdapters.values()].map(adapter => adapter.dispose?.())); this.windowAdapters.clear(); }
   }

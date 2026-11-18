@@ -6,10 +6,26 @@ import { writeDurablePrivateJson } from './discovery-persistence.mjs';
 import { decryptRecord } from './session-transport.mjs';
 
 /** @typedef {Record<string,any>} Value */
-/** @param {Value} identity */
+/** @param {unknown} identity */
 function identityText(identity) {
-  return JSON.stringify([identity.happySessionId, identity.nativeId, identity.bindingId,
-    identity.source?.app, identity.source?.id, identity.source?.hostId, identity.keyFingerprint]);
+  if (!identity || typeof identity !== 'object' || Array.isArray(identity)) throw new BridgeError('observer-history-invalid', 'The observer identity is invalid.');
+  const value = /** @type {Value} */ (identity);
+  return JSON.stringify([value.happySessionId, value.nativeId, value.bindingId,
+    value.source?.app, value.source?.id, value.source?.hostId, value.keyFingerprint]);
+}
+/** @param {string} path */
+async function readArchiveText(path) {
+  try { return await readFile(path, 'utf8'); }
+  catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') throw new BridgeError('observer-history-unavailable', 'The retained observer history is unavailable.');
+    throw error;
+  }
+}
+/** @param {Value} reference */
+function validReference(reference) {
+  return !!reference && typeof reference === 'object' && !Array.isArray(reference)
+    && typeof reference.digest === 'string' && Number.isSafeInteger(reference.count) && reference.count >= 0
+    && Number.isSafeInteger(reference.rowCount) && reference.rowCount >= 0 && reference.count + reference.rowCount >= 1;
 }
 /** @param {Value} identity @param {Value[]} events @param {Value[]} rows @param {Uint8Array} key */
 function digestOf(identity, events, rows, key) {
@@ -31,13 +47,14 @@ function encodeArchive(payload, key) {
 }
 /** @param {string} text @param {Value} identity @param {Value} reference @param {Uint8Array} key @returns {{events:Value[],rows:Value[]}} */
 function decodeArchive(text, identity, reference, key) {
+  if (!validReference(reference)) throw new BridgeError('observer-history-invalid', 'The observer history index is invalid.');
   let envelope, payload;
-  try { envelope = JSON.parse(text); payload = /** @type {Value|null} */ (decryptRecord(envelope.ciphertext, key)); } catch { /* Reject unreadable history below. */ }
+  try { envelope = JSON.parse(text); payload = /** @type {Value|null} */ (decryptRecord(envelope?.ciphertext, key)); } catch { /* Reject unreadable history below. */ }
   if (envelope?.format !== 'codelync-observer-history-v1' || !payload || identityText(payload.identity) !== identityText(identity)
     || !Array.isArray(payload.events) || payload.events.length !== reference.count
     || !Array.isArray(payload.rows) || payload.rows.length !== reference.rowCount
-    || !payload.events.every((/** @type {Value} */ event) => typeof event.id === 'string' && event.id && event.sent === true && typeof event.ciphertext === 'string')
-    || !payload.rows.every((/** @type {Value} */ row) => typeof row.id === 'string' && row.id)
+    || !payload.events.every((/** @type {Value} */ event) => event && typeof event.id === 'string' && event.id && event.sent === true && typeof event.ciphertext === 'string')
+    || !payload.rows.every((/** @type {Value} */ row) => row && typeof row.id === 'string' && row.id)
     || digestOf(payload.identity, payload.events, payload.rows, key) !== reference.digest) throw new BridgeError('observer-history-invalid', 'The observer history could not authenticate its original source and bodies.');
   return { events: payload.events, rows: payload.rows };
 }
@@ -48,8 +65,7 @@ export async function validateObserverHistoryReferences(state, statePath) {
   if (!Array.isArray(references)) throw new BridgeError('observer-history-invalid', 'The observer history index is invalid.');
   const digests = new Set();
   for (const reference of references) {
-    if (!reference || !Number.isSafeInteger(reference.count) || reference.count < 0 || !Number.isSafeInteger(reference.rowCount) || reference.rowCount < 0
-      || reference.count + reference.rowCount < 1 || digests.has(reference.digest)) throw new BridgeError('observer-history-invalid', 'The observer history index is invalid.');
+    if (!validReference(reference) || digests.has(reference.digest)) throw new BridgeError('observer-history-invalid', 'The observer history index is invalid.');
     const path = archivePath(statePath, reference.digest); digests.add(reference.digest);
     try { await access(path); } catch { throw new BridgeError('observer-history-unavailable', 'The retained observer history is unavailable.'); }
   }
@@ -79,10 +95,12 @@ export async function archiveObserverCheckpointPayload(state, statePath, key, mi
 /** Read-only historical audit/recovery; never feeds archived records into native admission.
  * @param {Value} state @param {string} statePath @param {Uint8Array} key @returns {Promise<{events:Value[],rows:Value[]}>} */
 export async function readObserverHistoryArchives(state, statePath, key) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) throw new BridgeError('observer-history-invalid', 'The observer checkpoint is invalid.');
+  identityText(state.identity);
   await validateObserverHistoryReferences(state, statePath);
   const events = [], rows = [], ids = new Set();
   for (const reference of state.observerHistoryArchives ?? []) {
-    const records = decodeArchive(await readFile(archivePath(statePath, reference.digest), 'utf8'), state.identity, reference, key);
+    const records = decodeArchive(await readArchiveText(archivePath(statePath, reference.digest)), state.identity, reference, key);
     rows.push(...records.rows);
     for (const event of records.events) {
       if (ids.has(event.id)) throw new BridgeError('observer-history-invalid', 'The retained observer history has duplicate event identities.');
@@ -95,16 +113,41 @@ export async function readObserverHistoryArchives(state, statePath, key) {
 /** Restores only an archived prefix that actually re-enters the current native observation window.
  * @param {Value} state @param {string} statePath @param {Uint8Array} key @param {Set<string>} activeIds @returns {Promise<Map<string,Value>>} */
 export async function readArchivedObserverRows(state, statePath, key, activeIds) {
-  const required = state.rows.filter((/** @type {Value} */ row) => activeIds.has(row.id) && row.historyRef);
+  if (!state || typeof state !== 'object' || Array.isArray(state) || !Array.isArray(state.rows) || !(activeIds instanceof Set)) throw new BridgeError('observer-history-invalid', 'The observer checkpoint rows are invalid.');
+  identityText(state.identity);
   const result = new Map();
-  for (const digest of new Set(required.map((/** @type {Value} */ row) => row.historyRef))) {
-    const reference = state.observerHistoryArchives?.find((/** @type {Value} */ item) => item.digest === digest);
+  if (!activeIds.size) return result;
+  /** @type {Map<string, Value[]>} */ const byDigest = new Map();
+  for (const row of state.rows) {
+    if (!row || typeof row.id !== 'string' || !activeIds.has(row.id) || !row.historyRef) continue;
+    if (typeof row.historyRef !== 'string') throw new BridgeError('observer-history-invalid', 'The archived row reference is invalid.');
+    let group = byDigest.get(row.historyRef);
+    if (!group) { group = []; byDigest.set(row.historyRef, group); }
+    group.push(row);
+  }
+  if (!byDigest.size) return result;
+  const references = state.observerHistoryArchives ?? [];
+  if (!Array.isArray(references)) throw new BridgeError('observer-history-invalid', 'The observer history index is invalid.');
+  /** @type {Map<string, Value>} */ const refByDigest = new Map();
+  for (const reference of references) {
+    if (!validReference(reference) || refByDigest.has(reference.digest)) throw new BridgeError('observer-history-invalid', 'The observer history index is invalid.');
+    refByDigest.set(reference.digest, reference);
+  }
+  for (const [digest, rows] of byDigest) {
+    const reference = refByDigest.get(digest);
     if (!reference) throw new BridgeError('observer-history-invalid', 'The archived row reference is missing.');
-    const archive = decodeArchive(await readFile(archivePath(statePath, digest), 'utf8'), state.identity, reference, key);
-    for (const row of required.filter((/** @type {Value} */ item) => item.historyRef === digest)) {
-      const saved = archive.rows.find(item => item.id === row.id);
+    const archive = decodeArchive(await readArchiveText(archivePath(statePath, digest)), state.identity, reference, key);
+    /** @type {Map<string, Value>} */ const archivedById = new Map();
+    for (const saved of archive.rows) {
+      if (archivedById.has(saved.id)) throw new BridgeError('observer-history-invalid', 'The observer history has duplicate archived rows.');
+      archivedById.set(saved.id, saved);
+    }
+    for (const row of rows) {
+      const saved = archivedById.get(row.id);
       if (!saved) throw new BridgeError('observer-history-invalid', 'The archived native prefix is missing.');
-      result.set(row.id, { ...saved, historyRef: undefined });
+      const restored = { ...saved };
+      delete restored.historyRef;
+      result.set(row.id, restored);
     }
   }
   return result;

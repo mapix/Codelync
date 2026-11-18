@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
-import { useUnistyles } from 'react-native-unistyles';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { useSession } from '@/sync/storage';
 import { storage } from '@/sync/storage';
 import { useDraft } from '@/hooks/useDraft';
@@ -17,6 +18,7 @@ type NativeControl = { nodeId: string; role?: string; subrole?: string; title?: 
 
 export function NativeWindowPanel({ sessionId, topInset = 100 }: { sessionId: string; topInset?: number }) {
     const { theme } = useUnistyles();
+    const insets = useSafeAreaInsets();
     const session = useSession(sessionId);
     const [text, onChangeText] = React.useState(() => storage.getState().sessions[sessionId]?.draft ?? '');
     useDraft(sessionId, text, onChangeText);
@@ -44,23 +46,71 @@ export function NativeWindowPanel({ sessionId, topInset = 100 }: { sessionId: st
         finally { setBusy(false); }
     };
     const label = (c: NativeControl) => c.title || c.label || c.description || c.text?.title || c.text?.description || c.value || c.role || t('windowControl.control');
-    const buttonStyle = { padding: 12, borderRadius: 12, backgroundColor: theme.colors.surface, opacity: busy ? 0.6 : 1 };
+    const buttonStyle = {
+        minHeight: 44,
+        justifyContent: 'center' as const,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: theme.colors.surface,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.divider,
+    };
     const font = { color: theme.colors.text, ...Typography.default() };
-    return <ScrollView testID="codelync-window-panel" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingTop: topInset + 16, gap: 14 }}>
+    const fillDisabled = !canControl || busy || !selected || !text.trim();
+    return <ScrollView
+        testID="codelync-window-panel"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+            paddingTop: topInset + 16,
+            paddingBottom: Math.max(24, (insets.bottom ?? 0) + 16),
+            paddingLeft: Math.max(16, insets.left ?? 0),
+            paddingRight: Math.max(16, insets.right ?? 0),
+            gap: 14,
+        }}
+    >
         {!connected && <NativeSourceBanner sessionId={sessionId} />}
         <Text style={{ color: theme.colors.textSecondary, ...Typography.default() }}>{t('windowControl.sharedWindow')}</Text>
         {uri && ref ? <Pressable accessibilityRole="button" accessibilityLabel={t('imagePreview.open')} onPress={() => Modal.show({ component: NativeWindowViewer, props: { sessionId } })}>
             <Image source={{ uri }} contentFit="contain" style={{ width: '100%', aspectRatio: bounds?.width && bounds?.height ? bounds.width / bounds.height : 4 / 3, borderRadius: 12 }} />
         </Pressable> : <View style={{ padding: 36, alignItems: 'center' }}>{loading ? <ActivityIndicator /> : <Text style={font}>{imageError ? t('imagePreview.loadFailed') : t('windowControl.waitingImage')}</Text>}</View>}
-        {canControl && <Pressable accessibilityRole="button" onPress={() => action('activate')} disabled={busy} style={buttonStyle}><Text style={font}>{t('windowControl.showWindow')}</Text></Pressable>}
-        {error && <Text accessibilityRole="alert" style={{ color: theme.colors.textSecondary }}>{t('windowControl.unconfirmed')}</Text>}
+        {canControl && <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} onPress={() => action('activate')} disabled={busy} style={{ ...buttonStyle, opacity: busy ? 0.45 : 1 }}><Text style={font}>{t('windowControl.showWindow')}</Text></Pressable>}
+        {error && <Text accessibilityRole="alert" style={{ color: theme.colors.warningCritical ?? theme.colors.textDestructive }}>{t('windowControl.unconfirmed')}</Text>}
         {observation.textInputAvailable === true && <>
             <Text style={font}>{t('windowControl.chooseInput')}</Text>
-            {editable.map(c => <Pressable key={c.nodeId} onPress={() => setSelected(c.nodeId)} disabled={!canControl || busy || c.enabled === false} style={{ ...buttonStyle, borderWidth: selected === c.nodeId ? 1 : 0, borderColor: theme.colors.text }}><Text numberOfLines={2} style={font}>{label(c)}</Text></Pressable>)}
-            <TextInput testID="codelync-window-draft" multiline value={text} onChangeText={onChangeText} placeholder={t('windowControl.draft')} placeholderTextColor={theme.colors.textSecondary} style={{ ...buttonStyle, ...font, minHeight: 80 }} />
-            <Pressable accessibilityRole="button" testID="codelync-fill-input" disabled={!canControl || busy || !selected || !text.trim()} onPress={() => action('type', { nodeId: selected, text })} style={buttonStyle}><Text style={font}>{t('windowControl.fillInput')}</Text></Pressable>
+            {editable.map(c => {
+                const itemDisabled = !canControl || busy || c.enabled === false;
+                return <Pressable
+                    key={c.nodeId}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: itemDisabled, selected: selected === c.nodeId }}
+                    onPress={() => setSelected(c.nodeId)}
+                    disabled={itemDisabled}
+                    style={{
+                        ...buttonStyle,
+                        opacity: itemDisabled ? 0.45 : 1,
+                        borderWidth: selected === c.nodeId ? 1 : StyleSheet.hairlineWidth,
+                        borderColor: selected === c.nodeId ? theme.colors.text : theme.colors.divider,
+                    }}
+                >
+                    <Text numberOfLines={2} style={font}>{label(c)}</Text>
+                </Pressable>;
+            })}
+            <TextInput testID="codelync-window-draft" multiline value={text} onChangeText={onChangeText} placeholder={t('windowControl.draft')} placeholderTextColor={theme.colors.textSecondary} style={{ ...buttonStyle, ...font, minHeight: 80, justifyContent: undefined }} />
+            <Pressable accessibilityRole="button" testID="codelync-fill-input" accessibilityState={{ disabled: fillDisabled, busy }} disabled={fillDisabled} onPress={() => action('type', { nodeId: selected, text })} style={{ ...buttonStyle, opacity: fillDisabled ? 0.45 : 1 }}><Text style={font}>{t('windowControl.fillInput')}</Text></Pressable>
         </>}
         <Text style={font}>{t('windowControl.controls')}</Text>
-        {actionable.slice(0, 80).map(c => <Pressable accessibilityRole="button" key={c.nodeId} disabled={!canControl || busy || c.enabled === false} onPress={() => action('press', { nodeId: c.nodeId })} style={buttonStyle}><Text numberOfLines={2} style={font}>{label(c)}</Text></Pressable>)}
+        {actionable.slice(0, 80).map(c => {
+            const controlDisabled = !canControl || busy || c.enabled === false;
+            return <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: controlDisabled, busy }}
+                key={c.nodeId}
+                disabled={controlDisabled}
+                onPress={() => action('press', { nodeId: c.nodeId })}
+                style={{ ...buttonStyle, opacity: controlDisabled ? 0.45 : 1 }}
+            >
+                <Text numberOfLines={2} style={font}>{label(c)}</Text>
+            </Pressable>;
+        })}
     </ScrollView>;
 }

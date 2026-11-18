@@ -8,11 +8,35 @@ export function CodelyncSessionLoading({ sessionId, initial, older, topInset = 0
     // Initial/explicit older reads own this overlay; socket recovery never mounts it.
     const failed = progress.phase === 'error';
     if (!initial && !older) return null;
-    return <View testID="codelync-session-loading" accessibilityLiveRegion="polite" style={{ paddingHorizontal: 16, paddingVertical: 12, paddingTop: initial ? topInset + 12 : 12,
-        ...(!initial ? { position: 'absolute', top: topInset + 4, left: 12, right: 12, zIndex: 10, borderRadius: 12 } as const : {}),
-        flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: theme.colors.groupped.background }}>
+    const borderColor = theme.colors.divider ?? 'rgba(142, 142, 147, 0.25)';
+    return <View testID="codelync-session-loading" accessibilityLiveRegion="polite" style={{
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        paddingTop: initial ? topInset + 12 : 12,
+        ...(!initial ? {
+            position: 'absolute',
+            top: topInset + 4,
+            left: 12,
+            right: 12,
+            zIndex: 10,
+            borderRadius: 12,
+            backgroundColor: theme.colors.surface ?? theme.colors.groupped.background,
+            borderWidth: 1,
+            borderColor,
+        } as const : {
+            backgroundColor: theme.colors.groupped.background,
+            borderBottomWidth: 1,
+            borderBottomColor: borderColor,
+        }),
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    }}>
         {!failed ? <ActivityIndicator size="small" color={theme.colors.textSecondary} /> : null}
         <Text style={{ flex: 1, color: theme.colors.textSecondary }}>{t(failed ? 'codelyncLoading.failed' : older ? 'codelyncLoading.older' : 'codelyncLoading.messages')}</Text>
-        {failed ? <Pressable onPress={() => sync.onSessionVisible(sessionId)} accessibilityRole="button" style={{ minHeight: 44, justifyContent: 'center' }}><Text style={{ color: theme.colors.text }}>{t('common.retry')}</Text></Pressable> : null}
+        {failed ? <Pressable onPress={() => sync.onSessionVisible(sessionId)} accessibilityRole="button" accessibilityLabel={t('common.retry')}
+            accessibilityState={{ disabled: false }} style={{ minHeight: 44, minWidth: 44, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: theme.colors.textLink ?? theme.colors.text, fontWeight: '600' }}>{t('common.retry')}</Text>
+        </Pressable> : null}
     </View>;
 }

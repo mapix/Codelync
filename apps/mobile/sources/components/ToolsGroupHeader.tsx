@@ -48,7 +48,7 @@ export const ToolsGroupHeader = React.memo((props: {
                 >
                     <Text numberOfLines={1} style={styles.count}>{label}</Text>
                     <Text numberOfLines={1} style={styles.time}>{time}</Text>
-                    <Ionicons name={props.expanded ? 'chevron-up' : 'chevron-forward'} size={13} color={theme.colors.textSecondary} />
+                    <Ionicons name={props.expanded ? 'chevron-up' : 'chevron-forward'} size={14} color={theme.colors.textSecondary} style={styles.chevron} />
                 </Pressable>
             </View>
         </View>
@@ -59,8 +59,9 @@ const styles = StyleSheet.create(theme => ({
     outer: { flexDirection: 'row', justifyContent: 'center' },
     inner: { flexGrow: 1, flexBasis: 0, minWidth: 0, maxWidth: layout.maxWidth, marginVertical: 4 },
     header: { flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 8, marginHorizontal: 16,
-        paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.divider },
-    count: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 20, color: theme.colors.textSecondary },
+        paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
+    count: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 20, fontWeight: '500', color: theme.colors.text ?? theme.colors.textSecondary },
     time: { flexShrink: 1, fontSize: 12, lineHeight: 20, color: theme.colors.textSecondary, fontVariant: ['tabular-nums'] },
+    chevron: { flexShrink: 0 },
     pressed: { opacity: 0.6 },
 }));

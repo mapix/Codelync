@@ -475,8 +475,9 @@ export class NativeHappyConnector extends EventEmitter {
   }
   /** @param {Value} plan */
   async #guard(plan) {
-    if (this.#closed) throw new BridgeError('source-unavailable', 'The connector is closing.');
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The connector is closing.');
     if (!await this.#lease()) throw new BridgeError('source-lease-unavailable', 'The original source lease is unavailable.');
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The connector is closing.');
     if (plan.action === 'open-desktop') {
       if (this.#options.sourceIdentity.app !== 'codex' || this.#options.sourceIdentity.hostId !== 'local') throw new BridgeError('source-unavailable', 'Only the bound local desktop chat can be opened.');
       return this.#view;
@@ -489,10 +490,12 @@ export class NativeHappyConnector extends EventEmitter {
       return this.#view;
     }
     const view = viewOf(await this.#options.adapter.snapshot(this.nativeId)); this.#view = view;
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The connector is closing.');
     if (view.status === 'history-only' || view.historicalRead != null) throw new BridgeError('source-generation-unavailable', 'Saved history has no current native controller.');
     // snapshot/getGeneration均为异步，窗口/owner可能在读取期间更换；派发前再核对，不能只用读取前epoch。
     if (!await this.#lease()) throw new BridgeError('source-lease-unavailable', 'The source lease changed before dispatch.');
     if (await this.#epoch() !== plan.epoch) throw new BridgeError('source-epoch-changed', 'The original source changed while reading its current view.');
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The connector is closing.');
     if (plan.windowControl) {
       if (!available(view) || view.kind !== 'window') throw new BridgeError('source-unavailable', 'The bound original window is unavailable.');
       if (plan.action === 'type' && view.textInputAvailable === false) throw new BridgeError('unsupported-action', 'This window has no verified editable Agent draft.');
@@ -507,6 +510,7 @@ export class NativeHappyConnector extends EventEmitter {
       if (view.nativeReadOnly !== false) throw new BridgeError('native-read-only', 'The original model settings owner is read-only.');
       const current = this.#validateSettingsControls(await this.#options.adapter.command(this.nativeId, 'read-controls', {}, 'settings-check-' + randomUUID(),
         { expectedGeneration: epoch, expectedQueryToken: nativeQuery?.queryToken }), epoch);
+      if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The connector is closing.');
       if (this.#view.nativeReadOnly !== false || current.model?.available !== true || !sameNativeSettingsScope(current.scope, plan.payload.expectedScope) || current.model?.current?.model !== plan.payload.expectedModel
         || current.model?.current?.reasoningEffort !== plan.payload.expectedReasoningEffort) throw new BridgeError('settings-conflict', 'The original settings changed before dispatch.');
     }
@@ -729,11 +733,17 @@ export class NativeHappyConnector extends EventEmitter {
    * @param {unknown} params @returns {Promise<Value>} */
   async #readImage(params) {
     if (!object(params) || Object.keys(params).length !== 1 || typeof params.imageId !== 'string' || !params.imageId || params.imageId.length > 512) throw new BridgeError('invalid-image-request', 'An original image identity is required.');
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
     const epoch = await this.#epoch();
     const assertOwner = async () => {
-      if (this.#closed || !epoch || this.#options.sourceIdentity.app !== 'codex' || this.#options.sourceIdentity.hostId !== 'local'
+      if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
+      if (!epoch || this.#options.sourceIdentity.app !== 'codex' || this.#options.sourceIdentity.hostId !== 'local'
         || !available(this.#view) || !await this.#lease() || await this.#epoch() !== epoch
-        || typeof this.#view.ownerGeneration === 'string' && this.#view.ownerGeneration !== epoch) throw new BridgeError('source-epoch-changed', 'The original image owner is unavailable.');
+        || this.#closed || this.#retiring || !available(this.#view)
+        || typeof this.#view.ownerGeneration === 'string' && this.#view.ownerGeneration !== epoch) {
+        if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
+        throw new BridgeError('source-epoch-changed', 'The original image owner is unavailable.');
+      }
     };
     await assertOwner();
     const tool = (this.#view.rows ?? []).flatMap((/** @type {Value} */ row) => row.tools ?? []).find((/** @type {Value} */ tool) => tool.id === params.imageId && Object.hasOwn(tool, 'imagePath'));
@@ -745,6 +755,7 @@ export class NativeHappyConnector extends EventEmitter {
     if (!flight) {
       flight = (async () => {
         try {
+          if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
           const image = await compressNativeImage(await readNativeImage(tool.imagePath));
           await assertOwner();
           const uploaded = await this.#options.transport.uploadAttachment(image.bytes, { filename: image.name });
@@ -1009,7 +1020,12 @@ export class NativeHappyConnector extends EventEmitter {
 
   /** @param {Value} scope @param {string|null} epoch */
   async #assertTaskOwner(scope, epoch) {
-    if (this.#closed || !epoch || !available(this.#view) || this.#historical(this.#view) || !await this.#lease() || await this.#epoch() !== epoch) throw new BridgeError('source-epoch-changed', 'The original task owner is unavailable.');
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
+    if (!epoch || !available(this.#view) || this.#historical(this.#view) || !await this.#lease() || await this.#epoch() !== epoch
+      || this.#closed || this.#retiring || !available(this.#view) || this.#historical(this.#view)) {
+      if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
+      throw new BridgeError('source-epoch-changed', 'The original task owner is unavailable.');
+    }
     const current = this.#taskEnvelope(this.#view, epoch, true);
     if (!current || stable(current.scope) !== stable(scope)) throw new BridgeError('source-epoch-changed', 'The original task query changed.');
   }
@@ -1153,7 +1169,7 @@ export class NativeHappyConnector extends EventEmitter {
             ...(plan.nativeQuery ? { expectedQueryToken: plan.nativeQuery.queryToken } : {}) });
         if (plan.action === 'stop-task' && (!object(result) || result.taskId !== plan.payload.taskId || stable(result.scope) !== stable(plan.payload.scope)
           || result.stopped !== true || result.readbackConfirmed !== true || result.nativeDispatchConfirmed !== true)) throw new BridgeError('delivery-unknown', 'The original task stop has no matching native terminal readback; no replay is allowed.');
-        if (plan.action === 'stop-task' && (this.#closed || !await this.#lease() || await this.#epoch() !== plan.epoch)) throw new BridgeError('delivery-unknown', 'The original task owner changed after dispatch; no replay is allowed.');
+        if (plan.action === 'stop-task' && (this.#closed || this.#retiring || !await this.#lease() || await this.#epoch() !== plan.epoch || this.#closed || this.#retiring)) throw new BridgeError('delivery-unknown', 'The original task owner changed after dispatch; no replay is allowed.');
       }
       catch (error) {
         if (plan.action !== 'stop-task' && error instanceof BridgeError && /** @type {BridgeError & {effectMayHaveOccurred?:boolean}} */ (error).effectMayHaveOccurred !== true && SAFE_NATIVE_ERRORS.has(error.code)) throw error;
@@ -1223,7 +1239,7 @@ export class NativeHappyConnector extends EventEmitter {
       } catch { return null; }
       if (Date.now() >= deadline) break;
       await new Promise(resolveWait => setTimeout(resolveWait, 25));
-    } while (!this.#closed);
+    } while (!this.#closed && !this.#retiring);
     return null;
   }
   /** @param {Value} state @param {Value} view */
@@ -1277,11 +1293,13 @@ export class NativeHappyConnector extends EventEmitter {
   #mustReceipt(command) { const receipt = this.#publicReceipt(command); if (!receipt) throw new BridgeError('missing-command-plan', 'The saved native command plan is missing.'); return receipt; }
   /** @param {unknown} params */
   async #receiptQuery(params) {
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
     if (!object(params)) throw new BridgeError('invalid-command-id', 'A receipt commandId is required.');
     const key = commandId(params.commandId), command = this.#state.commands.find((/** @type {Value} */ item) => item.id === key);
     if (command?.nativeSettingsUpdate?.applied === true && command.state === 'unknown') {
       try { const controls = await this.#options.adapter.command(this.nativeId, 'read-controls', {}, key, { expectedGeneration: command.epoch }); await this.#confirmSettingsObservation(command, controls); } catch { /* A failed read cannot trigger a second write. */ }
     }
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
     return { ok: true, receipt: this.#publicReceipt(key) ?? this.#options.receipts.query(this.receiptScope, key) ?? null };
   }
   /** @param {Value} command @param {Value} controls */
@@ -1292,8 +1310,8 @@ export class NativeHappyConnector extends EventEmitter {
     const evidence = command.nativeSettingsUpdate, current = controls.model?.current;
     const claude = this.#options.sourceIdentity.app === 'claude-desktop';
     if (claude && !confirmedNativeSettingsEvidence(evidence?.nativeEvidence, command.payload?.expectedScope, controls)) return;
-    if (this.#closed || command.state !== 'unknown' || evidence?.applied !== true || evidence.ownerEpoch !== command.epoch ||
-        !await this.#lease() || await this.#epoch() !== command.epoch || current?.model !== evidence.model || current?.reasoningEffort !== evidence.reasoningEffort) return;
+    if (this.#closed || this.#retiring || command.state !== 'unknown' || evidence?.applied !== true || evidence.ownerEpoch !== command.epoch ||
+        !await this.#lease() || await this.#epoch() !== command.epoch || this.#closed || this.#retiring || current?.model !== evidence.model || current?.reasoningEffort !== evidence.reasoningEffort) return;
     await this.#mutate(state => {
       const saved = state.commands.find((/** @type {Value} */ item) => item.id === command.id);
       if (!saved || saved.state !== 'unknown' || saved.nativeSettingsUpdate?.applied !== true
@@ -1315,6 +1333,7 @@ export class NativeHappyConnector extends EventEmitter {
   /** Read model controls independently of transcript projection; this never starts a turn.
    * @param {string|null} epoch @param {boolean} [force] @returns {Promise<Value>} */
   #refreshControls(epoch, force = false) {
+    if (this.#closed || this.#retiring) return Promise.reject(new BridgeError('source-unavailable', 'The Codelync observer is closing.'));
     if (this.#historical(this.#view)) return Promise.reject(new BridgeError('source-unavailable', 'Saved history has no current model settings controller.'));
     if (this.#settingsChildBlocked()) return Promise.reject(new BridgeError('unsupported-action', 'Native subagents have no independent model settings controller.'));
     if (this.#options.adapter.supportsNativeModelSettings !== true) return Promise.reject(new BridgeError('unsupported-action', 'This source has no original model settings contract.'));
@@ -1324,11 +1343,11 @@ export class NativeHappyConnector extends EventEmitter {
     }
     const read = (async () => {
       const revision = this.#controlsRevision;
-      if (this.#closed || epoch === null || !await this.#lease() || !isCodelyncNativeSource({ ...this.#options.sourceIdentity, runtimeGeneration: epoch }, { controlMode: 'session' })) throw new BridgeError('source-unavailable', 'The original settings owner is unavailable.');
+      if (this.#closed || this.#retiring || epoch === null || !await this.#lease() || this.#closed || this.#retiring || !isCodelyncNativeSource({ ...this.#options.sourceIdentity, runtimeGeneration: epoch }, { controlMode: 'session' })) throw new BridgeError('source-unavailable', 'The original settings owner is unavailable.');
       const queryToken = this.#query(this.#view, epoch)?.queryToken;
       const controls = this.#validateSettingsControls(this.#selectedControls(await this.#options.adapter.command(this.nativeId, 'read-controls', {}, 'controls-read-' + randomUUID(),
         { expectedGeneration: epoch, ...(this.#options.sourceIdentity.app === 'claude-desktop' ? { expectedQueryToken: queryToken } : {}) }), epoch), epoch);
-      if (this.#closed || this.#settingsChildBlocked() || !await this.#lease() || await this.#epoch() !== epoch) throw new BridgeError('source-epoch-changed', 'The original settings owner changed during read.');
+      if (this.#closed || this.#retiring || this.#settingsChildBlocked() || !await this.#lease() || await this.#epoch() !== epoch || this.#closed || this.#retiring) throw new BridgeError('source-epoch-changed', 'The original settings owner changed during read.');
       // 设置更新已开始时，旧只读结果不能在 RPC 确认后覆盖用户的新选择。
       if (revision !== this.#controlsRevision) { this.#controlsReadAt = 0; return this.#nativeControls ?? controls; }
       this.#nativeControls = controls; this.#controlsEpoch = epoch; this.#controlsReadAt = Date.now();
@@ -1364,6 +1383,7 @@ export class NativeHappyConnector extends EventEmitter {
 
   /** @param {string} method @param {unknown} params */
   async #rpc(method, params) {
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
     if (!object(params)) throw new BridgeError('invalid-rpc-payload', 'A typed native RPC payload is required.');
     const key = commandId(params.commandId), existing = this.#state.commands.find((/** @type {Value} */ item) => item.id === key);
     const requestDigest = this.#mac({ method, params });
@@ -1434,6 +1454,7 @@ export class NativeHappyConnector extends EventEmitter {
       if (method === 'permission') plan = this.#permissionPlan(mapping, params);
       else plan = this.#communicationPlan(mapping, params);
     }
+    if (this.#closed || this.#retiring) throw new BridgeError('source-unavailable', 'The Codelync observer is closing.');
     const full = { ...plan, id: key, key: `rpc:${key}`, origin: 'rpc', rpcMethod: method, rpcTarget: rpcTarget(method, params), state: 'prepared', epoch, requestDigest, admission: null };
     const admitted = await this.#mutate(state => {
       // Preparation awaits owner/scope reads. Another same-ID request can be
@@ -1504,8 +1525,8 @@ export class NativeHappyConnector extends EventEmitter {
     return this.close().then(() => true);
   }
   #unsafeToRetire() {
-    if (this.#starting || this.#operations.size || this.#commandFlights.size || this.#inputFlight || this.#attachFlight ||
-      this.#projectFlight || this.#pendingView || this.#flushFlight || this.#controlsFlight ||
+    if (this.#starting || this.#operations.size || this.#commandFlights.size || this.#imageFlights.size || this.#inputFlight || this.#attachFlight ||
+      this.#projectFlight || this.#pendingView || this.#flushFlight || this.#controlsFlight || this.#recentRefreshFlight ||
       this.#state.commands?.some((/** @type {Value} */ command) => ['prepared', 'dispatching', 'running'].includes(command.state)) ||
       this.#state.events?.some((/** @type {Value} */ event) => !event.sent)) return true;
     // 未知 transport 状态不是空队列；当前实现提供同步状态，退休后 late capture 仍由原 close 保存。
@@ -1525,7 +1546,7 @@ export class NativeHappyConnector extends EventEmitter {
     this.#release?.(); this.#release = null;
     if (this.#retryTimer) clearInterval(this.#retryTimer);
     for (const release of this.#rpcReleases.splice(0)) release();
-    await Promise.allSettled([this.#startFlight, this.#attachFlight, this.#projectFlight, this.#inputFlight, this.#flushFlight, this.#controlsFlight, ...this.#operations, ...this.#commandFlights.values()]); await this.#ioTail;
+    await Promise.allSettled([this.#startFlight, this.#attachFlight, this.#projectFlight, this.#inputFlight, this.#flushFlight, this.#controlsFlight, this.#recentRefreshFlight, ...this.#operations, ...this.#commandFlights.values(), ...this.#imageFlights.values()]); await this.#ioTail;
     this.#taskTransfers.clear(); this.#latestTasks = null; this.#taskCapture = null; this.#taskInvalidation = null;
     this.#releaseState();
   }

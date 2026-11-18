@@ -4,7 +4,9 @@ The iOS application identifier is `com.learnings.codelync`; the Mac application
 uses `com.learnings.codelync.mac`. The native iOS workspace, scheme and product
 are `apps/mobile/ios/Codelync.xcworkspace`, `Codelync` and `Codelync.app`.
 Distribution uses the new Codelync Bundle ID and its Push capability/profile.
-Signing verification accepts only the current application identifier.
+Signing verification accepts only the current application identifier and
+`Codelync` display name (`CFBundleDisplayName`), and fails closed with explicit
+error codes when `EXConstants.bundle/app.config` is missing or malformed.
 
 TestFlight and App Store Connect artifacts are full Release device archives,
 exported with the `app-store-connect` method, an Apple Distribution private
@@ -44,3 +46,13 @@ The Mac publisher must support the enrolled device's push environment before a
 production beta can receive notifications. Production push uses Apple's
 production endpoint; existing development devices retain sandbox delivery. A
 signing/artifact mock check does not claim a live APNs delivery or user acceptance.
+
+## Direct registered-device installation
+
+An explicitly requested local iPhone install may re-export the verified full
+Release archive as `release-testing`, using an additive `IOS_APP_ADHOC` profile
+for that registered device and the existing Apple Distribution identity. Keep
+production APNs entitlements and configuration, verify the device list and
+matching code/Hermes bytes, then install over USB without uninstalling or
+resetting the device. These private packages are not published on the website
+or GitHub and do not change the submitted TestFlight build.

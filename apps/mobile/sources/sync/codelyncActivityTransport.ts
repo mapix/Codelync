@@ -1,4 +1,4 @@
-import { parseActivityReply, type ActivityReply, type CodelyncActivityRequest } from './codelyncProjectActivity';
+import { parseActivityReply, sameActivityGroupFields, type ActivityReply, type CodelyncActivityRequest } from './codelyncProjectActivity';
 
 type Options = {
     peerIdentity(): string | null;
@@ -6,28 +6,66 @@ type Options = {
     request(body: Record<string, unknown>): Promise<Pick<Response, 'ok' | 'status' | 'json'>>;
 };
 type Baseline = { fingerprint: string; interestToken: string; watermark: string; epoch: string; sequence: number; groups: ActivityReply['groups'] };
+type FingerprintEntry = { groups: CodelyncActivityRequest['groups']; fingerprint: string };
 type ActivityV2 = { ok: true; version: 2; machineId: string; epoch: string; sequence: number; observedAt: number;
     interestToken: string | null; mode: 'full' | 'delta' | 'unchanged'; watermark: string; baseWatermark: string | null;
     groups: ActivityReply['groups']; removedIds: string[] };
 const identity = (value: unknown, max = 2048): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
 
+function sameActivityGroupList(a: CodelyncActivityRequest['groups'], b: CodelyncActivityRequest['groups']): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (!sameActivityGroupFields(a[i], b[i])) return false;
+    }
+    return true;
+}
+
+function cloneActivityGroups(groups: CodelyncActivityRequest['groups']): CodelyncActivityRequest['groups'] {
+    return groups.map(group => ({
+        id: group.id,
+        projectKey: group.projectKey,
+        hostId: group.hostId,
+        ...(group.app !== undefined ? { app: group.app } : {}),
+        ...(group.sessions !== undefined ? { sessions: group.sessions.map(row => ({ id: row.id, nativeId: row.nativeId })) } : {}),
+    }));
+}
+
 /** One bounded baseline per activity client/machine. Never owns native input. */
 export class CodelyncActivityTransport {
     private baselines = new Map<string, Baseline>();
     private latest = new Map<string, number>();
+    private fingerprints = new Map<string, FingerprintEntry>();
     private flights = new Map<string, Promise<ActivityReply>>();
     constructor(private readonly options: Options) {}
 
     read(machineId: string, params: CodelyncActivityRequest, authority = ''): Promise<ActivityReply> {
         const peer = this.options.peerIdentity();
         if (!peer) return Promise.reject(Error('An authenticated Mac is required for HTTP activity'));
-        const key = JSON.stringify([authority, peer, machineId, params.clientId]), fingerprint = JSON.stringify(params.groups);
-        const flightKey = JSON.stringify([key, params.requestSeq, fingerprint]);
+        const key = JSON.stringify([authority, peer, machineId, params.clientId]);
+        const fingerprint = this.resolveFingerprint(key, params.groups);
+        const flightKey = `${key}\n${params.requestSeq}\n${fingerprint}`;
         const pending = this.flights.get(flightKey); if (pending) return pending;
-        if (this.latest.size >= 32 && !this.latest.has(key)) this.latest.delete(this.latest.keys().next().value!);
-        this.latest.set(key, Math.max(this.latest.get(key) ?? -1, params.requestSeq));
+        const previousSeq = this.latest.get(key);
+        if (previousSeq !== undefined) this.latest.delete(key);
+        else if (this.latest.size >= 32) this.latest.delete(this.latest.keys().next().value!);
+        this.latest.set(key, Math.max(previousSeq ?? -1, params.requestSeq));
         const run = this.perform(key, peer, machineId, params, fingerprint).finally(() => { if (this.flights.get(flightKey) === run) this.flights.delete(flightKey); });
         this.flights.set(flightKey, run); return run;
+    }
+
+    private resolveFingerprint(key: string, groups: CodelyncActivityRequest['groups']): string {
+        if (!groups.length) return '[]';
+        const cached = this.fingerprints.get(key);
+        if (cached && sameActivityGroupList(cached.groups, groups)) {
+            this.fingerprints.delete(key);
+            this.fingerprints.set(key, cached);
+            return cached.fingerprint;
+        }
+        const fingerprint = JSON.stringify(groups);
+        if (cached) this.fingerprints.delete(key);
+        else if (this.fingerprints.size >= 32) this.fingerprints.delete(this.fingerprints.keys().next().value!);
+        this.fingerprints.set(key, { groups: cloneActivityGroups(groups), fingerprint });
+        return fingerprint;
     }
 
     private async perform(key: string, peer: string, machine: string, params: CodelyncActivityRequest, fingerprint: string): Promise<ActivityReply> {
@@ -76,7 +114,8 @@ export class CodelyncActivityTransport {
             const result = parseActivityReply({ ...parsed, groups: fullGroups, ...(value.mode === 'unchanged' ? { unchanged: true } : {}) });
             if (this.latest.get(key) === params.requestSeq && this.options.peerIdentity() === peer) {
                 if (params.groups.length && value.interestToken) {
-                    if (this.baselines.size >= 16 && !this.baselines.has(key)) this.baselines.delete(this.baselines.keys().next().value!);
+                    if (this.baselines.has(key)) this.baselines.delete(key);
+                    else if (this.baselines.size >= 16) this.baselines.delete(this.baselines.keys().next().value!);
                     this.baselines.set(key, { fingerprint, interestToken: value.interestToken, watermark: value.watermark,
                         epoch: value.epoch, sequence: value.sequence, groups: fullGroups });
                 } else this.baselines.delete(key);

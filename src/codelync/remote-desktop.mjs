@@ -60,14 +60,22 @@ export class RemoteDesktop extends EventEmitter {
   }
   /** @param {Value} raw */
   configure(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return Promise.reject(new BridgeError('invalid-desktop-configuration', 'The remote desktop settings are invalid.'));
+    }
     try {
       const candidate = desktopConfiguration({ ...this.config, ...raw });
+      if (candidate.mode === 'external' && (candidate.url !== this.config.url || candidate.apiKey !== this.config.apiKey) && !raw.apiSecret) {
+        throw new BridgeError('desktop-server-secret-required', 'Enter the API secret for this media server.');
+      }
       if (!candidate.enabled || candidate.mode !== this.config.mode || candidate.url !== this.config.url
         || candidate.apiKey !== this.config.apiKey || candidate.apiSecret !== this.config.apiSecret) this.host?.interrupt?.();
     } catch (error) { return Promise.reject(error); }
     return this.run(async () => {
-      if (raw.mode === 'external' && (raw.url !== this.config.url || raw.apiKey !== this.config.apiKey) && !raw.apiSecret) throw new BridgeError('desktop-server-secret-required', 'Enter the API secret for this media server.');
       const next = desktopConfiguration({ ...this.config, ...raw });
+      if (next.mode === 'external' && (next.url !== this.config.url || next.apiKey !== this.config.apiKey) && !raw.apiSecret) {
+        throw new BridgeError('desktop-server-secret-required', 'Enter the API secret for this media server.');
+      }
       await writeDurablePrivateJson(join(this.options.state, 'remote-desktop.json'), next);
       await this.stop(); this.config = next; this.emit('status', this.status()); return this.status();
     });
@@ -153,6 +161,7 @@ export class RemoteDesktop extends EventEmitter {
         let result;
         try { result = await this.ensureHost().request('quality', { connectionId: active.id, geometry: active.geometry, quality }); }
         catch (error) { await this.stop(); throw error; }
+        if (typeof result?.trackSid !== 'string' || !result.trackSid) { await this.stop(); throw new BridgeError('desktop-capture-unavailable', 'The desktop view could not be confirmed.', 503); }
         active.trackSid = result.trackSid;
         active.viewPending = result.viewPending === true;
         this.quality = quality; active.lastSeen = this.now(); this.emit('status', this.status()); return { ...result, quality };
@@ -163,8 +172,10 @@ export class RemoteDesktop extends EventEmitter {
         let result;
         try { result = await this.ensureHost().request('display', { connectionId: active.id, geometry: active.geometry, displayId: body.displayId }); }
         catch (error) { await this.stop(); throw error; }
-        if (!result.display || result.display.id !== body.displayId || typeof result.display.geometry !== 'string') { await this.stop(); throw new BridgeError('desktop-display-unavailable', 'The display could not be confirmed.', 503); }
-        active.geometry = result.display.geometry; active.display = result.display; active.trackSid = result.trackSid; active.lastSeen = this.now();
+        if (!result?.display || result.display.id !== body.displayId || typeof result.display.geometry !== 'string' || !result.display.geometry
+          || typeof result.trackSid !== 'string' || !result.trackSid) { await this.stop(); throw new BridgeError('desktop-display-unavailable', 'The display could not be confirmed.', 503); }
+        active.geometry = result.display.geometry; active.display = result.display; active.trackSid = result.trackSid;
+        active.viewPending = result.viewPending === true; active.lastSeen = this.now();
         this.emit('status', this.status()); return result;
       }
       if (action === 'input' && (body.geometry !== active.geometry || active.viewPending)) throw new BridgeError('desktop-view-changed', 'Wait for the current desktop picture.', 409);
@@ -200,7 +211,7 @@ export class RemoteDesktop extends EventEmitter {
       publisher.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: false, canPublishData: false });
       const viewerToken = await token.toJwt();
       const result = await host.request('start', { url: media.url, token: await publisher.toJwt(), key, connectionId: id, viewer, displayId: display.id, quality });
-      if (typeof result.trackSid !== 'string' || !result.trackSid) throw new BridgeError('desktop-capture-unavailable', 'The desktop publisher could not be confirmed.', 503);
+      if (typeof result?.trackSid !== 'string' || !result.trackSid || typeof result.geometry !== 'string' || !result.geometry) throw new BridgeError('desktop-capture-unavailable', 'The desktop publisher could not be confirmed.', 503);
       display.geometry = result.geometry;
       this.active = { id, generation, key, device, room, viewer, viewerToken, display, trackSid: result.trackSid, geometry: result.geometry, sequence: 0, lastSeen: this.now(), permissions: result.permissions, ready: false, viewPending: result.viewPending === true };
       this.quality = quality; this.emit('status', this.status());

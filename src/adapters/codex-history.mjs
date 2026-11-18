@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { constants } from 'node:fs';
+import { closeSync, constants, existsSync, openSync, readSync } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { isAbsolute, join, relative } from 'node:path';
@@ -11,6 +11,29 @@ import { BridgeError } from '../errors.mjs';
 /** @typedef {{offset:number,bytes:number,hash:string}} CapturedRange */
 /** @typedef {{baseStamp:string,sourceStamp:string,fingerprint:string,size:number,ranges:CapturedRange[]}} Capture */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
+/** @param {string} dbPath */
+function isWalDatabase(dbPath) {
+  let fd = /** @type {number|null} */ (null);
+  try {
+    fd = openSync(dbPath, 'r');
+    const header = Buffer.alloc(20);
+    const bytesRead = readSync(fd, header, 0, 20, 0);
+    return bytesRead === 20 && header.subarray(0, 16).toString('ascii') === 'SQLite format 3\0' && (header[18] === 2 || header[19] === 2);
+  } catch { return false; }
+  finally { if (fd !== null) try { closeSync(fd); } catch { /* ignore */ } }
+}
+/** @param {string} dbPath @param {unknown} error */
+function sqliteIndexCode(dbPath, error) {
+  const errcode = typeof (/** @type {Value} */ (error))?.errcode === 'number' ? /** @type {Value} */ (error).errcode : null;
+  const base = errcode !== null ? errcode & 0xff : null;
+  if (base === 5 || base === 6) return 'codex-history-index-busy';
+  if (base === 11 || base === 26) return 'codex-history-index-invalid';
+  if ((errcode === 1544 || base === 8 || base === 14) && existsSync(dbPath) && isWalDatabase(dbPath) && (!existsSync(dbPath + '-wal') || !existsSync(dbPath + '-shm'))) {
+    return 'codex-history-index-wal-missing';
+  }
+  return 'codex-history-index-unavailable';
+}
 /** @param {unknown} value @returns {value is Value} */
 function record(value) { return !!value && typeof value === 'object' && !Array.isArray(value); }
 /** @param {unknown} value */
@@ -39,11 +62,15 @@ function text(value) {
  * @param {string} root @param {string} id @returns {Promise<Metadata|null>} */
 export async function readCodexSavedMetadata(root, id) {
   nativeId(id);
+  const dbPath = join(root, 'state_5.sqlite');
   let db = /** @type {DatabaseSync|null} */ (null);
+  let inTx = false;
   try {
-    db = new DatabaseSync(join(root, 'state_5.sqlite'), { readOnly: true });
+    db = new DatabaseSync(dbPath, { readOnly: true, timeout: 250 });
     db.exec('PRAGMA query_only=ON; BEGIN');
+    inTx = true;
     const fields = new Set(db.prepare('PRAGMA table_info(threads)').all().map(row => row.name));
+    if (fields.size === 0 && isWalDatabase(dbPath) && !existsSync(dbPath + '-wal')) throw failure('codex-history-index-wal-missing');
     if (!['id', 'rollout_path', 'source'].every(field => fields.has(field))) throw failure('codex-history-index-unsupported');
     const names = ['id', 'rollout_path', 'source', 'agent_path', 'attached_thread_parent_id', 'archived', 'updated_at_ms', 'updated_at'].filter(field => fields.has(field));
     const row = /** @type {Value|undefined} */ (db.prepare(`SELECT ${names.join(',')} FROM threads WHERE id=?`).get(id));
@@ -57,8 +84,11 @@ export async function readCodexSavedMetadata(root, id) {
       archived: row.archived === 1, indexStamp: digest([row.id, row.rollout_path, parent, row.agent_path, row.source, row.archived, row.updated_at_ms ?? row.updated_at]) };
   } catch (error) {
     if (error instanceof BridgeError) throw error;
-    throw failure('codex-history-index-unavailable');
-  } finally { db?.close(); }
+    throw failure(sqliteIndexCode(dbPath, error));
+  } finally {
+    if (inTx) try { db?.exec('ROLLBACK'); } catch { /* ignore */ }
+    db?.close();
+  }
 }
 
 /** Bounded original saved data; its provenance never becomes a native control owner. */
@@ -104,9 +134,9 @@ export class CodexSavedHistoryReader {
       parts.push(newline < 0 ? chunk : chunk.subarray(0, newline)); at += read.bytesRead;
       if (newline >= 0) { ended = true; break; }
     }
-    if (!ended) throw failure('codex-history-header-too-large');
+    if (!ended) throw failure(at >= this.maxHeaderBytes ? 'codex-history-header-too-large' : 'codex-history-header-invalid');
     let value = /** @type {Value} */ ({});
-    try { value = JSON.parse(Buffer.concat(parts).toString('utf8')); }
+    try { value = JSON.parse(UTF8_DECODER.decode(Buffer.concat(parts))); }
     catch { throw failure('codex-history-header-invalid'); }
     if (value.type !== 'session_meta' || value.payload?.id !== id || value.payload?.originator !== 'Codex Desktop') throw failure('codex-history-desktop-membership-unverified');
     return { metadata: value.payload, bytesRead, stamp: bytesHash(Buffer.concat(parts)) };
@@ -154,11 +184,12 @@ export class CodexSavedHistoryReader {
         if (boundary.sourceStamp !== undefined && boundary.sourceStamp !== sourceStamp) throw failure('codex-history-source-changed', 409);
         const end = boundary.beforeByte ?? total;
         if (end > total) throw failure('codex-history-boundary-invalid', 400);
-        const start = Math.max(0, end - this.maxPageBytes), buffer = Buffer.alloc(end - start);
-        const read = await child.descriptor.read(buffer, 0, buffer.length, start);
-        if (read.bytesRead !== buffer.length) throw failure('codex-history-source-changed', 409);
-        let cursor = start ? buffer.indexOf(10) + 1 : 0;
-        if (start && cursor === 0) throw failure('codex-history-record-too-large');
+        const start = Math.max(0, end - this.maxPageBytes), readStart = start > 0 ? start - 1 : 0, rawBuffer = Buffer.alloc(end - readStart);
+        const read = await child.descriptor.read(rawBuffer, 0, rawBuffer.length, readStart);
+        if (read.bytesRead !== rawBuffer.length) throw failure('codex-history-source-changed', 409);
+        const prevIsNewline = start === 0 || rawBuffer[0] === 10, buffer = start > 0 ? rawBuffer.subarray(1) : rawBuffer;
+        let cursor = prevIsNewline ? 0 : buffer.indexOf(10) + 1;
+        if (!prevIsNewline && cursor === 0) throw failure('codex-history-record-too-large');
         const records = /** @type {Array<{offset:number,value:Value}>} */ ([]);
         const committedEnd = buffer.lastIndexOf(10) + 1;
         if (boundary.beforeByte !== undefined && committedEnd !== buffer.length) throw failure('codex-history-boundary-invalid', 400);
@@ -168,13 +199,13 @@ export class CodexSavedHistoryReader {
           const line = buffer.subarray(cursor, newline); const offset = start + cursor; cursor = newline + 1;
           if (!line.length) continue;
           let value;
-          try { value = JSON.parse(line.toString('utf8')); }
+          try { value = JSON.parse(UTF8_DECODER.decode(line)); }
           catch { throw failure('codex-history-record-invalid'); }
           if (record(value)) records.push({ offset, value });
         }
         let rows = projectSavedRows(records, id);
         const trimmed = rows.length > limit; if (trimmed) rows = rows.slice(-limit);
-        const byteStart = trimmed && rows.length ? rows[0].order : records[0]?.offset ?? start;
+        const byteStart = trimmed && rows.length ? rows[0].order : records[0]?.offset ?? (start + cursor);
         const captured = { offset: start, bytes: committedEnd, hash: bytesHash(buffer.subarray(0, committedEnd)) };
         const nextMetadata = await this.metadata(root, id), nextStat = await child.descriptor.stat({ bigint: true });
         if (digest(membership(nextMetadata)) !== digest(membership(metadata))) throw failure('codex-history-source-changed', 409);

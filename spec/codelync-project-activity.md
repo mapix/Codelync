@@ -48,7 +48,9 @@ UI IDs are bounded to 8192 characters, project keys to 4096 and the entire
 normalized request to 256 KiB; long scoped workspace names keep their identity.
 
 Polls are serialized, normally ten seconds apart, and back off after failure.
-They stop in background or on blur. Mac interests expire after thirty seconds;
+Retry cooldowns and unavailable owner or inventory states sleep until their
+backoff deadline, in-flight completion wakeup, or next poll without overdue
+sub-cooldown timer loops. They stop in background or on blur. Mac interests expire after thirty seconds;
 observers are shared across phones and bounded. The existing encrypted RPC and
 owner lease protect transport. Unknown writes are never retried by this path.
 

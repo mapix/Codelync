@@ -30,3 +30,20 @@ test('standalone language server and prefix lookalikes cannot become a desktop s
   assert.deepEqual(antigravityOwnerRows(`43 ${binary}-other --csrf_token=fixture\n44 python ${binary} --csrf_token=fixture`, binary), []);
   await assert.rejects(discoverAntigravityRuntime({ ...options, processIdentity: async pid => ({ ...await processIdentity(pid), ...(pid === 40 ? { executable: '/usr/bin/python3' } : {}) }) }), { code: 'antigravity-discovery-unavailable' });
 });
+
+test('multicall CLI helper subprocesses are ignored alongside the verified language server owner', async () => {
+  const mixed = [
+    `42 ${binary} --standalone --csrf_token=fixture --app_data_dir antigravity`,
+    `99 ${binary} multicall schedule CRON_TZ=Asia/Shanghai 0 */6 * * * agentapi new-conversation`,
+  ].join('\n');
+  assert.deepEqual(antigravityOwnerRows(mixed, binary), [{ pid: 42, csrfToken: 'fixture', appDataDir: 'antigravity' }]);
+  const runtime = await discoverAntigravityRuntime({ ...options, processes: async () => mixed });
+  assert.equal(runtime?.pid, 42);
+  await assert.rejects(discoverAntigravityRuntime({
+    ...options,
+    processes: async () => [
+      `42 ${binary} --standalone --csrf_token=fixture --app_data_dir antigravity`,
+      `45 ${binary} --standalone --csrf_token=other --app_data_dir antigravity`,
+    ].join('\n'),
+  }), { code: 'antigravity-discovery-unavailable' });
+});

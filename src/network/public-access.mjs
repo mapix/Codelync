@@ -56,6 +56,7 @@ export class CloudflareAccess extends EventEmitter {
     super(); this.options = options; this.closed = false; this.child = /** @type {import('node:child_process').ChildProcess|null} */ (null);
     this.reject = /** @type {((error:Error)=>void)|null} */ (null); this.closing = /** @type {Promise<void>|null} */ (null);
     this.edgeConnections = new Set(); this.stderrTail = ''; this.edgeEverConnected = false;
+    this.closeLog = /** @type {(()=>Promise<void>)|null} */ (null);
   }
   /** Observe only the owned tunnel's slot lifecycle; URLs, requests and log bodies are not emitted.
    * @param {string} text */
@@ -79,17 +80,38 @@ export class CloudflareAccess extends EventEmitter {
   async start() {
     const log = await open(join(this.options.state, 'tunnel.log'), 'a', 0o600);
     if (this.closed) { await log.close(); throw Error('public-access-cancelled'); }
+    let logClosed = false;
+    const closeLog = () => { if (logClosed) return Promise.resolve(); logClosed = true; return log.close().catch(() => {}); };
+    this.closeLog = closeLog;
     const child = spawn(this.options.binary, ['tunnel', '--no-autoupdate', '--url', this.options.upstream], { stdio: ['ignore', 'ignore', 'pipe'] }); this.child = child;
     return new Promise((resolve, reject) => {
-      this.reject = reject; let buffer = '';
-      const timer = setTimeout(() => reject(Error('cloudflare-start-timeout')), 60000);
+      let settled = false, buffer = '';
+      /** @param {Error} error */
+      const fail = error => {
+        clearTimeout(timer);
+        if (this.reject === fail) this.reject = null;
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+      this.reject = fail;
+      const timer = setTimeout(() => {
+        void closeLog();
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+        fail(Error('cloudflare-start-timeout'));
+      }, 60000);
+      timer.unref();
       child.stderr?.on('data', chunk => {
-        void log.write(chunk).catch(() => {}); buffer = (buffer + chunk.toString()).slice(-16384);
-        const url = buffer.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/u)?.[0]; if (url) { clearTimeout(timer); this.reject = null; resolve(url); }
+        if (!logClosed) void log.write(chunk).catch(() => {});
+        if (!settled) {
+          buffer = (buffer + chunk.toString()).slice(-16384);
+          const url = buffer.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/u)?.[0];
+          if (url) { clearTimeout(timer); this.reject = null; settled = true; buffer = ''; resolve(url); }
+        }
         this.observeStderr(chunk.toString());
       });
-      child.once('error', () => { clearTimeout(timer); reject(Error('cloudflare-start-failed')); });
-      child.once('exit', () => { clearTimeout(timer); void log.close(); reject(Error('cloudflare-exited')); if (!this.closed) this.emit('disconnected'); });
+      child.once('error', () => { void closeLog(); fail(Error('cloudflare-start-failed')); });
+      child.once('exit', () => { void closeLog(); fail(Error('cloudflare-exited')); if (!this.closed) this.emit('disconnected'); });
     });
   }
   activate() {}
@@ -110,6 +132,7 @@ export class CloudflareAccess extends EventEmitter {
           }
         } finally { deadline.abort(); }
       }
+      await this.closeLog?.();
     })();
     return this.closing;
   }

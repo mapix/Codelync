@@ -197,6 +197,7 @@ export class Encryption {
      */
     removeMachineEncryption(machineId: string): void {
         this.machineEncryptions.delete(machineId);
+        this.cache.clearMachineCache(machineId);
     }
 
     //

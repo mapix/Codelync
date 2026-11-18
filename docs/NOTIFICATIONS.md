@@ -1,9 +1,11 @@
 # iPhone notifications
 
-Codelync sends Apple APNs alerts for original-owner turn completion, failure,
-and newly required input or approval. The Mac and original Desktop owner must
-remain running and online. Only sessions already attached to a native observer
-are covered. The phone may be in the background; its data socket is not kept alive.
+Codelync (`1.0.1`, build `2026111801`) sends Apple APNs alerts for original-owner
+turn completion, failure, and newly required input or approval from verified
+Codex, Antigravity Desktop and Claude Desktop (Gateway) sessions. The Mac and
+original Desktop owner must remain running and online. Only sessions already
+attached to a native observer are covered. The phone may be in the background;
+its data socket is not kept alive.
 
 ## Set up this Mac
 
@@ -36,9 +38,10 @@ ad hoc profile. TestFlight uses an App Store profile without a device registry,
 a production push entitlement and an App Store Connect archive/export. Simulator builds do not accept a push
 mode. Omitting the push flag preserves the existing local trial signing.
 
-A push build verifies its signed entitlement, provisioning profile, registered
-phone and embedded Expo configuration. A successful build alone does not prove
-that APNs delivery or a notification tap works.
+A push build verifies (`scripts/verify-mobile-push.mjs`) its signed entitlement,
+provisioning profile, registered phone, `CFBundleDisplayName === "Codelync"`, and
+embedded Expo configuration. A successful build alone does not prove that APNs
+delivery or a notification tap works.
 
 ## Verify actual delivery
 

@@ -27,13 +27,15 @@ const stylesheet = StyleSheet.create((theme) => ({
     },
     scrim: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.32)',
+        backgroundColor: '#000000',
+        opacity: theme.dark ? 0.56 : 0.32,
     },
     // Opaque on purpose: a translucent surface over the conversation or the
     // dimmed dock washed the rows out on Android, which has no backdrop blur.
     panel: {
         width: '100%',
         maxWidth: 640,
+        maxHeight: '85%',
         alignSelf: 'center',
         backgroundColor: theme.colors.surface,
         borderRadius: 28,
@@ -52,13 +54,14 @@ const stylesheet = StyleSheet.create((theme) => ({
         alignItems: 'center',
         paddingLeft: ROW_INSET,
         paddingRight: 4,
-        paddingTop: 4,
+        paddingVertical: 6,
         minHeight: TOUCH_TARGET + 8,
     },
     title: {
         flex: 1,
         minWidth: 0,
         fontSize: 17,
+        lineHeight: 22,
         color: theme.colors.text,
         ...Typography.default('semiBold'),
     },
@@ -91,7 +94,9 @@ const stylesheet = StyleSheet.create((theme) => ({
     },
     sectionTitle: {
         flexShrink: 1,
+        minWidth: 0,
         fontSize: 13,
+        lineHeight: 18,
         color: theme.colors.textSecondary,
         ...Typography.default('semiBold'),
     },
@@ -142,13 +147,16 @@ const stylesheet = StyleSheet.create((theme) => ({
     },
     optionLabel: {
         flexShrink: 1,
+        minWidth: 0,
         fontSize: 16,
+        lineHeight: 22,
         color: theme.colors.text,
         ...Typography.default(),
     },
     optionDescription: {
         marginTop: 2,
         fontSize: 13,
+        lineHeight: 18,
         color: theme.colors.textSecondary,
         ...Typography.default(),
     },
@@ -176,7 +184,7 @@ export function PickerSheetPanel(props: {
             accessibilityViewIsModal
         >
             <View style={styles.header}>
-                <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
+                <Text style={styles.title} numberOfLines={2} accessibilityRole="header">
                     {props.title}
                 </Text>
                 <Pressable
@@ -216,6 +224,10 @@ export function PickerSheet(props: {
     const styles = stylesheet;
     const insets = useSafeAreaInsets();
     const { height } = useWindowDimensions();
+    const maxSheetHeight = Math.min(
+        Math.round(height * MAX_HEIGHT_FRACTION),
+        Math.max(240, height - (insets.top ?? 0) - 16),
+    );
     return (
         <RNModal
             visible={props.visible}
@@ -225,7 +237,7 @@ export function PickerSheet(props: {
             navigationBarTranslucent
             onRequestClose={props.onClose}
         >
-            <View style={styles.root}>
+            <View style={[styles.root, { paddingLeft: insets.left ?? 0, paddingRight: insets.right ?? 0 }]}>
                 <Pressable
                     style={styles.scrim}
                     onPress={props.onClose}
@@ -236,7 +248,7 @@ export function PickerSheet(props: {
                     attached
                     title={props.title}
                     onClose={props.onClose}
-                    style={{ maxHeight: height * MAX_HEIGHT_FRACTION, paddingBottom: insets.bottom }}
+                    style={{ maxHeight: maxSheetHeight, paddingBottom: insets.bottom ?? 0 }}
                 >
                     {props.children}
                 </PickerSheetPanel>
@@ -259,7 +271,7 @@ export function PickerSheetSection(props: {
             {props.title ? (
                 <View style={styles.sectionHeader} accessibilityRole="header">
                     {props.icon}
-                    <Text style={styles.sectionTitle} numberOfLines={1}>{props.title}</Text>
+                    <Text style={styles.sectionTitle} numberOfLines={2}>{props.title}</Text>
                 </View>
             ) : null}
         </>
@@ -317,13 +329,13 @@ export function PickerSheetOption(props: {
                 {props.labelIcon ? (
                     <View style={styles.optionLabelRow}>
                         {props.labelIcon}
-                        <Text style={styles.optionLabel} numberOfLines={1}>{props.label}</Text>
+                        <Text style={styles.optionLabel} numberOfLines={2}>{props.label}</Text>
                     </View>
                 ) : (
-                    <Text style={styles.optionLabel} numberOfLines={1}>{props.label}</Text>
+                    <Text style={styles.optionLabel} numberOfLines={2}>{props.label}</Text>
                 )}
                 {props.description ? (
-                    <Text style={styles.optionDescription} numberOfLines={2}>{props.description}</Text>
+                    <Text style={styles.optionDescription} numberOfLines={3}>{props.description}</Text>
                 ) : null}
             </View>
         </Pressable>

@@ -1,19 +1,24 @@
 /** @typedef {Record<string,any>} Value */
 const keys = ['app', 'appMode', 'nativeCollection', 'nativeConversationId', 'hostId', 'ownerGeneration', 'runtimeGeneration', 'queryToken', 'cliSessionId', 'settingsToken'];
 /** @param {unknown} value @returns {value is Value} */
-const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const object = value => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+};
 /** @param {unknown} value @param {number} max */
 const label = (value, max) => typeof value === 'string' && !!value.trim() && value.length <= max && !/[\x00-\x1f\x7f]/.test(value);
 
 /** Session and main generations are distinct; this describes an existing Query.
  * @param {unknown} input @returns {Value|null} */
 export function nativeSettingsScope(input) {
-  if (!object(input) || Object.keys(input).some(key => !keys.includes(key)) || keys.some(key => !Object.hasOwn(input, key))
+  if (!object(input) || Object.getOwnPropertyNames(input).length !== keys.length
+    || keys.some(key => !Object.hasOwn(input, key))
     || input.app !== 'claude-desktop' || !['code', 'chat'].includes(input.appMode)
     || input.nativeCollection !== (input.appMode === 'code' ? 'claude-code-sessions' : 'local-agent-mode-sessions')
     || !label(input.nativeConversationId, 512) || !label(input.hostId, 256) || !label(input.ownerGeneration, 2048)
     || !label(input.runtimeGeneration, 2048) || !label(input.queryToken, 512) || !label(input.cliSessionId, 512)
-    || !/^[a-f0-9]{64}$/.test(input.settingsToken ?? '')) return null;
+    || typeof input.settingsToken !== 'string' || !/^[a-f0-9]{64}$/.test(input.settingsToken)) return null;
   return Object.fromEntries(keys.map(key => [key, input[key]]));
 }
 

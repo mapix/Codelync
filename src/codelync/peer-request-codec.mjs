@@ -7,19 +7,57 @@ export const PEER_ACTIVITY_CARRIER_MAX_BYTES = 360 * 1024;
 const MAX_PLAIN = PEER_ACTIVITY_REQUEST_MAX_BYTES + 512;
 const invalid = () => new BridgeError('invalid-peer-request', 'The sealed peer request could not be verified.', 400);
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** @param {unknown} value @param {Set<object>} [seen] @param {number} [depth] @returns {boolean} */
+function hasSafeJsonStructure(value, seen = new Set(), depth = 0) {
+  if (depth > 32) return false;
+  if (value === null || typeof value !== 'object') return true;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (const item of value) if (!hasSafeJsonStructure(item, seen, depth + 1)) return false;
+      return true;
+    }
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return false;
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (UNSAFE_KEYS.has(key)) return false;
+      if (!hasSafeJsonStructure(/** @type {Value} */ (value)[key], seen, depth + 1)) return false;
+    }
+    return true;
+  } finally {
+    seen.delete(value);
+  }
+}
+
+/** @param {unknown} value @returns {number} */
+function jsonByteLength(value) {
+  try {
+    const encoded = JSON.stringify(value);
+    if (typeof encoded !== 'string') throw invalid();
+    return Buffer.byteLength(encoded);
+  } catch {
+    throw invalid();
+  }
+}
+
 /** Opens only data encrypted by this already-approved device for this exact Mac/route.
  * Older object-body clients keep their existing transport compatibility.
  * @param {unknown} packet @param {{peerId:string,path:string,method:string,devicePublicKey:Uint8Array,macSecretKey:Uint8Array}} scope
  * @returns {Value} */
 export function openPeerActivityRequest(packet, scope) {
   if (!Array.isArray(packet)) {
-    if (!packet || typeof packet !== 'object' || Buffer.byteLength(JSON.stringify(packet)) > PEER_ACTIVITY_REQUEST_MAX_BYTES) throw invalid();
+    if (!packet || typeof packet !== 'object' || !hasSafeJsonStructure(packet) || jsonByteLength(packet) > PEER_ACTIVITY_REQUEST_MAX_BYTES) throw invalid();
     return /** @type {Value} */ (packet);
   }
   if (packet.length !== 3 || packet[0] !== 2 || typeof packet[1] !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(packet[1])
     || typeof packet[2] !== 'string' || !/^[A-Za-z0-9_-]+$/.test(packet[2])
     || packet[2].length > Math.ceil((MAX_PLAIN + 16) * 4 / 3)
-    || !scope || typeof scope.peerId !== 'string' || !scope.peerId || scope.devicePublicKey?.length !== 32 || scope.macSecretKey?.length !== 32) throw invalid();
+    || !scope || typeof scope.peerId !== 'string' || !scope.peerId
+    || !(scope.devicePublicKey instanceof Uint8Array) || scope.devicePublicKey.length !== 32
+    || !(scope.macSecretKey instanceof Uint8Array) || scope.macSecretKey.length !== 32) throw invalid();
   const nonce = new Uint8Array(Buffer.from(packet[1], 'base64url')), cipher = new Uint8Array(Buffer.from(packet[2], 'base64url'));
   if (nonce.length !== 24 || cipher.length < 16 || cipher.length > MAX_PLAIN + 16) throw invalid();
   const plain = nacl.box.open(cipher, nonce, scope.devicePublicKey, scope.macSecretKey);
@@ -28,6 +66,6 @@ export function openPeerActivityRequest(packet, scope) {
   try { frame = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plain)); } catch { throw invalid(); }
   if (!Array.isArray(frame) || frame.length !== 4 || frame[0] !== scope.peerId || frame[1] !== scope.method || frame[2] !== scope.path
     || !frame[3] || typeof frame[3] !== 'object' || Array.isArray(frame[3])
-    || Buffer.byteLength(JSON.stringify(frame[3])) > PEER_ACTIVITY_REQUEST_MAX_BYTES) throw invalid();
+    || !hasSafeJsonStructure(frame[3]) || jsonByteLength(frame[3]) > PEER_ACTIVITY_REQUEST_MAX_BYTES) throw invalid();
   return frame[3];
 }

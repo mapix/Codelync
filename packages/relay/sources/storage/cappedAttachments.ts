@@ -5,9 +5,12 @@ import type { Stats } from 'node:fs';
 export const MAX_CAPPED_ATTACHMENT_BYTES = 10 * 1024 * 1024 + 40;
 
 export class CappedAttachmentError extends Error {
-    constructor(readonly status: 400 | 404 | 409 | 413 | 503, message: string) {
+    readonly status: 400 | 404 | 409 | 413 | 503;
+
+    constructor(status: 400 | 404 | 409 | 413 | 503, message: string) {
         super(message);
         this.name = 'CappedAttachmentError';
+        this.status = status;
     }
 }
 
@@ -64,4 +67,9 @@ export function readCappedLocalAttachment(fullPath: string, maxBytes: number): P
         }
         return buffer;
     });
+}
+
+/** Async bounded non-symlink read for ordinary local encrypted attachments. */
+export function readLocalAttachment(fullPath: string): Promise<Buffer> {
+    return readCappedLocalAttachment(fullPath, MAX_CAPPED_ATTACHMENT_BYTES);
 }

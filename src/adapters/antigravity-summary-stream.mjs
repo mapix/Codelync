@@ -78,6 +78,11 @@ export function validateAntigravityStreamSummary(value) {
   }
   if (summary.status !== undefined && !(Number.isSafeInteger(summary.status) && summary.status >= 0 && summary.status <= 0xffffffff)
       && !(typeof summary.status === 'string' && /^CASCADE_(?:RUN_)?STATUS_[A-Z_]{1,80}$/u.test(summary.status))) throw invalid();
+  for (const name of ['source', 'latestExecutorTerminationReason']) {
+    const field = summary[name];
+    if (field !== undefined && !(Number.isSafeInteger(field) && field >= 0 && field <= 0xffffffff)
+        && !(typeof field === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/u.test(field))) throw invalid();
+  }
   for (const name of ['trajectoryId', 'forkParentConversationId']) if (summary[name] !== undefined && typeof summary[name] !== 'string') throw invalid();
   for (const name of ['waitingSteps', 'workspaces', 'codeReviewIds']) if (summary[name] !== undefined && (!Array.isArray(summary[name]) || summary[name].length > MAX_HEADERS)) throw invalid();
   for (const name of ['annotations', 'trajectoryMetadata']) if (summary[name] !== undefined && !record(summary[name])) throw invalid();
@@ -183,8 +188,9 @@ export class AntigravitySummaryStream {
     if (current.complete || waitMs === 0 || this.stopReconnect) return current;
     return new Promise(resolve => {
       /** @type {ReturnType<typeof setTimeout>|undefined} */ let timer;
-      const finish = () => { clearTimeout(timer); this.waiters.delete(changed); resolve(this.getReplica(ids, context)); };
-      const changed = () => { const next = this.getReplica(ids, context); if (next.complete || !next.available || this.disposed) finish(); };
+      let settled = false;
+      const finish = () => { if (settled) return; settled = true; clearTimeout(timer); this.waiters.delete(changed); resolve(this.getReplica(ids, context)); };
+      const changed = () => { const next = this.getReplica(ids, context); if (next.complete || !next.available || this.disposed || this.stopReconnect) finish(); };
       this.waiters.add(changed); timer = setTimeout(finish, waitMs);
     });
   }
@@ -194,13 +200,13 @@ export class AntigravitySummaryStream {
     const change = { scope: { ...this.scope }, available: this.available, streamEpoch: this.epoch,
       revision: this.revision, observedAt: this.observedAt, changedIds, deletedIds };
     for (const listener of this.listeners) { try { listener(change); } catch { /* An observer cannot stop the native stream. */ } }
-    for (const listener of this.waiters) listener();
+    for (const listener of [...this.waiters]) listener();
   }
   invalidate() {
     const affected = [...this.headers.keys()], changed = this.available || this.headers.size > 0 || this.deleted.size > 0;
     this.available = false; this.headers.clear(); this.deleted.clear();
     this.controller?.abort(); if (this.reconnect) { clearTimeout(this.reconnect); this.reconnect = null; }
-    if (changed) this.publish(affected); else for (const listener of this.waiters) listener();
+    if (changed) this.publish(affected); else for (const listener of [...this.waiters]) listener();
   }
   start() {
     if (this.running || this.reconnect || this.disposed || this.stopReconnect) return;
@@ -213,7 +219,10 @@ export class AntigravitySummaryStream {
       this.invalidate();
     }).finally(() => {
       if (this.running === flight) this.running = null;
-      if (!this.disposed && !this.stopReconnect) this.reconnect = setTimeout(() => { this.reconnect = null; this.start(); }, this.reconnectMs);
+      if (!this.disposed && !this.stopReconnect) {
+        this.reconnect = setTimeout(() => { this.reconnect = null; this.start(); }, this.reconnectMs);
+        this.reconnect.unref();
+      }
     });
     this.running = flight;
   }
@@ -269,6 +278,8 @@ export class AntigravitySummaryStream {
   }
   async dispose() {
     if (this.disposed) return; this.disposed = true; this.stopReconnect = true; this.invalidate();
+    for (const listener of [...this.waiters]) listener();
+    this.waiters.clear();
     await this.reader?.cancel().catch(() => {}); await this.connection?.close(); this.listeners.clear();
   }
 }

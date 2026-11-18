@@ -22,14 +22,24 @@ translated documentation is linked from the English entry point.
 
 Source application names, Gateway, protocol identifiers and user conversations
 are not translated. Translate product navigation, connection/recovery states,
-remote desktop controls, privacy/support information and native permission
-prompts. Unknown states retain their meaning in every language.
+remote desktop controls and special-key screen-reader labels, composer action
+labels and sandbox qualifiers, connection route status/recovery guidance,
+privacy/support information and native permission prompts. Unknown states retain
+their meaning in every language. All supported languages—including Simplified
+Chinese (`zh-Hans`), Traditional Chinese (`zh-Hant`), and Japanese (`ja`)—provide
+distinct explicit copy rather than falling back to English (`en.*`) or coarse
+language-prefix checks across active UI groups (`codelync*`, `sourceBridge`,
+`message`, `windowControl`, `server`, `onboarding` offline states,
+`sessionInfo.resumeSession*`, and all `*Labels.ts` dictionaries).
 
 Verify system Chinese/Japanese/English selection, saved overrides, unsupported
 language fallback, complete Japanese remote controls and all website status
 states. Native app and browser rendering checks remain separate from translation
 and locale resolver tests. Rebuild runtime artifacts after localization changes.
 
-The current welcome wordmark composes the existing generated symbol with native
-`Codelync` text. Historical generated wordmark images retain their provenance;
-the current app does not display their baked-in former product name.
+The current welcome wordmark composes the existing generated symbol (matching
+`CodelyncMark` squircle rounding `size * 0.22`) with native `Codelync` text, and
+onboarding connection artwork preserves its native aspect ratio with clean
+rounded clipping across light and dark themes. Historical generated wordmark
+images retain their provenance; the current app does not display their baked-in
+former product name.

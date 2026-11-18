@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { View, ScrollView, ActivityIndicator, Platform, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Text } from '@/components/StyledText';
 import { SimpleSyntaxHighlighter } from '@/components/SimpleSyntaxHighlighter';
@@ -84,6 +85,7 @@ const DiffDisplay: React.FC<{ diffContent: string }> = ({ diffContent }) => {
 
 export default React.memo(function FileScreen() {
     const { theme } = useUnistyles();
+    const insets = useSafeAreaInsets();
     const { id: sessionId } = useLocalSearchParams<{ id: string }>();
     const searchParams = useLocalSearchParams();
     const encodedPath = searchParams.path as string;
@@ -391,7 +393,7 @@ export default React.memo(function FileScreen() {
                 </Text>
                 <Text style={{
                     fontSize: 14,
-                    color: '#999',
+                    color: theme.colors.textSecondary,
                     textAlign: 'center',
                     marginTop: 8,
                     ...Typography.default()
@@ -407,7 +409,9 @@ export default React.memo(function FileScreen() {
 
             {/* File path header */}
             <MobileGlassSurface enabled={Platform.OS !== 'web'} intensity={62} style={{
-                padding: 16,
+                paddingVertical: 16,
+                paddingLeft: Math.max(16, insets.left),
+                paddingRight: Math.max(16, insets.right),
                 borderBottomWidth: Platform.select({ web: 1, default: 0.5 }),
                 borderBottomColor: Platform.select({ web: theme.colors.divider, default: theme.colors.glass.border }),
                 backgroundColor: Platform.select({ web: theme.colors.surfaceHigh, android: theme.colors.glass.backgroundStrong, default: 'transparent' }),
@@ -432,7 +436,8 @@ export default React.memo(function FileScreen() {
             {diffContent && (
                 <MobileGlassSurface enabled={Platform.OS !== 'web'} intensity={56} style={{
                     flexDirection: 'row',
-                    paddingHorizontal: 16,
+                    paddingLeft: Math.max(16, insets.left),
+                    paddingRight: Math.max(16, insets.right),
                     paddingVertical: 12,
                     borderBottomWidth: Platform.select({ web: 1, default: 0.5 }),
                     borderBottomColor: Platform.select({ web: theme.colors.divider, default: theme.colors.glass.border }),
@@ -440,12 +445,16 @@ export default React.memo(function FileScreen() {
                 }}>
                     <Pressable
                         onPress={() => setDisplayMode('diff')}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: displayMode === 'diff' }}
                         style={{
+                            minHeight: 44,
+                            justifyContent: 'center',
                             paddingHorizontal: 16,
-                            paddingVertical: 8,
-                            borderRadius: 8,
+                            paddingVertical: 10,
+                            borderRadius: 10,
                             backgroundColor: displayMode === 'diff'
-                                ? Platform.select({ web: theme.colors.textLink, default: `${theme.colors.textLink}66` })
+                                ? theme.colors.button.primary.background
                                 : Platform.select({ web: theme.colors.input.background, default: theme.colors.glass.backgroundSubtle }),
                             marginRight: 8
                         }}
@@ -453,7 +462,7 @@ export default React.memo(function FileScreen() {
                         <Text style={{
                             fontSize: 14,
                             fontWeight: '600',
-                            color: displayMode === 'diff' ? 'white' : theme.colors.textSecondary,
+                            color: displayMode === 'diff' ? theme.colors.button.primary.tint : theme.colors.textSecondary,
                             ...Typography.default()
                         }}>
                             {t('files.diff')}
@@ -462,19 +471,23 @@ export default React.memo(function FileScreen() {
 
                     <Pressable
                         onPress={() => setDisplayMode('file')}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: displayMode === 'file' }}
                         style={{
+                            minHeight: 44,
+                            justifyContent: 'center',
                             paddingHorizontal: 16,
-                            paddingVertical: 8,
-                            borderRadius: 8,
+                            paddingVertical: 10,
+                            borderRadius: 10,
                             backgroundColor: displayMode === 'file'
-                                ? Platform.select({ web: theme.colors.textLink, default: `${theme.colors.textLink}66` })
+                                ? theme.colors.button.primary.background
                                 : Platform.select({ web: theme.colors.input.background, default: theme.colors.glass.backgroundSubtle })
                         }}
                     >
                         <Text style={{
                             fontSize: 14,
                             fontWeight: '600',
-                            color: displayMode === 'file' ? 'white' : theme.colors.textSecondary,
+                            color: displayMode === 'file' ? theme.colors.button.primary.tint : theme.colors.textSecondary,
                             ...Typography.default()
                         }}>
                             {t('files.file')}
@@ -487,7 +500,15 @@ export default React.memo(function FileScreen() {
             <ScrollView
                 ref={scrollViewRef}
                 style={{ flex: 1 }}
-                contentContainerStyle={{ padding: 16, maxWidth: layout.maxWidth, alignSelf: 'center', width: '100%' }}
+                contentContainerStyle={{
+                    paddingTop: 16,
+                    paddingBottom: Math.max(16, insets.bottom + 16),
+                    paddingLeft: Math.max(16, insets.left),
+                    paddingRight: Math.max(16, insets.right),
+                    maxWidth: layout.maxWidth,
+                    alignSelf: 'center',
+                    width: '100%'
+                }}
                 showsVerticalScrollIndicator={true}
             >
                 {displayMode === 'diff' && diffContent ? (

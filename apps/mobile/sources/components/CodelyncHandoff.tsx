@@ -30,6 +30,7 @@ export function CodelyncHandoff(props: { sessionId: string; metadata: Metadata |
     if (!eligible) return null;
     return <>
         <Pressable testID="codelync-handoff" accessibilityRole="button" accessibilityLabel={t('codelyncHandoff.action')}
+            hitSlop={4}
             onPress={() => {
                 const session = storage.getState().sessions[props.sessionId];
                 if (session) setHandoff(createCodelyncHandoff(session, props.message));
@@ -63,10 +64,11 @@ function HandoffTargets({ handoff, onClose }: { handoff: Handoff; onClose: () =>
         <View style={styles.overlay}>
             <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} onPress={onClose} style={styles.backdrop} />
             <View style={styles.sheet}>
-                <View style={styles.header}><Text style={styles.heading}>{t('codelyncHandoff.action')}</Text>
-                    <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} onPress={onClose} style={styles.cancel}><Text style={styles.actionLabel}>{t('common.cancel')}</Text></Pressable>
+                <View style={styles.header}><Text style={styles.heading} numberOfLines={1}>{t('codelyncHandoff.action')}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} onPress={onClose} style={({ pressed }) => [styles.cancel, pressed && styles.pressed]}><Text style={styles.actionLabel}>{t('common.cancel')}</Text></Pressable>
                 </View>
                 <FlatList data={targets} renderItem={render} keyExtractor={item => item.id} keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{ paddingBottom: 4 }}
                     initialNumToRender={12} maxToRenderPerBatch={12} windowSize={3}
                     ListEmptyComponent={<Text style={styles.empty}>{t('codelyncHandoff.noTargets')}</Text>} />
             </View>
@@ -75,15 +77,15 @@ function HandoffTargets({ handoff, onClose }: { handoff: Handoff; onClose: () =>
 }
 
 const styles = StyleSheet.create(theme => ({
-    action: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 8 },
+    action: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, minWidth: 44, paddingHorizontal: 10 },
     actionLabel: { color: theme.colors.text, fontSize: 13, ...Typography.default() },
     pressed: { opacity: 0.5 },
-    overlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.colors.shadow.color, opacity: 0.25 },
-    sheet: { maxHeight: '60%', borderRadius: 18, overflow: 'hidden', backgroundColor: theme.colors.surface },
+    overlay: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 24 },
+    backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000000', opacity: theme.dark ? 0.56 : 0.28 },
+    sheet: { maxHeight: '60%', borderRadius: 18, overflow: 'hidden', backgroundColor: theme.colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
     header: { flexDirection: 'row', alignItems: 'center', paddingLeft: 18, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
-    heading: { flex: 1, fontSize: 17, color: theme.colors.text, ...Typography.default('semiBold') },
-    cancel: { padding: 18 },
+    heading: { flex: 1, minWidth: 0, fontSize: 17, color: theme.colors.text, ...Typography.default('semiBold') },
+    cancel: { minHeight: 44, minWidth: 44, paddingHorizontal: 18, paddingVertical: 12, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
     target: { minHeight: 52, justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: theme.colors.divider },
     targetLabel: { color: theme.colors.text, fontSize: 15, ...Typography.default() },
     empty: { color: theme.colors.textSecondary, fontSize: 15, padding: 18, ...Typography.default() },

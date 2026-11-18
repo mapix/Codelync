@@ -110,8 +110,10 @@ export class SourceImageAdapter {
       } catch { /* Unknown/nonterminal sources must still use the live owner path. */ }
     }
     if (fresh && this.latest?.historicalRead?.available === true && this.supportsNativeSavedHistory && this.adapter.generation?.(id) == null) {
-      const saved = await this.adapter.readHistoricalPage(id);
-      if (this.terminalSaved(saved, id)) return this.transform(saved);
+      try {
+        const saved = await this.adapter.readHistoricalPage(id);
+        if (this.terminalSaved(saved, id)) return this.transform(saved);
+      } catch { /* Unknown/nonterminal or changed saved sources must still use the live owner path. */ }
     }
     try {
       const view = fresh ? await this.adapter.freshSnapshot(id, this.context()) : await this.adapter.snapshot(id, this.context());
@@ -202,7 +204,7 @@ export async function createBoundSource(options) {
       getGeneration: () => adapter.generation(binding.source.id), assertLease: () => ownsLease && !closed && (options.assertHostLease?.() ?? true), supportsNativeProjection: true,
       recentRowLimit: ['codex', 'antigravity'].includes(binding.source.app) ? 100 : undefined,
       publishInitialHistory: !['codex', 'antigravity'].includes(binding.source.app) });
-  } catch (error) { await transport.close(); await releaseLease(); throw error; }
+  } catch (error) { await transport.close().catch(() => {}); await releaseLease().catch(() => {}); throw error; }
   const close = () => {
     if (!closeFlight) {
       closed = true; retiring = true; ownsLease = false;

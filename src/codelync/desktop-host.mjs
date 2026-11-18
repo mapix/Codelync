@@ -9,6 +9,7 @@ export class DesktopHostProcess extends EventEmitter {
   /** @param {{binary:string}} options */
   constructor(options) {
     super(); this.options = options; this.closed = false;
+    this.closing = /** @type {Promise<void>|null} */ (null);
     this.pending = /** @type {Map<string,{resolve:(value:any)=>void,reject:(error:Error)=>void,timer:ReturnType<typeof setTimeout>}>} */ (new Map());
     this.child = /** @type {import('node:child_process').ChildProcessWithoutNullStreams|null} */ (null);
   }
@@ -38,8 +39,10 @@ export class DesktopHostProcess extends EventEmitter {
   }
   /** @param {string} operation @param {Record<string,any>} [value] */
   request(operation, value = {}) {
+    if (this.closed) return Promise.reject(new BridgeError('desktop-host-unavailable', 'The remote desktop helper is unavailable.', 503));
     this.start();
     return new Promise((resolve, reject) => {
+      if (this.closed || !this.child) { reject(new BridgeError('desktop-host-unavailable', 'The remote desktop helper is unavailable.', 503)); return; }
       if (this.pending.size >= 8) { reject(new BridgeError('desktop-input-busy', 'Wait for the current desktop action.', 429)); return; }
       const id = randomUUID();
       const timer = setTimeout(() => {
@@ -47,17 +50,30 @@ export class DesktopHostProcess extends EventEmitter {
         reject(new BridgeError('desktop-operation-unknown', 'The desktop action result is unconfirmed.', 503));
       }, ['start', 'quality', 'display', 'space', 'heartbeat'].includes(operation) ? 20_000 : 5_000);
       this.pending.set(id, { resolve, reject, timer });
-      this.child?.stdin.write(JSON.stringify({ ...value, id, operation }) + '\n', error => { if (error) { clearTimeout(timer); this.pending.delete(id); reject(error); } });
+      this.child.stdin.write(JSON.stringify({ ...value, id, operation }) + '\n', error => { if (error) { clearTimeout(timer); this.pending.delete(id); reject(error); } });
     });
   }
   interrupt() { this.child?.kill('SIGTERM'); }
-  async close() {
-    if (this.closed) return; this.closed = true;
-    const child = this.child;
-    if (!child) return;
-    const done = new Promise(resolve => child.once('exit', resolve));
-    child.stdin.end();
-    const timer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-    await done; clearTimeout(timer);
+  close() {
+    if (this.closing) return this.closing;
+    this.closed = true;
+    for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new BridgeError('desktop-host-unavailable', 'The desktop helper disconnected.', 503)); }
+    this.pending.clear();
+    this.closing = (async () => {
+      const child = this.child;
+      if (!child || child.exitCode !== null || child.signalCode !== null) { this.child = null; return; }
+      await new Promise(resolve => {
+        /** @type {ReturnType<typeof setTimeout>|undefined} */ let timer;
+        const finish = () => { clearTimeout(timer); child.removeListener('exit', finish); child.removeListener('error', finish); resolve(undefined); };
+        timer = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 5_000);
+        timer.unref();
+        child.once('exit', finish);
+        child.once('error', finish);
+        try { child.stdin.end(); } catch { /* stdin may already be closed */ }
+        if (child.exitCode !== null || child.signalCode !== null) finish();
+      });
+      this.child = null;
+    })();
+    return this.closing;
   }
 }

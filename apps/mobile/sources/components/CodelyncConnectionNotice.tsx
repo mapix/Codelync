@@ -46,6 +46,7 @@ export function CodelyncConnectionNoticeView({ state, snapshot, onRetry, onSelec
     if (state.kind === 'hidden' || state.kind === 'connected') return null;
     const connecting = !failed && state.kind === 'connecting';
     const ended = state.kind === 'access-ended';
+    const retryDisabled = retrying || state.busy;
     return <View testID="codelync-mac-connection-notice" style={[styles.root, { paddingTop: topInset + 12 }]}>
         <View style={styles.heading}>
             {connecting ? <ActivityIndicator testID="codelync-mac-connecting" size="small" color={theme.colors.textSecondary} /> : null}
@@ -55,12 +56,13 @@ export function CodelyncConnectionNoticeView({ state, snapshot, onRetry, onSelec
         {!connecting ? <Text style={styles.help}>{t(ended ? 'codelyncChannels.accessEndedHelp' : 'codelyncChannels.failedHelp')}</Text> : null}
         <View style={styles.actions}>
             {state.canRetry ? <Pressable testID="codelync-retry-mac-connection" accessibilityRole="button"
-                accessibilityState={{ disabled: retrying || state.busy, busy: retrying }} disabled={retrying || state.busy}
-                style={styles.action} onPress={() => void retry()}>
+                accessibilityState={{ disabled: retryDisabled, busy: retrying }} disabled={retryDisabled}
+                style={[styles.action, { opacity: retryDisabled ? 0.45 : 1 }]} onPress={() => void retry()}>
                 <Text style={styles.actionText}>{t(retrying ? 'codelyncChannels.switching' : 'codelyncChannels.retryConnection')}</Text>
             </Pressable> : null}
             {state.canInspect && showPicker ? <PeerChannelControlView snapshot={snapshot} onSelect={onSelect} /> : null}
-            {ended || !state.canInspect ? <Pressable testID="codelync-scan-current-mac" accessibilityRole="button" style={styles.action} onPress={onScan}>
+            {ended || !state.canInspect ? <Pressable testID="codelync-scan-current-mac" accessibilityRole="button"
+                accessibilityLabel={t('codelyncChannels.scanMac')} style={styles.action} onPress={onScan}>
                 <Text style={styles.actionText}>{t('codelyncChannels.scanMac')}</Text>
             </Pressable> : null}
         </View>
@@ -68,9 +70,19 @@ export function CodelyncConnectionNoticeView({ state, snapshot, onRetry, onSelec
 }
 
 const styles = StyleSheet.create(theme => ({
-    root: { paddingHorizontal: 20, paddingBottom: 12, gap: 8, backgroundColor: theme.colors.groupped.background },
-    heading: { flexDirection: 'row', alignItems: 'center', gap: 8 }, title: { flex: 1, color: theme.colors.text, ...Typography.default('semiBold') },
-    help: { color: theme.colors.textSecondary, ...Typography.default() }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+    root: {
+        paddingHorizontal: 20,
+        paddingBottom: 12,
+        gap: 8,
+        backgroundColor: theme.colors.groupped.background,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: theme.colors.divider,
+        zIndex: 1,
+    },
+    heading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    title: { flex: 1, minWidth: 0, color: theme.colors.text, ...Typography.default('semiBold') },
+    help: { color: theme.colors.textSecondary, ...Typography.default() },
+    actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
     action: { minHeight: 44, minWidth: 44, justifyContent: 'center', paddingHorizontal: 12 },
-    actionText: { color: theme.colors.text, ...Typography.default('semiBold') },
+    actionText: { flexShrink: 1, color: theme.colors.text, ...Typography.default('semiBold') },
 }));

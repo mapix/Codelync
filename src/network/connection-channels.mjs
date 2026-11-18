@@ -357,12 +357,13 @@ export class ConnectionChannelsManager extends EventEmitter {
     entry.transport?.on?.('connected', () => {
       entry.disconnected = false;
       if (this.closed || this.entries.get(entry.kind) !== entry || !entry.channels.length) return;
+      this.cancelRetry(entry.kind);
       const verification = ++entry.verification;
       entry.confirmed = false; entry.state = 'unverified'; this.publish();
       void this.verifyEntry(entry, entry.channels[0].url).then(() => {
         // 连接再次断开后，上一代只读探针的迟到成功不能把入口伪造为 ready。
-        if (!this.closed && this.entries.get(entry.kind) === entry && !entry.cancel.signal.aborted && entry.verification === verification) { entry.state = 'ready'; this.cancelRetry(entry.kind, true); this.publish(); }
-      }, () => { this.scheduleVerification(entry); });
+        if (!this.closed && this.entries.get(entry.kind) === entry && !entry.cancel.signal.aborted && !entry.disconnected && entry.verification === verification) { entry.state = 'ready'; this.cancelRetry(entry.kind, true); this.publish(); }
+      }, () => { if (entry.verification === verification) this.scheduleVerification(entry); });
     });
   }
 

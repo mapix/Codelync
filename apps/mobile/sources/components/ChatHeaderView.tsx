@@ -7,6 +7,7 @@ import { isRunningOnMac } from '@/utils/platform';
 import { useHeaderHeight, useIsTablet } from '@/utils/responsive';
 import { layout } from '@/components/layout';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
+import { t } from '@/text';
 import { MobileGlassSurface } from './MobileGlass';
 import { BubblePressable } from './BubblePressable';
 import { GitLineChanges } from './GitLineChanges';
@@ -38,6 +39,8 @@ interface ChatHeaderViewProps {
     tintColor?: string;
     backdropVisible?: boolean;
 }
+
+const HEADER_HORIZONTAL_PADDING = 16;
 
 // The title is a control like the two beside it: same capsule, same height,
 // sized to its own text. The scrim stays underneath them all, feathering past
@@ -91,6 +94,10 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
         }).start();
     }, [backdropStrength, backdropVisible, glassEnabled]);
 
+    const hasSubtitleContent = Boolean(subtitle || gitChanges || hasExtra);
+    const titleAccessibilityLabel = onTitlePress
+        ? (subtitle ? `${title || subtitle}, ${subtitle}` : (title || ''))
+        : undefined;
     const titleBody = (
         <>
             <Text
@@ -100,12 +107,13 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
                     styles.title,
                     Platform.OS === 'web' && styles.webTitle,
                     glassEnabled && styles.mobileTitleText,
+                    glassEnabled && hasSubtitleContent && styles.mobileTitleTextCompact,
                     { color: theme.colors.header.tint, ...Typography.default('semiBold') },
                 ]}
             >
                 {title || subtitle}
             </Text>
-            {(subtitle || gitChanges || hasExtra) && (
+            {hasSubtitleContent && (
                 <View style={[styles.subtitleRow, glassEnabled && styles.mobileSubtitleRow]}>
                     {!!subtitle && (
                         <Text
@@ -148,11 +156,23 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
                 <View style={styles.contentWrapper}>
                     <View style={[styles.webContent, { height: headerHeight }]}>
                         {showBackButton && (
-                            <Pressable onPress={onBackPress} hitSlop={15} style={styles.webBackButton}>
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={t('common.back')}
+                                onPress={onBackPress}
+                                hitSlop={15}
+                                style={styles.webBackButton}
+                            >
                                 <Ionicons name="arrow-back" size={24} color={theme.colors.header.tint} />
                             </Pressable>
                         )}
-                        <Pressable style={styles.titleContainer} onPress={onTitlePress} disabled={!onTitlePress}>
+                        <Pressable
+                            accessibilityRole={onTitlePress ? 'button' : undefined}
+                            accessibilityLabel={titleAccessibilityLabel}
+                            style={styles.titleContainer}
+                            onPress={onTitlePress}
+                            disabled={!onTitlePress}
+                        >
                             {titleBody}
                         </Pressable>
                         {rightSlot ? <View style={styles.webRightSlot}>{rightSlot}</View> : null}
@@ -167,6 +187,8 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
     // hug its text — it grows with the title and stops at the inset.
     const nativeTitle = glassEnabled ? (
         <BubblePressable
+            accessibilityRole={onTitlePress ? 'button' : undefined}
+            accessibilityLabel={titleAccessibilityLabel}
             style={styles.mobileTitlePill}
             onPress={onTitlePress}
             disabled={!onTitlePress}
@@ -183,6 +205,8 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
         </BubblePressable>
     ) : (
         <BubblePressable
+            accessibilityRole={onTitlePress ? 'button' : undefined}
+            accessibilityLabel={titleAccessibilityLabel}
             style={styles.titleContainer}
             onPress={onTitlePress}
             disabled={!onTitlePress}
@@ -211,10 +235,12 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
                     <MobileHeaderScrim variant="strong" overlayOpacity={backdropStrength} />
                 </View>
             )}
-            <View style={styles.contentWrapper}>
+            <View style={[styles.contentWrapper, { paddingLeft: insets.left ?? 0, paddingRight: insets.right ?? 0 }]}>
                 <View style={[styles.content, { height: contentHeight }]}>
                     {showBackButton && (
                         <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={t('common.back')}
                             onPress={onBackPress}
                             hitSlop={10}
                             style={({ pressed }) => [styles.backButton, pressed && styles.controlPressed]}
@@ -241,7 +267,10 @@ export const ChatHeaderView: React.FC<ChatHeaderViewProps> = ({
                                 pointerEvents="box-none"
                                 style={[
                                     styles.mobileTitleOverlay,
-                                    { left: titlePillInset, right: titlePillInset },
+                                    {
+                                        left: titlePillInset + HEADER_HORIZONTAL_PADDING,
+                                        right: titlePillInset + HEADER_HORIZONTAL_PADDING,
+                                    },
                                 ]}
                             >
                                 {nativeTitle}
@@ -328,6 +357,7 @@ const styles = StyleSheet.create((theme) => ({
     },
     mobileTitlePill: {
         maxWidth: '100%',
+        minWidth: 0,
         height: MOBILE_GLASS_CONTROL_SIZE,
         borderRadius: MOBILE_GLASS_CONTROL_RADIUS,
     },
@@ -336,6 +366,8 @@ const styles = StyleSheet.create((theme) => ({
     // only wider because its content is.
     mobileTitlePillGlass: {
         width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
         height: '100%',
         borderRadius: MOBILE_GLASS_CONTROL_RADIUS,
         paddingHorizontal: 14,
@@ -361,16 +393,24 @@ const styles = StyleSheet.create((theme) => ({
     mobileTitleText: {
         width: 'auto',
         maxWidth: '100%',
+        minWidth: 0,
         textAlign: 'center',
+    },
+    mobileTitleTextCompact: {
+        fontSize: 15,
+        lineHeight: 18,
     },
     mobileSubtitleRow: {
         width: 'auto',
         maxWidth: '100%',
+        minWidth: 0,
         justifyContent: 'center',
     },
     // Two lines have to sit inside a 44pt capsule, so they are drawn a little
     // closer than they were when they floated free.
     mobileSubtitle: {
+        minWidth: 0,
+        flexShrink: 1,
         lineHeight: 14,
     },
     // The capsule is sized by its content, and a row whose width comes from its
@@ -378,6 +418,8 @@ const styles = StyleSheet.create((theme) => ({
     // zero and the path would vanish. It shrinks instead.
     mobileExtraPath: {
         flex: 0,
+        minWidth: 0,
+        flexShrink: 1,
         lineHeight: 14,
     },
     webTitle: {

@@ -19,7 +19,23 @@
 
 - 沿用现有主题：页面 `#F2F2F7`、卡片 `#FFFFFF`、正文 `#000000`、辅助文字 `#8E8E93`、强调色 `#2BACCC`、已确认状态 `#34C759`；暗色使用对应主题 token。
 - 使用 IBM Plex Sans 的标题/正文、IBM Plex Mono 的版本信息；Codelync 标识沿用现有品牌组件。页面保持单列分组，连接状态在一个完整设置行中呈现。
-- 底部导航遵守安全区，点击区域至少 48pt；设置内容可滚动，支持长文案、字体放大与横屏，不叠加重复导航标题。
+- 底部导航遵守垂直与横屏水平安全区（`left`/`right`/`bottom`），点击区域至少 48pt；长标签（如日语「リモートデスクトップ」）保持单行自适应缩放或尾部省略，不换行挤压相邻标签；设置页头部与滚动内容遵守横屏水平安全区，同时保留全宽底色与分隔线，支持长文案、字体放大与横屏，不叠加重复导航标题。
+- 顶部导航操作（默认返回、聊天返回、会话详情入口、首页新建与横屏返回悬浮按钮）提供语义角色与本地化可访问标签，图标与边框随明暗主题保持清晰对比度；会话浮层提示锚定在悬浮 header 与安全区下方，不遮挡状态栏或玻璃标题。
+- 设置中的连接行与聊天页 header 共享同源错误强调色（`textDestructive`）与扫码配对恢复入口（`onScan`）。
+- 问答补救浮层（`AgentQuestionModal`）与横幅在有键盘输入时保持滚动画布、自定义回答输入区、错误提示与提交栏处于键盘上方（`KeyboardAvoidingView` + 底部安全间距），取消/忽略/提交保持 >=44pt 点击区、对称头部宽度（适配 EN/ZH/JA）、禁用态弱化反馈及明暗主题选中/边框/错误对比度；行内问答表单（`InlineQuestionForm`）同样提供清晰的单/多选边框与主色提交态、完整的 `radio`/`checkbox`/`button` 无障碍语义，且点击选项不自动提交。
+- 会话浏览列表（`CodelyncSessions`）在空列表且处于有效发现加载阶段（非错误、非搜索空结果）时展示加载指示与文案；缓存已有条目或终端错误时不遮挡浏览；子代理展开按钮提供 `expanded` 状态与 >=44pt 点击区，项目标题与搜索框具备无障碍标签及溢出截断，可视窗口对比使用结构化字段比较而非 `JSON.stringify`。
+- 输入栏（`AgentInput`）的权限沙盒后缀（`sandboxed`）与操作按钮/状态提示在 EN/ZH-Hans/ZH-Hant/JA 下使用显式本地化文案；权限/模型/工作量/上下文芯片与发送/停止/语音控制均提供完整的无障碍角色、标签与状态（`disabled`/`expanded`/`busy`/`selected`），并在明暗主题下保持分割线、锁定态与禁用态图标的可读对比度，不新增冗余按钮或开关。
+- 会话加载条（`CodelyncSessionLoading`）、来源同步横幅（`NativeSourceBanner`）与不可用恢复页（`NativeSessionUnavailable`）的重试与返回按钮保持 >=44x44pt 点击区、完整的 `button` 语义与 `disabled`/`busy` 状态、进行中弱化透明度（`opacity`），并以一致的主题底色与细分隔线/浮层边框与正文区区分，不额外增加网络诊断或跳转按钮。
+- 原生子代理与任务面板（`CodelyncSubagents`、`CodelyncNativeTasks`、`CodelyncNativeTaskActions`）的弹窗遮罩在暗色主题下提高对比不透明度（`0.56` vs 浅色 `0.28`）并保留卡片细边框，弹窗外边距与内部滚动列表提供底部安全留白；不可用或进行中的重试、日志、输出、停止及结果检查按钮保持 >=44x44pt 点击区、明确透明度弱化（`0.45`）与 `accessibilityState` 禁用/忙碌态。
+- 聊天头部（`ChatHeaderView`）与原生子代理会话头（`SessionView`）：子代理主标题优先展示具体代理名称（`agentName` / `title`），将「来源应用 · 子代理」及分支信息置于副标题行，避免 EN/ZH/JA 三段式前缀在窄胶囊内把子代理名称截断；iOS 玻璃标题浮层在左右 `16pt` 内容边距基础上叠加 `titlePillInset`（与返回/右侧按钮保持完整间距），胶囊与副标题行具备 `minWidth: 0` 与单行尾部省略并遵守水平安全区（`left`/`right`）。
+- 首次配对/扫描引导（`OnboardingScreen`、`CodelyncScanScreen`）：支持短屏与横屏垂直滚动并遵守水平与底部安全区留白，顶部/底部间隔随内容滚动自然收起，帮助按钮（`GetHelpButton`）最小可点击尺寸为 `44x44pt`。
+- 只读模型目录弹窗（`NativeReadonlyModelCatalog`）：遮罩在暗色主题下提高对比不透明度（`0.56` vs 浅色 `0.28`）、弹窗保留细边框与垂直外边距，底部只读提示以细分隔线与列表区分，关闭与选项行保持 >=44pt 高度。
+- 消息跨会话移交（`CodelyncHandoff`）与父会话接管控制（`NativeParentControl`）：移交触发与弹窗取消按钮最小可点击尺寸为 `44x44pt`，标题单行省略（`minWidth: 0`）避免与取消按钮碰撞，暗色遮罩增强不透明度并保留弹窗细边框与垂直留白；父会话不可用重试失败提示使用主题告警色（`warningCritical`），重试按钮在忙碌/禁用态下降低透明度（`0.45`）并声明 `accessibilityState`。
+- 项目与会话活跃状态展示（`CodelyncProjectStatus`、`CodelyncSessionStatus`、`StatusDot`）：不以纯颜色区分状态，每个状态均配对可辨识的几何指示符号（实心圆点、方块/菱形角标、空心圆环）与本地化文字标签，状态容器合并播报 `accessibilityRole="text"` 与完整 `accessibilityLabel`；纯装饰性 `StatusDot` 在未提供无障碍标签时对读屏隐藏。
+- 对话中工具/工作折叠组头部（`ToolsGroupHeader`、`AgentWorkGroupHeader`）：展开与折叠交互行最小高度保持 `44pt`（`AgentWorkGroupHeader` 头部与尾部复用同一高度以维持倒置列表几何对称），提供完整 `button` 语义、文本标签与 `expanded` 状态，主计数/耗时文案使用高对比正文色与尾部对齐箭头，次要时间戳使用次级文字色与等宽数字。
+- Mac 连接状态提示条（`CodelyncConnectionNotice`）：重试与扫码入口保持 >=44pt 点击区，重试中/忙碌态对 `codelync-retry-mac-connection` 降低透明度（`0.45`）并声明 `disabled`/`busy`，顶部避让叠加 `topInset` 与会话加载/来源横幅一致，容器底部以 `hairlineWidth` 分隔线区分下方列表内容，标题与文案允许窄屏收缩折行不溢出。
+- 选择弹窗与设置分组列表（`PickerSheet`、`Item`、`ItemList`）：`PickerSheet` 限制最大高度不超过窗口 `70%` 且避让顶部安全区与横屏水平安全区，内部使用 `ScrollView` 承接 Dynamic Type 放大后的滚动，标题与选项标签支持最多两行换行、暗色遮罩增强不透明度；`Item` 为左右两列设置 `minWidth: 0`、右对齐多行详情值（最多 2 行、宽度受控）及不可挤压的右侧图标；`ItemList` 遵守横屏水平安全区与底部安全留白。
+- 通道选择器与二级子路由（`PeerChannelControlView`、`session/[id]/{files,file}`、`text-selection`、`settings/appearance`、`restore`）：`PeerChannelControlView` 的紧凑模式（`compact`）胶囊保留 `>=44pt` 高度、`paddingVertical` 与 `numberOfLines={2}` 换行及 `lineHeight`，两侧图标不可挤压（`flexShrink: 0`），避免在 XXXL 大字号或中/日双段路径状态（`Selected · Current`）下截断；各 `app/(app)/*` 二级路由遵循横屏左右与底部安全区（`useSafeAreaInsets`）、Dark Mode 输入框与选中态文字对比度、带输入页面的 `keyboardShouldPersistTaps="handled"`、`>=44x44pt` 头部/切换按钮热区以及完整的 `button`/`radio`/`selected`/`disabled` 无障碍语义。
 
 ## 所有者与操作顺序
 

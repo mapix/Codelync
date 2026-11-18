@@ -6,10 +6,18 @@ import { BridgeError } from '../errors.mjs';
 export const DESKTOP_SOURCE_APPS = Object.freeze(['codex', 'antigravity', 'claude-desktop']);
 const invalid = () => new BridgeError('invalid-source-subscriptions', 'Choose only supported desktop sources.', 400);
 
+const sameApps = (/** @type {readonly string[]} */ left, /** @type {readonly string[]} */ right) =>
+  left.length === right.length && left.every((app, index) => app === right[index]);
+
 /** @param {unknown} value @returns {string[]} */
 export function parseEnabledDesktopApps(value) {
-  if (!Array.isArray(value) || value.length > DESKTOP_SOURCE_APPS.length ||
-      value.some(app => typeof app !== 'string' || !DESKTOP_SOURCE_APPS.includes(app)) || new Set(value).size !== value.length) throw invalid();
+  if (!Array.isArray(value) || value.length > DESKTOP_SOURCE_APPS.length) throw invalid();
+  for (let index = 0; index < value.length; index++) {
+    if (!Object.hasOwn(value, index)) throw invalid();
+    const app = value[index];
+    if (typeof app !== 'string' || !DESKTOP_SOURCE_APPS.includes(app)) throw invalid();
+  }
+  if (new Set(value).size !== value.length) throw invalid();
   return DESKTOP_SOURCE_APPS.filter(app => value.includes(app));
 }
 
@@ -42,7 +50,7 @@ export class DesktopSourceSubscriptions {
   /** @param {string[]} enabled @param {boolean} known @param {boolean} configured */
   #apply(enabled, known, configured) {
     for (const app of DESKTOP_SOURCE_APPS) if ((known && enabled.includes(app)) !== (this.#known && this.#enabled.includes(app))) this.#appRevisions.set(app, this.appRevision(app) + 1);
-    if (known !== this.#known || JSON.stringify(enabled) !== JSON.stringify(this.#enabled)) this.#revision++;
+    if (known !== this.#known || !sameApps(enabled, this.#enabled)) this.#revision++;
     this.#enabled = enabled; this.#known = known; this.#configured = configured; return this.snapshot();
   }
   /** Safe reload never writes defaults or overwrites an unreadable file. */
@@ -51,7 +59,14 @@ export class DesktopSourceSubscriptions {
       try {
         const value = await this.read(this.path);
         if (value === null) return this.#apply([...DESKTOP_SOURCE_APPS], true, false);
-        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'enabledApps,version') throw invalid();
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
+        const proto = Object.getPrototypeOf(value);
+        if (proto !== Object.prototype && proto !== null) throw invalid();
+        const keys = Object.getOwnPropertyNames(value);
+        if (keys.length !== 2 || !Object.hasOwn(value, 'version') || !Object.hasOwn(value, 'enabledApps')) throw invalid();
+        const versionDesc = Object.getOwnPropertyDescriptor(value, 'version');
+        const appsDesc = Object.getOwnPropertyDescriptor(value, 'enabledApps');
+        if (!versionDesc || !appsDesc || versionDesc.get || appsDesc.get) throw invalid();
         const record = /** @type {Value} */ (value);
         if (record.version !== 1) throw invalid();
         return this.#apply(parseEnabledDesktopApps(record.enabledApps), true, true);
@@ -59,10 +74,10 @@ export class DesktopSourceSubscriptions {
     });
   }
   /** Persist intent before the synchronous source gate changes. @param {unknown} value */
-  setEnabledApps(value) {
+  async setEnabledApps(value) {
     const enabled = parseEnabledDesktopApps(value);
     return this.#serial(async () => {
-      if (this.#known && this.#configured && JSON.stringify(enabled) === JSON.stringify(this.#enabled)) return this.snapshot();
+      if (this.#known && this.#configured && sameApps(enabled, this.#enabled)) return this.snapshot();
       try { await this.write(this.path, { version: 1, enabledApps: enabled }); }
       catch { throw new BridgeError('source-subscriptions-save-failed', 'The desktop source choices could not be saved.', 503); }
       return this.#apply(enabled, true, true);

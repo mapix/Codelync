@@ -49,24 +49,29 @@ export class NotificationDispatcher {
   }
   async drain() {
     if (this.closed || !this.options.sender) return;
+    let dirty = false;
     for (const event of [...this.pending]) {
+      if (this.closed || !this.options.sender) break;
       const device = this.options.devices.notificationDevices().find(d => d.id === event.deviceId);
       if (!device || !['development', 'production'].includes(device.push.environment)
         || !this.options.sender.multiEnvironment && device.push.environment !== this.options.sender.environment
-        || Date.now() - event.createdAt > 3600000 || event.attempts >= 3) { this.pending = this.pending.filter(p => p !== event); continue; }
-      if (device.presence?.active && device.presence.sessionId === event.sessionId && Date.now() - device.presence.at < 45000) { this.pending = this.pending.filter(p => p !== event); this.delivered.push(event.deliveryId); continue; }
-      event.attempts++; await this.save();
+        || Date.now() - event.createdAt > 3600000 || event.attempts >= 3) { this.pending = this.pending.filter(p => p !== event); dirty = true; continue; }
+      if (device.presence?.active && device.presence.sessionId === event.sessionId && Date.now() - device.presence.at < 45000) { this.pending = this.pending.filter(p => p !== event); this.delivered.push(event.deliveryId); dirty = true; continue; }
+      event.attempts++; await this.save(); dirty = false;
+      if (this.closed || !this.options.sender) break;
       try {
         // 发送前再次验证设备授权，撤销操作不会复用旧设备 token。
-        if (!this.options.devices.notificationDevices().some(d => d.id === event.deviceId)) continue;
-        const result = await this.options.sender.send(device.push.token, event, device.push.environment);
-        if (result.invalidToken) await this.options.devices.disablePush(device.id);
+        const liveDevice = this.options.devices.notificationDevices().find(d => d.id === event.deviceId);
+        if (!liveDevice) { this.pending = this.pending.filter(p => p !== event); await this.save(); continue; }
+        const result = await this.options.sender.send(liveDevice.push.token, event, liveDevice.push.environment);
+        if (result.invalidToken) await this.options.devices.disablePush(liveDevice.id);
         if (result.ok || !result.retry) { this.pending = this.pending.filter(p => p !== event); this.delivered.push(event.deliveryId); }
         if (!result.ok) this.options.onDiagnostic?.('apns-delivery-pending');
       } catch { this.options.onDiagnostic?.('apns-delivery-pending'); }
       await this.save();
     }
-    this.delivered = this.delivered.slice(-4096); await this.save();
+    if (this.delivered.length > 4096) { this.delivered = this.delivered.slice(-4096); dirty = true; }
+    if (dirty) await this.save();
   }
   async close() { this.closed = true; if (this.timer) clearInterval(this.timer); await this.tail.catch(() => {}); }
 }

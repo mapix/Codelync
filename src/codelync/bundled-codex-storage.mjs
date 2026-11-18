@@ -5,6 +5,13 @@ import { resolveCodelyncProjects } from './project-identity.mjs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+/** @param {unknown} offset @returns {number} */
+function normalizeOffset(offset) {
+  const value = Number(offset);
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.trunc(value), 0), 100000) + 0;
+}
+
 /** Mac package index adapter: asynchronous worker IO, no external Python runtime. */
 export class BundledCodexStorage extends SessionStorage {
   /** @param {{codex?:string,zcode?:string,python?:string,loadIndex?:(offset:number)=>Promise<Record<string,any>[]>,signature?:()=>Promise<string>,now?:()=>number}} [options] */
@@ -27,15 +34,16 @@ export class BundledCodexStorage extends SessionStorage {
   /** @param {'codex'|'zcode'} app @param {number} [offset] @returns {Promise<Record<string,any>[]>} */
   async list(app, offset = 0) {
     if (app !== 'codex') throw new BridgeError('unsupported-source', 'The Mac package exposes Codex sessions.');
-    const signature = await this.signature(), saved = this.cache.get(offset);
+    const pageOffset = normalizeOffset(offset);
+    const signature = await this.signature(), saved = this.cache.get(pageOffset);
     if (saved?.signature === signature && saved.until > this.now()) return structuredClone(saved.rows);
-    const key = signature + ':' + offset;
+    const key = signature + ':' + pageOffset;
     let flight = this.flights.get(key);
     if (!flight) {
-      const version = (this.versions.get(offset) ?? 0) + 1; this.versions.set(offset, version);
-      const operation = this.loader(offset).then(rows => {
-        if (this.versions.get(offset) === version) {
-          this.cache.delete(offset); this.cache.set(offset, { signature, until: this.now() + 60000, rows });
+      const version = (this.versions.get(pageOffset) ?? 0) + 1; this.versions.set(pageOffset, version);
+      const operation = this.loader(pageOffset).then(rows => {
+        if (this.versions.get(pageOffset) === version) {
+          this.cache.delete(pageOffset); this.cache.set(pageOffset, { signature, until: this.now() + 60000, rows });
           while (this.cache.size > 8) {
             const oldest = this.cache.keys().next().value;
             if (oldest === undefined) break;
@@ -48,12 +56,34 @@ export class BundledCodexStorage extends SessionStorage {
     }
     return structuredClone(await flight);
   }
+  /** @param {number} offset @returns {import('node:events').EventEmitter} */
+  createIndexWorker(offset) {
+    return new Worker(new URL('./codex-index-worker.mjs', import.meta.url), { execArgv: [], workerData: { root: this.roots.codex, offset, now: this.now() } });
+  }
   /** @param {number} offset @returns {Promise<Record<string,any>[]>} */
   async readIndex(offset) {
+    const pageOffset = normalizeOffset(offset);
     const rows = await new Promise((resolve, reject) => {
-      const worker = new Worker(new URL('./codex-index-worker.mjs', import.meta.url), { execArgv: [], workerData: { root: this.roots.codex, offset, now: this.now() } });
-      worker.once('message', value => value.ok ? resolve(value.rows) : reject(new BridgeError('session-store-unavailable', 'The Codex index could not be read.')));
-      worker.once('error', () => reject(new BridgeError('session-store-unavailable', 'The Codex index worker failed.')));
+      const worker = this.createIndexWorker(pageOffset);
+      let settled = false;
+      /** @param {()=>void} apply */
+      const finish = (apply) => {
+        if (settled) return;
+        settled = true;
+        worker.off('message', onMessage);
+        worker.off('error', onError);
+        worker.off('exit', onExit);
+        apply();
+      };
+      /** @param {Record<string,any>|null|undefined} value */
+      const onMessage = (value) => finish(() => value?.ok === true && Array.isArray(value.rows)
+        ? resolve(value.rows)
+        : reject(new BridgeError('session-store-unavailable', 'The Codex index could not be read.')));
+      const onError = () => finish(() => reject(new BridgeError('session-store-unavailable', 'The Codex index worker failed.')));
+      const onExit = () => finish(() => reject(new BridgeError('session-store-unavailable', 'The Codex index worker exited before returning a result.')));
+      worker.once('message', onMessage);
+      worker.once('error', onError);
+      worker.once('exit', onExit);
     });
     return resolveCodelyncProjects(rows, this.roots.codex);
   }

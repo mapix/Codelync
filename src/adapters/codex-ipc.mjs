@@ -10,10 +10,19 @@ import { validateNativeResponse } from './codex-response-schema.mjs';
 /** @typedef {{resolve:(value:Frame)=>void,reject:(error:Error)=>void,timer:ReturnType<typeof setTimeout>,method:string,targetClientId?:string}} Pending */
 /** @typedef {{callbacks:Set<(frame:Frame)=>void>,automaticCallbacks?:Set<(frame:Frame)=>void>,owner:Owner|null}} Subscription */
 
+const MAX_COMPLETED_COMMANDS = 512;
+
+export const SUPPORTED_CODEX_STREAM_STATE_VERSIONS = Object.freeze(new Set([11, 13]));
+
+/** @param {unknown} version */
+export function isSupportedCodexStreamVersion(version) {
+  return typeof version === 'number' && SUPPORTED_CODEX_STREAM_STATE_VERSIONS.has(version);
+}
+
 const VERSIONS = Object.freeze({
   initialize: 0,
   'thread-owner-discovery': 1,
-  'thread-stream-state-changed': 11,
+  'thread-stream-state-changed': 13,
   'thread-stream-following-changed': 1,
   'thread-stream-following-status-requested': 1,
   'thread-follower-start-turn': 2,
@@ -41,10 +50,17 @@ const INBOUND_VERSIONS = Object.freeze({
   'thread-follower-compact-thread': 1,
   'thread-follower-update-daybreak': 1,
   'thread-follower-edit-last-user-turn': 2,
-  'thread-follower-set-queued-follow-ups-state': 1,
+  'thread-follower-set-queued-follow-ups-state': 3,
   'thread-follower-remove-queued-message': 1,
   'thread-follower-clear-queued-messages': 1,
-  'thread-queued-followups-changed': 2,
+  'thread-queued-followups-changed': 3,
+});
+
+/** @type {Record<string, readonly number[]>} */
+const COMPATIBLE_INBOUND_VERSIONS = Object.freeze({
+  'thread-stream-state-changed': [11, 13],
+  'thread-follower-set-queued-follow-ups-state': [1, 3],
+  'thread-queued-followups-changed': [2, 3],
 });
 
 /** Native client request-version rules, including the supported local legacy interrupt.
@@ -52,8 +68,12 @@ const INBOUND_VERSIONS = Object.freeze({
 function matchesNativeRequestVersion(frame) {
   const version = frame.version ?? 0;
   const method = /** @type {keyof typeof INBOUND_VERSIONS} */ (frame.method);
+  const delta = frame.hostId != null && method.startsWith('thread-follower-') ? 1 : 0;
+  if (Object.hasOwn(COMPATIBLE_INBOUND_VERSIONS, method)) {
+    return COMPATIBLE_INBOUND_VERSIONS[method].some((base) => version === base + delta);
+  }
   const base = Object.hasOwn(INBOUND_VERSIONS, method) ? INBOUND_VERSIONS[method] : 0;
-  const expected = frame.hostId != null && method.startsWith('thread-follower-') ? base + 1 : base;
+  const expected = base + delta;
   return version === expected || frame.hostId == null && method === 'thread-follower-interrupt-turn' && version === 3;
 }
 
@@ -81,7 +101,7 @@ export class CodexIpcAdapter {
     /** @type {Map<string,Owner>} */ this.owners = new Map();
     /** @type {Map<string,Subscription>} */ this.subscriptions = new Map();
     /** @type {Map<string,Promise<void>>} */ this.attaching = new Map();
-    /** @type {Map<string,{fingerprint:string,promise:Promise<Frame>}>} */ this.commands = new Map();
+    /** @type {Map<string,{fingerprint:string,promise:Promise<Frame>,settled:boolean,outcomeKnown:boolean}>} */ this.commands = new Map();
     this.disposed = false;
   }
 
@@ -108,10 +128,12 @@ export class CodexIpcAdapter {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => socket.destroy(new BridgeError('codex-connect-timeout', 'Codex IPC connection timed out.', 503)), this.timeoutMs);
       socket.once('connect', () => { clearTimeout(timer); resolve(undefined); });
-      socket.once('error', (error) => { clearTimeout(timer); reject(error); });
-      socket.once('close', () => { clearTimeout(timer); reject(new BridgeError('codex-disconnected', 'Codex IPC closed before connection was established.', 503)); });
+      socket.once('error', (error) => { clearTimeout(timer); reject(this.disposed ? new BridgeError('adapter-disposed', 'Codex adapter is disposed.', 503) : error); });
+      socket.once('close', () => { clearTimeout(timer); reject(this.disposed ? new BridgeError('adapter-disposed', 'Codex adapter is disposed.', 503) : new BridgeError('codex-disconnected', 'Codex IPC closed before connection was established.', 503)); });
     });
+    if (this.disposed) { socket.destroy(); throw new BridgeError('adapter-disposed', 'Codex adapter is disposed.', 503); }
     const response = await this.request('initialize', { clientType: 'agent-session-bridge' });
+    if (this.disposed) { socket.destroy(); throw new BridgeError('adapter-disposed', 'Codex adapter is disposed.', 503); }
     if (typeof response.result?.clientId !== 'string' || !response.result.clientId) {
       socket.destroy();
       throw new BridgeError('codex-protocol-error', 'Codex IPC returned no client identity.', 502);
@@ -224,7 +246,10 @@ export class CodexIpcAdapter {
     if (!subscription || frame.params?.hostId !== this.hostId || frame.sourceClientId !== subscription.owner?.ownerClientId) return;
     if (frame.targetClientIds != null && (!Array.isArray(frame.targetClientIds) || !frame.targetClientIds.includes(this.clientId))) return;
     if (frame.method !== 'thread-stream-state-changed' && frame.method !== 'thread-stream-following-changed') return;
-    if (frame.version !== VERSIONS[/** @type {keyof typeof VERSIONS} */ (frame.method)]) {
+    const validVersion = frame.method === 'thread-stream-state-changed'
+      ? isSupportedCodexStreamVersion(frame.version)
+      : frame.version === VERSIONS[/** @type {keyof typeof VERSIONS} */ (frame.method)];
+    if (!validVersion) {
       throw new BridgeError('codex-version-mismatch', 'Codex desktop IPC stream version is unsupported.', 502);
     }
     if (frame.method === 'thread-stream-state-changed' && !['snapshot', 'patches'].includes(frame.params?.change?.type)) {
@@ -246,6 +271,7 @@ export class CodexIpcAdapter {
 
   /** @param {keyof typeof VERSIONS} method @param {Frame} params @param {string} [targetClientId] @returns {Promise<Frame>} */
   request(method, params, targetClientId) {
+    if (this.disposed) return Promise.reject(Object.assign(new BridgeError('adapter-disposed', 'Codex adapter is disposed.', 503), { effectMayHaveOccurred: false }));
     const requestId = randomUUID();
     const remoteHost = method.startsWith('thread-follower-') && this.hostId !== 'local' ? this.hostId : undefined;
     return new Promise((resolve, reject) => {
@@ -391,19 +417,47 @@ export class CodexIpcAdapter {
     const prior = this.commands.get(key);
     if (prior) {
       if (prior.fingerprint !== fingerprint) return Promise.reject(new BridgeError('command-conflict', 'A command ID cannot be reused for different input.', 409));
+      this.commands.delete(key); this.commands.set(key, prior);
       return prior.promise;
     }
+    const entry = { fingerprint, promise: /** @type {Promise<Frame>} */ (/** @type {unknown} */ (null)), settled: false, outcomeKnown: false };
     const promise = (async () => {
       let owner;
       try { owner = await this.routingOwner(sessionId); }
       catch (error) { Object.assign(/** @type {object} */ (error), { effectMayHaveOccurred: false }); throw error; }
-      if (!owner) throw new BridgeError('codex-owner-unavailable', 'An existing desktop owner could not be confirmed for this session.', 409);
+      if (!owner) throw Object.assign(new BridgeError('codex-owner-unavailable', 'An existing desktop owner could not be confirmed for this session.', 409), { effectMayHaveOccurred: false });
       // 上层 guard 之后 discovery 仍可能发现另一个 owner；旧动作必须固定原 epoch，不能随发现结果换目标。
-      if (expectedGeneration != null && `${owner.hostId}:${owner.ownerClientId}` !== expectedGeneration) throw new BridgeError('source-epoch-changed', 'The original owner changed before native dispatch.', 409);
+      if (expectedGeneration != null && `${owner.hostId}:${owner.ownerClientId}` !== expectedGeneration) {
+        throw Object.assign(new BridgeError('source-epoch-changed', 'The original owner changed before native dispatch.', 409), { effectMayHaveOccurred: false });
+      }
       return this.request(method, params, owner.ownerClientId);
     })();
-    this.commands.set(key, { fingerprint, promise });
+    entry.promise = promise;
+    this.commands.set(key, entry);
+    promise.then(
+      () => { entry.settled = true; entry.outcomeKnown = true; this.pruneCommands(); },
+      (error) => {
+        entry.settled = true;
+        entry.outcomeKnown = error instanceof BridgeError && (error.code === 'codex-request-rejected' || /** @type {BridgeError & {effectMayHaveOccurred?:boolean}} */ (error).effectMayHaveOccurred === false);
+        this.pruneCommands();
+      },
+    );
     return promise;
+  }
+
+  /** Bound settled known-outcome command history without evicting in-flight or unknown-outcome ops. */
+  pruneCommands() {
+    let completed = 0;
+    for (const entry of this.commands.values()) {
+      if (entry.settled && entry.outcomeKnown) completed += 1;
+    }
+    if (completed <= MAX_COMPLETED_COMMANDS) return;
+    for (const [key, entry] of this.commands) {
+      if (!entry.settled || !entry.outcomeKnown) continue;
+      this.commands.delete(key);
+      completed -= 1;
+      if (completed <= MAX_COMPLETED_COMMANDS) break;
+    }
   }
 
   /** @param {string} sessionId @param {string} text @param {string} commandId @param {string|null} [expectedGeneration] */
@@ -491,13 +545,23 @@ export class CodexIpcAdapter {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    const socket = this.socket;
     for (const subscription of this.subscriptions.values()) {
-      if (subscription.owner && this.socket && !this.socket.destroyed) {
+      if (subscription.owner && socket && !socket.destroyed) {
         try { this.follow(subscription.owner, false); } catch { /* 断连时原 owner 自动移除 follower。 */ }
       }
     }
+    this.socket = null;
+    this.clientId = 'initializing-client';
+    this.headerOffset = 0; this.frameBody = null; this.bodyOffset = 0;
     this.subscriptions.clear();
-    this.socket?.destroy();
+    this.owners.clear();
+    this.attaching.clear();
+    const error = new BridgeError('adapter-disposed', 'Codex adapter is disposed.', 503);
+    for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
+    this.pending.clear();
+    socket?.destroy();
+    if (socket) this.emitStatus('disconnected', undefined, error.message);
   }
 }
 

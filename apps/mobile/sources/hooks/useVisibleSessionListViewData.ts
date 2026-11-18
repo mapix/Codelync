@@ -24,7 +24,7 @@ export function useVisibleSessionListViewData(): SessionListViewItem[] | null {
     const hideArchivedSessions = useSetting('hideInactiveSessions');
 
     return React.useMemo(() => {
-        if (!data) {
+        if (!data || !hideArchivedSessions) {
             return data;
         }
 
@@ -32,11 +32,9 @@ export function useVisibleSessionListViewData(): SessionListViewItem[] | null {
         const visibleProjectSources = new Set<'rig' | 'happy'>();
         data.forEach((item, index) => {
             if (item.type !== 'project') return;
-            const project = hideArchivedSessions
-                ? filterProjectGroupSessions(item.project, (session) => !session.archived)
-                : item.project;
+            const project = filterProjectGroupSessions(item.project, (session) => !session.archived);
             if (project) {
-                visibleProjects.set(index, { ...item, project });
+                visibleProjects.set(index, project === item.project ? item : { ...item, project });
                 visibleProjectSources.add(item.source);
             }
         });

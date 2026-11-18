@@ -315,10 +315,14 @@ export class AntigravityBackend {
     if (this.disposed || !this.indexHost || !this.indexGeneration || !this.summaryStream) return;
     const matching = change.scope?.hostId === this.indexHost && change.scope?.generation === this.indexGeneration
       && this.generation() === this.indexGeneration && this.hostId() === this.indexHost;
-    const ids = [...new Set([...Object.keys(this.baseResidentSummaries), ...(Array.isArray(change.changedIds) ? change.changedIds : [])])];
+    const deleted = Array.isArray(change.deletedIds) ? change.deletedIds : [];
+    const ids = [...new Set([...Object.keys(this.baseResidentSummaries), ...(Array.isArray(change.changedIds) ? change.changedIds : []), ...deleted])];
     this.summaryRead = matching ? this.summaryStream.getReplica(ids, { expectedHostId: this.indexHost, generation: this.indexGeneration }) : null;
     if (this.summaryProofMatches(this.summaryRead, this.indexHost, this.indexGeneration)) {
-      for (const id of ids) if (!Object.hasOwn(this.baseResidentSummaries, id) && this.summaryRead?.states?.[id] === 'ready' && record(this.summaryRead.headers?.[id])) this.baseResidentSummaries[id] = structuredClone(this.summaryRead.headers[id]);
+      for (const id of ids) {
+        if (this.summaryRead?.states?.[id] === 'deleted') delete this.baseResidentSummaries[id];
+        else if (!Object.hasOwn(this.baseResidentSummaries, id) && this.summaryRead?.states?.[id] === 'ready' && record(this.summaryRead.headers?.[id])) this.baseResidentSummaries[id] = structuredClone(this.summaryRead.headers[id]);
+      }
     }
     this.rebuildActivity(true);
     this.publishCachedStatus();
@@ -331,10 +335,14 @@ export class AntigravityBackend {
     const rich = this.summaryProofMatches(read, hostId, generation);
     /** @type {Value} */ const summaries = Object.create(null);
     for (const [id, base] of Object.entries(this.baseResidentSummaries)) {
-      if (rich && read?.states?.[id] === 'deleted') continue;
+      if (rich && read?.states?.[id] === 'deleted') { delete this.baseResidentSummaries[id]; continue; }
       const ready = rich && read?.states?.[id] === 'ready' && record(read.headers?.[id]);
       summaries[id] = { ...base, ...(ready ? read.headers[id] : {}), nativeSummaryAvailable: ready,
         nativeActivityInvalidated: !ready && (invalidated || rich), nativeObservedAt: ready ? read.captures?.[id] ?? read.observedAt : this.indexCapturedAt };
+      if (ready && (!base.trajectoryId || !summaries[id].trajectoryId || base.trajectoryId === summaries[id].trajectoryId)
+          && Number.isSafeInteger(base.stepCount) && (!Number.isSafeInteger(summaries[id].stepCount) || base.stepCount > summaries[id].stepCount)) {
+        summaries[id].stepCount = base.stepCount;
+      }
       if (ready) {
         summaries[id].killed = read.headers[id].killed ?? false;
         summaries[id].interrupted = read.headers[id].interrupted ?? false;
@@ -370,7 +378,10 @@ export class AntigravityBackend {
         ...(proofIds.length ? { liveSummaryProof: { ...read?.liveProof }, proofIds } : {}) });
     }
     this.activities = activities;
-    this.indexHints = new Map(Object.entries(summaries).map(([id, value]) => [id, JSON.stringify([value.trajectoryId ?? null, value.lastModifiedTime ?? null, value.stepCount ?? null])]));
+    this.indexHints = new Map(Object.entries(summaries).map(([id, value]) => [id, JSON.stringify([
+      value.trajectoryId ?? null, value.lastModifiedTime ?? null, value.stepCount ?? null,
+      value.status ?? null, value.killed === true, value.interrupted === true,
+      value.latestExecutorTerminationReason ?? 0, Array.isArray(value.waitingSteps) ? value.waitingSteps.length : 0])]));
     this.indexSemanticStamp = createHash('sha256').update(JSON.stringify([antigravityCatalogueSemanticStamp(summaries, [hostId, generation]),
       rich ? read?.streamEpoch : null, rich ? read?.revision : null, [...activities].map(([id, value]) => [id, value.aggregateActivity.digest])])).digest('hex');
   }
@@ -490,7 +501,12 @@ export class AntigravityBackend {
       if (!Array.isArray(reply.steps) || !reply.steps.length || reply.steps.length > MAX_STEPS) throw new BridgeError('antigravity-invalid-response', 'The native suffix does not match its observed offset/count.', 503);
       await this.list({ history: false, fresh: true, expectedHostId: context.expectedHostId });
       if (this.generation() !== owner) throw new BridgeError('source-epoch-changed', 'The original owner changed during the native suffix read.', 409);
-      const current = this.residentSummaries[id];
+      let current = this.residentSummaries[id];
+      if (record(current) && current.trajectoryId === summary.trajectoryId && Number.isSafeInteger(current.stepCount) && current.stepCount < offset + reply.steps.length) {
+        await this.list({ history: false, fresh: true, expectedHostId: context.expectedHostId });
+        if (this.generation() !== owner) throw new BridgeError('source-epoch-changed', 'The original owner changed during the native suffix read.', 409);
+        current = this.residentSummaries[id];
+      }
       if (!record(current) || current.trajectoryId !== summary.trajectoryId || !Number.isSafeInteger(current.stepCount) || current.stepCount < offset + reply.steps.length) throw new BridgeError('antigravity-invalid-response', 'The native index did not confirm the suffix boundary.', 503);
       const view = projectAntigravityTrajectory(id, { trajectory: { trajectoryId: summary.trajectoryId, cascadeId: id, steps: reply.steps, metadata: summary.trajectoryMetadata },
         status: current.status, numTotalSteps: current.stepCount, nativeStepOffset: offset }, owner);

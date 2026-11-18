@@ -74,6 +74,8 @@ selection retires all loser probes and their late results.
 Tiny response bodies are limited to 4 KiB and manifests to 16 KiB. Oversized
 streamed replies are cancelled. If a proved route's manifest fails, continue to
 the next already proved eligible candidate instead of requesting every manifest.
+When manual discovery returns a fresh channels manifest, skip re-probing same-kind
+channel URLs that already failed in the current selection's initial probe batch.
 Plain proxy 401/403 responses remain route failures. Only a sealed, authenticated
 Mac revocation may report ended access. After the bounded retry burst, expose
 Retry and same-Mac location recovery; foreground/socket recovery can start a new
@@ -90,6 +92,9 @@ Cold socket initialization binds the saved manual intent before its first send.
 Scanning the same v2 Mac key uses its channels only as location hints and validates
 the original peer/account/device through recovery. It does not exchange another
 invitation, generate keys or fall back to re-pairing on a verification failure.
+Pairing validation and passive route completion compare canonicalized pairing
+URLs and normalized server origins (including IPv6 loopback `[::1]`), and
+in-flight pairing requests clear only their own active flight entry on settlement.
 
 ## Verification
 

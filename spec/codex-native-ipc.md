@@ -88,6 +88,9 @@ only subscribed sessions. A newly connected IPC client retries missing owner
 discovery for selected subscriptions, so a transient owner handoff can finish.
 Disconnection fails pending operations; explicit
 reconnection restores read subscriptions, but never replays mutation requests.
+Disposing the adapter synchronously clears active subscriptions, discovered owner
+caches, pending attachment flights and partial frame buffers, clears pending
+request timers, and rejects in-flight requests with `adapter-disposed`.
 
 - `send(sessionId,text,commandId)`: follower-start-turn v2, with
   `{conversationId,turnStart:{request:{threadId,input,clientUserMessageId},
@@ -123,8 +126,11 @@ reconnection restores read subscriptions, but never replays mutation requests.
 Commands are keyed by session + commandId. Repeating identical input returns
 the same promise. Reusing a key for different input fails. A timeout or lost
 response is an unknown outcome and is never retried automatically, including
-after disconnect. This in-memory adapter deduplication complements the server's
-durable command store; it does not promise cross-process exactly-once delivery.
+after disconnect. Completed known-outcome command entries may be bounded in LRU
+order (retaining up to 512 recent entries), whereas in-flight pending and
+unknown-outcome command entries are never evicted. This in-memory adapter
+deduplication complements the server's durable command store; it does not promise
+cross-process exactly-once delivery.
 
 ### Local send regression (2026-10-31)
 
@@ -186,7 +192,16 @@ append retains the source stamp only while canonical file/header/index membershi
 is unchanged and retained captured-byte hashes still match. Revalidation is
 bounded to at most eight captured windows per source; expired proof requires a
 fresh source capture. It does not claim that unread portions were hashed. An
-incomplete trailing record remains outside the committed byte boundary. Reads never navigate
+incomplete trailing record remains outside the committed byte boundary. Saved
+JSONL headers and backward JSONL lines require valid UTF-8 (rejecting invalid
+or truncated UTF-8 sequences inside committed lines as invalid records/headers,
+and rejecting unterminated short headers as `codex-history-header-invalid`);
+backward page reads verify the preceding byte at `start - 1` so complete
+records beginning exactly at a `maxPageBytes` boundary are never skipped and
+empty-record page starts remain newline-aligned. Read-only SQLite metadata and
+index reads apply a bounded busy timeout and map busy locks, corrupt/non-database
+files and missing-WAL/unopenable stores to explicit unavailable/busy/invalid
+codes without mutating or repairing Desktop files. Reads never navigate
 Desktop, resume a runtime or replay a mutation.
 
 The backend's conditional `supportsNativeSavedHistory` and `readHistoricalPage`
@@ -208,7 +223,9 @@ and `task_started` are nonterminal. Row completion, tool output, timestamps and
 message recency cannot establish a terminal observation or idle state. An appended
 new task marker invalidates terminal fast preflight even when the data source
 stamp remains stable. A verified terminal saved child may avoid unavailable
-owner discovery; unknown/nonterminal children retain the original live path.
+owner discovery; unknown/nonterminal children retain the original live path, and
+saved-history read errors during snapshot/fresh-snapshot reads fall through to
+that live owner path without returning stale cached state.
 
 Acceptance covers exact original Desktop index/header/parent proof, bounded
 selected tail, explicit older pages, source/path/append/release races, original
@@ -342,8 +359,9 @@ Uncorrelated functionCallOutput bootstrap content remains hidden. A pending
 public input row is removed when its explicit opening userMessage arrives.
 Native `steeringUserMessage` exposes only its public input and delivery status;
 restoreMessage context is never projected. When a matching server userMessage
-exists, serverUserMessageId/clientUserMessageId correlation prevents duplicate
-rows for the same accepted steering input.
+exists, serverUserMessageId/clientUserMessageId correlation (tracking both each
+candidate's `sourceId` and mapped `row.id` during projection deduplication)
+prevents duplicate rows for the same accepted steering input.
 The runtime script can resume known complete receipts without replay and
 accepts an explicit `--new-stream-attempt` only after a failed/complete previous
 attempt and a confirmed dead test child; it preserves prior attempt evidence.

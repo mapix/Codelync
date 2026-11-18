@@ -229,12 +229,37 @@ async function performSelection(id: string, explicit: boolean, discovered?: Peer
             if (wanted.mode === 'automatic') result = await admitted(batch.flights, probeValue);
             else {
                 const preferred = batch.flights.find(flight => flight.channel.id === wanted.channelId && flight.channel.kind === wanted.kind);
-                if (preferred) { try { result = await admitted([preferred], probeValue); } catch { /* Same-kind probes already run. */ } }
-                if (!result) { try { result = await admitted(batch.flights.filter(flight => flight !== preferred && flight.channel.kind === wanted.kind), probeValue); } catch { /* Other kinds may only discover a fresh same-kind route. */ } }
+                const otherSameKind = batch.flights.filter(flight => flight !== preferred && flight.channel.kind === wanted.kind);
+                const otherKinds = batch.flights.filter(flight => flight.channel.kind !== wanted.kind);
+                const sameKindErrors: unknown[] = [];
+                const recordSameKindError = (error: unknown) => {
+                    if (error instanceof AggregateError) sameKindErrors.push(...error.errors);
+                    else sameKindErrors.push(error);
+                };
+                if (preferred) {
+                    try { result = await admitted([preferred], probeValue); }
+                    catch (error) { recordSameKindError(error); if (abort.signal.aborted) throw error; }
+                }
+                if (!result && otherSameKind.length) {
+                    try { result = await admitted(otherSameKind, probeValue); }
+                    catch (error) { recordSameKindError(error); if (abort.signal.aborted) throw error; }
+                }
                 if (!result) {
-                    const discovery = await admitted(batch.flights, probeValue), sameKind = discovery.channels.filter(channel => channel.kind === wanted.kind);
+                    if (!otherKinds.length) {
+                        throw sameKindErrors.length === 1 ? sameKindErrors[0] : new AggregateError(sameKindErrors.length ? sameKindErrors : [Error('The route is unavailable')]);
+                    }
+                    const discovery = await admitted(otherKinds, probeValue);
+                    const sameKind = discovery.channels.filter(channel => channel.kind === wanted.kind);
                     if (!sameKind.length) throw Error('The requested connection kind is unavailable on this Mac');
-                    const refreshed = { ...intent, peer: { ...intent.peer, channels: discovery.channels } }, freshBatch = concurrentProbes(sameKind, refreshed, abort.signal);
+                    const triedSameKindUrls = new Set(
+                        [...(preferred ? [preferred] : []), ...otherSameKind].map(flight => flight.channel.url)
+                    );
+                    const freshSameKind = sameKind.filter(channel => !triedSameKindUrls.has(channel.url));
+                    if (!freshSameKind.length) {
+                        throw sameKindErrors.length === 1 ? sameKindErrors[0] : new AggregateError(sameKindErrors.length ? sameKindErrors : [Error('The route is unavailable')]);
+                    }
+                    const refreshed = { ...intent, peer: { ...intent.peer, channels: discovery.channels } };
+                    const freshBatch = concurrentProbes(freshSameKind, refreshed, abort.signal);
                     try { result = await admitted(freshBatch.flights, refreshed); } finally { freshBatch.cancel(); }
                 }
             }

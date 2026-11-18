@@ -140,6 +140,13 @@ export const InlineQuestionForm = React.memo<InlineQuestionFormProps>((props) =>
                                             onPress={() => handleOptionToggle(question, optionIndex)}
                                             disabled={!canInteract}
                                             activeOpacity={0.7}
+                                            accessibilityRole={question.multiSelect ? 'checkbox' : 'radio'}
+                                            accessibilityLabel={option.description ? `${option.label}, ${option.description}` : option.label}
+                                            accessibilityState={{
+                                                checked: isSelected,
+                                                selected: isSelected,
+                                                disabled: !canInteract,
+                                            }}
                                         >
                                             {question.multiSelect ? (
                                                 <View style={[
@@ -181,14 +188,23 @@ export const InlineQuestionForm = React.memo<InlineQuestionFormProps>((props) =>
                             onPress={handleSubmit}
                             disabled={!allQuestionsAnswered || isSubmitting}
                             activeOpacity={0.7}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('tools.askUserQuestion.submit')}
+                            accessibilityState={{
+                                disabled: !allQuestionsAnswered || isSubmitting,
+                                busy: isSubmitting,
+                            }}
                         >
                             {isSubmitting ? (
                                 <ActivityIndicator
                                     size="small"
-                                    color={Platform.select({ web: theme.colors.button.primary.tint, default: theme.colors.text })}
+                                    color="#FFFFFF"
                                 />
                             ) : (
-                                <Text style={styles.submitButtonText}>{t('tools.askUserQuestion.submit')}</Text>
+                                <Text style={[
+                                    styles.submitButtonText,
+                                    allQuestionsAnswered && styles.submitButtonTextReady,
+                                ]}>{t('tools.askUserQuestion.submit')}</Text>
                             )}
                         </TouchableOpacity>
                     </View>
@@ -237,7 +253,7 @@ const styles = StyleSheet.create((theme) => ({
         borderRadius: 8,
         backgroundColor: Platform.select({ web: 'transparent', default: theme.colors.surface }),
         borderWidth: 1,
-        borderColor: theme.colors.divider,
+        borderColor: theme.dark ? 'rgba(255, 255, 255, 0.14)' : theme.colors.divider,
         gap: 10,
         minHeight: 44,
     },
@@ -253,7 +269,7 @@ const styles = StyleSheet.create((theme) => ({
         height: 20,
         borderRadius: 10,
         borderWidth: 2,
-        borderColor: theme.colors.textSecondary,
+        borderColor: theme.dark ? '#98989D' : '#6C6C70',
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 2,
@@ -272,7 +288,7 @@ const styles = StyleSheet.create((theme) => ({
         height: 20,
         borderRadius: 4,
         borderWidth: 2,
-        borderColor: theme.colors.textSecondary,
+        borderColor: theme.dark ? '#98989D' : '#6C6C70',
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 2,
@@ -317,12 +333,16 @@ const styles = StyleSheet.create((theme) => ({
         opacity: 0.5,
     },
     submitButtonReady: {
-        borderColor: theme.colors.radio.active,
+        backgroundColor: Platform.select({ web: theme.colors.button.primary.background, default: theme.colors.radio.active }),
+        borderColor: Platform.select({ web: theme.colors.button.primary.background, default: theme.colors.radio.active }),
     },
     submitButtonText: {
         color: Platform.select({ web: theme.colors.button.primary.tint, default: theme.colors.text }),
         fontSize: 14,
         fontWeight: '600',
+    },
+    submitButtonTextReady: {
+        color: Platform.select({ web: theme.colors.button.primary.tint, default: '#FFFFFF' }),
     },
     submittedContainer: {
         gap: 8,

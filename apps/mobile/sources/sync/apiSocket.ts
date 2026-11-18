@@ -99,6 +99,30 @@ async function labelRpcStep<T>(step: string, run: () => Promise<T>): Promise<T> 
 // Main Class
 //
 
+function decodedPeerJsonResponse(payload: unknown, status: number, statusText = ''): Response {
+    let used = false;
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    const consume = () => {
+        if (used) throw new TypeError('Body already used');
+        used = true;
+    };
+    const response = {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText,
+        headers,
+        get bodyUsed() { return used; },
+        json: async () => { consume(); return payload; },
+        text: async () => { consume(); return JSON.stringify(payload) ?? 'null'; },
+        arrayBuffer: async () => { consume(); return new TextEncoder().encode(JSON.stringify(payload) ?? 'null').buffer; },
+        clone: () => {
+            if (used) throw new TypeError('Body already used');
+            return decodedPeerJsonResponse(payload, status, statusText);
+        },
+    };
+    return response as unknown as Response;
+}
+
 class ApiSocket {
     private intentionalDisconnect = false;
     private lastPeerConnectionError: { code: string; httpStatus?: number } | null = null;
@@ -405,7 +429,7 @@ class ApiSocket {
         const payload = await decodePeerResponseAsync(peer, await response.json(), { signal: deadline.signal, isCurrent: () => this.config === connection });
         if (this.config !== connection) throw Error('The peer connection changed during this read');
         this.lastPeerHttpProof = { peerId: peer.id, endpoint: connection!.endpoint, observedAt: Date.now() };
-        return new Response(JSON.stringify(payload), { status: response.status, headers: { 'Content-Type': 'application/json' } });
+        return decodedPeerJsonResponse(payload, response.status, response.statusText ?? '');
         } finally { deadline.dispose(); this.peerReads.delete(deadline.abort); }
     }
 

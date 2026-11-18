@@ -32,10 +32,16 @@ type Entry = {
     at: number;
     pinned: boolean;
     nativeId: string | undefined;
-    parentId: string | null | undefined;
+    parentId?: string | undefined;
     title: string | undefined;
 };
-type Group = { key: string; project: Session; entries: Entry[]; latestAt: number; order: number };
+type NativeRow = {
+    session: Session;
+    order: number;
+    nativeId: string | undefined;
+    isSubagent: boolean;
+};
+type Group = { key: string; project: Session; entries: Entry[]; count: number; latestAt: number; order: number };
 
 function parentKey(session: Session, nativeId: string | null | undefined): string | undefined {
     if (!nativeId) return undefined;
@@ -45,23 +51,19 @@ function parentKey(session: Session, nativeId: string | null | undefined): strin
 }
 
 /** Only explicit membership may follow a uniquely proven parent across projects. */
-function displayProjects(sessions: Session[]): Map<string, Session> {
-    const index = new Map<string, Session>(), ambiguous = new Set<string>();
-    for (const session of sessions) {
-        const key = parentKey(session, session.metadata?.bridge?.source.id);
-        if (!key || ambiguous.has(key)) continue;
-        if (index.has(key)) { index.delete(key); ambiguous.add(key); }
-        else index.set(key, session);
-    }
-    const parent = new Map<string, Session>();
-    for (const session of sessions) {
-        if (session.metadata?.nativeSession?.isSubagent !== true) continue;
-        const key = parentKey(session, session.metadata.nativeSession.parentId), found = key ? index.get(key) : undefined;
-        if (found && found.id !== session.id) parent.set(session.id, found);
-    }
+function displayProjects(subagents: NativeRow[], index: Map<string, Session>): Map<string, Session> {
     const resolved = new Map<string, Session>();
-    for (const session of sessions) {
-        if (resolved.has(session.id)) continue;
+    if (!subagents.length) return resolved;
+    const parent = new Map<string, Session>();
+    for (const row of subagents) {
+        const key = parentKey(row.session, row.session.metadata?.nativeSession?.parentId);
+        const found = key ? index.get(key) : undefined;
+        if (found && found.id !== row.session.id) parent.set(row.session.id, found);
+    }
+    if (!parent.size) return resolved;
+    for (const row of subagents) {
+        const session = row.session;
+        if (resolved.has(session.id) || !parent.has(session.id)) continue;
         const path: Session[] = [], seen = new Map<string, number>();
         let current = session, project: Session;
         while (true) {
@@ -111,7 +113,8 @@ function hierarchy(entries: Entry[]): { roots: Entry[]; children: Map<string, En
 
     const parentById = new Map<string, string>();
     for (const entry of entries) {
-        const parent = entry.parentId ? nativeIndex.get(entry.parentId) : undefined;
+        const parentKeyId = entry.parentId ??= parentKey(entry.session, entry.session.metadata?.nativeSession?.parentId);
+        const parent = parentKeyId ? nativeIndex.get(parentKeyId) : undefined;
         if (parent) parentById.set(entry.session.id, parent.session.id);
     }
 
@@ -166,26 +169,46 @@ function hierarchy(entries: Entry[]): { roots: Entry[]; children: Map<string, En
 
 export function buildCodelyncBrowserRows(sessions: Session[], query: string, projects: Set<string>, parents: Set<string>): CodelyncBrowserRow[] {
     const needle = query.trim().toLocaleLowerCase();
-    const nativeSessions = sessions.filter(isCodelyncNativeSession);
-    const display = displayProjects(nativeSessions);
-    const groups = new Map<string, Group>();
+    const nativeRows: NativeRow[] = [];
+    const subagents: NativeRow[] = [];
+    const nativeIndex = new Map<string, Session>();
+    const ambiguous = new Set<string>();
     for (let order = 0; order < sessions.length; order++) {
         const session = sessions[order];
         if (!isCodelyncNativeSession(session)) continue;
         const data = session.metadata;
+        const nativeId = parentKey(session, data?.bridge?.source.id);
+        const isSubagent = data?.nativeSession?.isSubagent === true;
+        const row: NativeRow = { session, order, nativeId, isSubagent };
+        nativeRows.push(row);
+        if (isSubagent) subagents.push(row);
+        if (nativeId && !ambiguous.has(nativeId)) {
+            if (nativeIndex.has(nativeId)) { nativeIndex.delete(nativeId); ambiguous.add(nativeId); }
+            else nativeIndex.set(nativeId, session);
+        }
+    }
+
+    const display = displayProjects(subagents, nativeIndex);
+    const projectKeys = new Map<string, string>();
+    const groups = new Map<string, Group>();
+    for (let i = 0; i < nativeRows.length; i++) {
+        const row = nativeRows[i];
+        const session = row.session, data = session.metadata;
         const title = needle ? sessionTitle(session) : undefined;
         if (needle && !matchesSearch(session, title!, needle)) continue;
         const entry: Entry = {
-            session, order, title,
+            session, order: row.order, title,
             at: data?.nativeSession?.updatedAt ?? session.updatedAt,
             pinned: data?.nativeSession?.isPinned === true,
-            nativeId: parentKey(session, data?.bridge?.source.id),
-            parentId: parentKey(session, data?.nativeSession?.parentId),
+            nativeId: row.nativeId,
         };
-        const project = display.get(session.id) ?? session, key = codelyncProjectKey(project);
+        const project = display.get(session.id) ?? session;
+        let key = projectKeys.get(project.id);
+        if (key === undefined) { key = codelyncProjectKey(project); projectKeys.set(project.id, key); }
         let group = groups.get(key);
-        if (!group) { group = { key, project, entries: [], latestAt: entry.at, order }; groups.set(key, group); }
+        if (!group) { group = { key, project, entries: [], count: 0, latestAt: entry.at, order: row.order }; groups.set(key, group); }
         group.entries.push(entry);
+        if (!row.isSubagent) group.count++;
         // 巨项目不能用 Math.max(...members)：参数数量会溢出；最大时间在分组时计算一次，排序只读标量。
         if (entry.at > group.latestAt) group.latestAt = entry.at;
     }
@@ -195,7 +218,7 @@ export function buildCodelyncBrowserRows(sessions: Session[], query: string, pro
     for (const group of ordered) {
         const data = group.project.metadata;
         const path = data?.nativeSession?.projectPath || data?.path || '/';
-        const count = group.entries.filter(entry => isCodelyncConversation(entry.session)).length;
+        const count = group.count;
         if (count) rows.push({ kind: 'project', key: group.key, path, label: data?.nativeSession?.projectLabel || path.split(/[\\/]/).filter(Boolean).at(-1) || path,
             sourceLabel: codelyncSourceLabel(data?.bridge?.source), count });
         if (!needle && (!count || !projects.has(group.key))) continue;

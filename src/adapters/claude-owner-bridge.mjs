@@ -54,9 +54,41 @@ export async function installClaudeOwnerBridge(options) {
   /** @type {Map<string,Value>} */ const dispatchCache = new Map();
   /** @type {Map<string,ClaudeNativeSettings>} */ const settingsControllers = new Map();
   const taskGuards = new Set();
+  /** @type {Map<string,{manager:Value,descriptor:PropertyDescriptor|undefined,wrapper:Function,hooks:Set<(args:any[],result:any)=>void>}>} */
+  const sendHooks = new Map();
   const identities = new WeakMap(), receipts = new ClaudeCommandReceipts();
   const epoch = randomBytes(16).toString('hex'), token = randomBytes(32).toString('hex'); let closed = false;
   /** @type {Value} */ let runtime;
+  /** Share one reversible `manager.sendMessage` wrapper across concurrent `code.send` calls.
+   * @param {string} kind @param {Value} manager @param {(args:any[],result:any)=>void} onDispatch @returns {()=>void} */
+  function attachSendHook(kind, manager, onDispatch) {
+    let state = sendHooks.get(kind);
+    if (!state) {
+      const descriptor = Object.getOwnPropertyDescriptor(manager, 'sendMessage'), original = manager.sendMessage;
+      if (typeof original !== 'function') return () => {};
+      const hooks = new Set();
+      const wrapper = async (/** @type {any[]} */ ...args) => {
+        const result = await original.apply(manager, args);
+        for (const hook of [...hooks]) hook(args, result);
+        return result;
+      };
+      try { Object.defineProperty(manager, 'sendMessage', { value: wrapper, configurable: true, writable: true, enumerable: descriptor?.enumerable ?? true }); }
+      catch { throw deny('native-send-fence-unavailable'); }
+      state = { manager, descriptor, wrapper, hooks };
+      sendHooks.set(kind, state);
+    }
+    state.hooks.add(onDispatch);
+    return () => {
+      state.hooks.delete(onDispatch);
+      if (!state.hooks.size && sendHooks.get(kind) === state) {
+        sendHooks.delete(kind);
+        if (state.manager.sendMessage === state.wrapper) {
+          if (state.descriptor) Object.defineProperty(state.manager, 'sendMessage', state.descriptor);
+          else delete state.manager.sendMessage;
+        }
+      }
+    };
+  }
   /** @param {Value|null|undefined} object */
   function identity(object) { if (!object) return 'none'; if (!identities.has(object)) identities.set(object, randomUUID()); return identities.get(object); }
   /** @param {Value} session @param {string} kind */
@@ -144,6 +176,7 @@ export async function installClaudeOwnerBridge(options) {
     log.listener = (/** @type {Value} */ event) => { const value = managers[kind].sessions.get(event.sessionId); if (!value) return;
       const captured = { ownerGeneration: owner(value, kind), executionToken: query(value), cliSessionId: value.cliSessionId ?? null, queryRef: value.query };
       current.rows.push({ sequence: current.next++, event, ...captured });
+      if (current.rows.length > 512) current.rows.shift();
       const message = event.message;
       if (taskMessage(message) && value.query && typeof message.session_id === 'string' && message.session_id === value.cliSessionId) {
         const proof = current.taskProof.get(event.sessionId) ?? {};
@@ -183,7 +216,7 @@ export async function installClaudeOwnerBridge(options) {
         current.taskProof.delete(event.sessionId); current.taskProof.set(event.sessionId, proof);
         if (current.taskProof.size > 128) current.taskProof.delete(current.taskProof.keys().next().value);
       }
-      if (current.rows.length > 512) current.rows.shift(); };
+    };
     managers[kind].on('event', log.listener); logs.set(kind, log); return log;
   }
   /** A native task birth is distinct from a map row or a reused task ID.
@@ -413,10 +446,16 @@ export async function installClaudeOwnerBridge(options) {
           outputTaskTypes: kind === 'code' && value.query ? outputTaskTypes : [], stopTaskTypes: kind === 'code' && value.query ? stopTaskTypes : [] } };
     }
     if (action === 'events') {
-      const log = observe(kind), cursor = Number.isSafeInteger(params.cursor) ? params.cursor : 0, oldest = log.rows[0]?.sequence ?? log.next;
-      const rows = log.rows.filter((/** @type {Value} */ row) => row.sequence >= Math.max(cursor, oldest)).slice(0, 64);
-      return { sessionId: params.sessionId, ownerGeneration: generation, executionToken: execution, cursor: rows.length ? rows.at(-1).sequence + 1 : log.next,
-        resetRequired: cursor < oldest, events: rows.filter((/** @type {Value} */ row) => row.event.sessionId === params.sessionId && row.executionToken === execution).map((/** @type {Value} */ row) => ({ sequence: row.sequence, type: row.event.type, message: row.event.message })) };
+      if (Object.hasOwn(params, 'expectedExecutionToken') && params.expectedExecutionToken !== (value.query ? execution : null)) throw deny('stale-query');
+      const log = observe(kind), cursor = params.cursor === undefined ? 0 : params.cursor;
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > log.next) throw deny('invalid-event-cursor');
+      const oldest = log.rows[0]?.sequence ?? log.next, cliSessionId = value.cliSessionId ?? null, queryRef = value.query;
+      const matching = log.rows.filter((/** @type {Value} */ row) => row.sequence >= Math.max(cursor, oldest)
+        && row.event.sessionId === params.sessionId && row.ownerGeneration === generation
+        && row.executionToken === execution && row.cliSessionId === cliSessionId && row.queryRef === queryRef);
+      const rows = matching.slice(0, 64), nextCursor = matching.length > rows.length ? rows.at(-1).sequence + 1 : log.next;
+      return { sessionId: params.sessionId, ownerGeneration: generation, executionToken: execution, cursor: nextCursor,
+        resetRequired: cursor < oldest, events: rows.map((/** @type {Value} */ row) => ({ sequence: row.sequence, type: row.event.type, message: row.event.message })) };
     }
     if (action === 'snapshot' || action === 'page') {
       observe(kind); let data;
@@ -443,20 +482,28 @@ export async function installClaudeOwnerBridge(options) {
       if (main.Hft().getProvider()?.creds?.provider !== 'gateway' || main.Lut().inference?.provider !== 'gateway') throw deny('gateway-route-not-proven');
       if (typeof params.message !== 'string' || !params.message.trim() || params.message.length > 1024 * 1024 || !/^[a-f0-9-]{36}$/.test(params.messageUuid ?? '')) throw deny('invalid-native-input');
       let queued;
+      const rendererApi = api(kind);
       if (kind === 'code') {
-        const descriptor = Object.getOwnPropertyDescriptor(manager, 'sendMessage'), original = manager.sendMessage;
-        const observer = async (/** @type {any[]} */ ...args) => { const result = await original.apply(manager, args); if (args[0] === params.sessionId && args[3]?.messageUuid === params.messageUuid) queued = result?.queued === true; return result; };
-        manager.sendMessage = observer;
-        try { await api(kind).sendMessage(params.sessionId, params.message, undefined, undefined, undefined, undefined, undefined, params.messageUuid, undefined, undefined, undefined, undefined, undefined, undefined, { personSent: true, rejectUndelivered: true }); }
-        finally { if (descriptor) Object.defineProperty(manager, 'sendMessage', descriptor); else delete manager.sendMessage; }
-      } else { const result = await api(kind).sendMessage(params.sessionId, params.message, undefined, undefined, params.messageUuid); if (result?.dispatched === false) throw Error('native-admission-unconfirmed'); }
+        const detach = attachSendHook(kind, manager, (args, result) => {
+          if (args[0] === params.sessionId && args[3]?.messageUuid === params.messageUuid) queued = result?.queued === true;
+        });
+        try { await rendererApi.sendMessage(params.sessionId, params.message, undefined, undefined, undefined, undefined, undefined, params.messageUuid, undefined, undefined, undefined, undefined, undefined, undefined, { personSent: true, rejectUndelivered: true }); }
+        finally { detach(); }
+      } else { const result = await rendererApi.sendMessage(params.sessionId, params.message, undefined, undefined, params.messageUuid); if (result?.dispatched === false) throw Error('native-admission-unconfirmed'); }
       return { sessionId: params.sessionId, ownerGeneration: owner(value, kind), executionToken: query(value), messageUuid: params.messageUuid, originalDesktopOwned: true, admitted: true, queued };
     }
     if (action === 'interrupt') {
-      const header = await api(kind).getSession(params.sessionId, kind === 'cowork' ? { metadataOnly: true } : undefined);
-      if (header.isRunning !== true) throw deny('stale-turn'); if (kind === 'code') await api(kind).interrupt(params.sessionId); else await api(kind).stop(params.sessionId);
-      const after = await api(kind).getSession(params.sessionId, kind === 'cowork' ? { metadataOnly: true } : undefined);
-      return { sessionId: params.sessionId, ownerGeneration: owner(value, kind), executionToken: query(value), cancelRequested: true, observedStatus: after.isRunning ? 'running' : 'idle' };
+      const rendererApi = api(kind);
+      const header = await rendererApi.getSession(params.sessionId, kind === 'cowork' ? { metadataOnly: true } : undefined);
+      if (closed) throw deny('native-bridge-deactivated');
+      if (nativeGatewayMarker() !== gatewayMarker) throw deny('source-profile-changed');
+      if (managers[kind]?.sessions.get(params.sessionId) !== value || owner(value, kind) !== generation) throw deny('source-epoch-changed');
+      fence(kind, value, params);
+      if (header?.isRunning !== true) throw deny('stale-turn');
+      if (kind === 'code') await rendererApi.interrupt(params.sessionId); else await rendererApi.stop(params.sessionId);
+      const after = await rendererApi.getSession(params.sessionId, kind === 'cowork' ? { metadataOnly: true } : undefined);
+      const observedStatus = after?.isRunning === true ? 'running' : after?.isRunning === false ? 'idle' : 'unknown';
+      return { sessionId: params.sessionId, ownerGeneration: owner(value, kind), executionToken: query(value), cancelRequested: true, observedStatus };
     }
     if (action === 'permission' && kind === 'code') {
       const request = manager.permissionBroker.pendingPermissions.get(params.requestId);
@@ -498,6 +545,14 @@ export async function installClaudeOwnerBridge(options) {
   const onBeforeQuit = () => { void bridge.deactivate(); };
   const bridge = { runtimePath: options.runtimePath, pid: process.pid, version: 1, readOnly,
     async deactivate() { if (closed) return; closed = true; for (const [kind, log] of logs) managers[kind].off('event', log.listener); logs.clear();
+      for (const state of sendHooks.values()) {
+        state.hooks.clear();
+        if (state.manager.sendMessage === state.wrapper) {
+          if (state.descriptor) Object.defineProperty(state.manager, 'sendMessage', state.descriptor);
+          else delete state.manager.sendMessage;
+        }
+      }
+      sendHooks.clear();
       for (const controller of settingsControllers.values()) controller.close();
       app.off('before-quit', onBeforeQuit); apis.clear(); dispatchCache.clear(); settingsControllers.clear(); server.close(); try { unlinkSync(options.runtimePath); } catch {} delete slots[SLOT]; } };
   slots[SLOT] = bridge; app.once('before-quit', onBeforeQuit); return bridge;

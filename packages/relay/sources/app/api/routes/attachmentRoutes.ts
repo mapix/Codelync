@@ -9,13 +9,12 @@
  * Cleanup happens when sessions are deleted (Phase 8).
  */
 import { z } from 'zod';
-import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { Fastify } from '../types';
 import { db } from '@/storage/db';
 import { s3client, s3bucket, isLocalStorage, getLocalFilesDir, putLocalFile } from '@/storage/files';
-import { CappedAttachmentError, MAX_CAPPED_ATTACHMENT_BYTES, readCappedLocalAttachment, statCappedLocalAttachment } from '@/storage/cappedAttachments';
+import { CappedAttachmentError, MAX_CAPPED_ATTACHMENT_BYTES, readCappedLocalAttachment, readLocalAttachment, statCappedLocalAttachment } from '@/storage/cappedAttachments';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const PRESIGNED_TTL_SECONDS = 15 * 60; // 15 minutes (design spec)
@@ -28,21 +27,64 @@ const UPLOAD_RATE_WINDOW_MS = 60_000;
 const UPLOAD_RATE_MAX = 60;
 const uploadRateState = new Map<string, { count: number; windowStart: number }>();
 
+function firstHeaderToken(value: string | string[] | undefined): string | null {
+    const raw = Array.isArray(value) ? value[0] : value;
+    if (typeof raw !== 'string') return null;
+    const token = raw.split(',')[0]?.trim() ?? '';
+    return token.length > 0 ? token : null;
+}
+
+function resolveForwardedProto(value: string | string[] | undefined): 'http' | 'https' {
+    const token = firstHeaderToken(value)?.toLowerCase();
+    return token === 'https' ? 'https' : 'http';
+}
+
+function resolveValidatedHost(value: string | string[] | undefined): string | null {
+    const candidate = firstHeaderToken(value);
+    if (!candidate || candidate.length > 255 || candidate.includes('..')) return null;
+    if (/[\s\u0000-\u001f\u007f@/?#\\]/u.test(candidate)) return null;
+    if (candidate.startsWith('[')) {
+        if (!/^\[[0-9a-f:.]+\](?::[1-9]\d{0,4})?$/iu.test(candidate)) return null;
+    } else if (!/^[a-z0-9](?:[a-z0-9._-]{0,251}[a-z0-9])?(?::[1-9]\d{0,4})?$/iu.test(candidate)) {
+        return null;
+    }
+    try {
+        const parsed = new URL(`http://${candidate}`);
+        if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || !parsed.hostname) {
+            return null;
+        }
+        return candidate;
+    } catch {
+        return null;
+    }
+}
+
+function isSafePathSegment(value: string): boolean {
+    return value.length > 0 && !value.includes('..') && !value.includes('/') && !value.includes('\\') && !value.includes('\0');
+}
+
 /**
  * Build the base URL the client should use to reach our local-mode upload /
- * download endpoints. Prefer an explicit PUBLIC_URL, then x-forwarded-* (for
- * deployments behind a proxy), then the Host header the request itself
- * arrived on. Falling back to localhost would make any non-localhost client
- * (a phone, another LAN device, a desktop pointing at a dev IP) fail with a
- * generic Network request failed when it tries to follow the URL.
+ * download endpoints. Prefer an explicit PUBLIC_URL, then validated
+ * x-forwarded-* (for deployments behind a proxy), then the Host header the
+ * request itself arrived on. Falling back to localhost would make any
+ * non-localhost client (a phone, another LAN device, a desktop pointing at
+ * a dev IP) fail with a generic Network request failed when it tries to
+ * follow the URL.
  */
 function resolveBaseUrl(request: { headers: Record<string, string | string[] | undefined> }): string {
-    if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL;
-    const xfHost = request.headers['x-forwarded-host'];
-    const xfProto = request.headers['x-forwarded-proto'];
-    const host = (Array.isArray(xfHost) ? xfHost[0] : xfHost) ?? request.headers.host;
-    const proto = (Array.isArray(xfProto) ? xfProto[0] : xfProto) ?? 'http';
-    if (typeof host === 'string' && host.length > 0) {
+    const publicUrl = process.env.PUBLIC_URL?.trim();
+    if (publicUrl) {
+        try {
+            const parsed = new URL(publicUrl);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return publicUrl.replace(/\/+$/u, '');
+            }
+        } catch { /* fall back to validated request headers */ }
+    }
+    const host = resolveValidatedHost(request.headers['x-forwarded-host']) ?? resolveValidatedHost(request.headers.host);
+    if (host) {
+        const proto = resolveForwardedProto(request.headers['x-forwarded-proto']);
         return `${proto}://${host}`;
     }
     return `http://localhost:${process.env.PORT || '3005'}`;
@@ -184,7 +226,7 @@ export function attachmentRoutes(app: Fastify) {
         }
 
         // Path traversal protection
-        if (attachmentFile.includes('..') || attachmentFile.includes('/')) {
+        if (!isSafePathSegment(sessionId) || !isSafePathSegment(attachmentFile)) {
             return reply.code(404).send({ error: 'Invalid attachment file' });
         }
 
@@ -248,7 +290,7 @@ export function attachmentRoutes(app: Fastify) {
             return reply.code(400).send({ error: 'Ref does not belong to this session' });
         }
         const attachmentFile = ref.slice(expectedPrefix.length);
-        if (!attachmentFile || attachmentFile.includes('/') || attachmentFile.includes('..')) {
+        if (!isSafePathSegment(sessionId) || !isSafePathSegment(attachmentFile)) {
             return reply.code(400).send({ error: 'Invalid attachment ref' });
         }
 
@@ -302,7 +344,7 @@ export function attachmentRoutes(app: Fastify) {
         }
 
         // Path traversal protection
-        if (attachmentFile.includes('..') || attachmentFile.includes('/')) {
+        if (!isSafePathSegment(sessionId) || !isSafePathSegment(attachmentFile)) {
             return reply.code(404).send({ error: 'Invalid attachment file' });
         }
 
@@ -310,20 +352,15 @@ export function attachmentRoutes(app: Fastify) {
 
         if (isLocalStorage()) {
             const fullPath = path.join(getLocalFilesDir(), ref);
-            if (maxBytes !== undefined) {
-                try {
-                    const bytes = await readCappedLocalAttachment(fullPath, maxBytes);
-                    return reply.type('application/octet-stream').header('Cache-Control', 'no-store').send(bytes);
-                } catch (error) {
-                    if (error instanceof CappedAttachmentError) return reply.code(error.status).send({ error: error.message });
-                    throw error;
-                }
+            try {
+                const bytes = maxBytes !== undefined
+                    ? await readCappedLocalAttachment(fullPath, maxBytes)
+                    : await readLocalAttachment(fullPath);
+                return reply.type('application/octet-stream').header('Cache-Control', 'no-store').send(bytes);
+            } catch (error) {
+                if (error instanceof CappedAttachmentError) return reply.code(error.status).send({ error: error.message });
+                throw error;
             }
-            if (!fs.existsSync(fullPath)) {
-                return reply.code(404).send({ error: 'Attachment not found' });
-            }
-            reply.header('Content-Type', 'application/octet-stream');
-            return reply.type('application/octet-stream').send(fs.readFileSync(fullPath));
         } else {
             if (maxBytes !== undefined) return reply.code(501).send({ error: 'Capped attachment download unavailable for S3 storage' });
             // S3 mode: redirect to presigned GET URL (15 min, per design).

@@ -7,7 +7,7 @@ import { BridgeError } from '../errors.mjs';
 import { nativeSettingsScope } from '../codelync/native-settings-scope.mjs';
 
 /** @typedef {Record<string,any>} Value */
-const exec = promisify(execFile), MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const exec = promisify(execFile), MAX_RESPONSE_BYTES = 8 * 1024 * 1024, MAX_ARTIFACT_CACHE = 32;
 /** @type {Map<string,{stamp:string,sha256:string}>} */ const artifactCache = new Map();
 const fail = (code = 'claude-desktop-unavailable') => new BridgeError(code, 'The original Claude Desktop owner is unavailable.', 503);
 export const CLAUDE_NATIVE_TASK_METHODS = Object.freeze(['code.taskFeed', 'cowork.taskFeed', 'code.taskOutput', 'code.stopTask', 'cowork.stopTask']);
@@ -44,7 +44,9 @@ function taskRequest(method, params, options) {
   const identity = (/** @type {unknown} */ value, max = 512) => typeof value === 'string' && !!value.trim() && value.length <= max && !/[\x00-\x1f\x7f]/.test(value);
   if (!identity(params.sessionId) || Object.keys(params).some(key => !keys.includes(key)) ||
     !feed && (!identity(params.taskId, 256) || !identity(params.expectedOwnerGeneration) || !identity(params.expectedExecutionToken)) ||
-    feed && (params.cursor !== undefined && (!Number.isSafeInteger(params.cursor) || params.cursor < 0) || params.limit !== undefined && (!Number.isSafeInteger(params.limit) || params.limit < 1 || params.limit > 128))) {
+    feed && (params.cursor !== undefined && (!Number.isSafeInteger(params.cursor) || params.cursor < 0) || params.limit !== undefined && (!Number.isSafeInteger(params.limit) || params.limit < 1 || params.limit > 128)
+      || params.expectedOwnerGeneration !== undefined && !identity(params.expectedOwnerGeneration)
+      || params.expectedExecutionToken !== undefined && params.expectedExecutionToken !== null && !identity(params.expectedExecutionToken))) {
     throw new BridgeError('invalid-task-request', 'A bounded original task identity and owner/query context are required.');
   }
   if (stop !== (options.mutation === true)) throw new BridgeError('invalid-task-request', 'The original task mutation classification is required.');
@@ -90,7 +92,13 @@ export async function readClaudeDesktopRuntime(path, identity = claudeDesktopPro
   if (value.asarSha256) {
     const artifact = join(dirname(executable), '..', 'Resources', 'app.asar'), info = await stat(artifact);
     const stamp = JSON.stringify([info.ino, info.size, info.mtimeMs]); let saved = artifactCache.get(artifact);
-    if (!saved || saved.stamp !== stamp) { saved = { stamp, sha256: createHash('sha256').update(await readFile(artifact)).digest('hex') }; artifactCache.set(artifact, saved); }
+    if (!saved || saved.stamp !== stamp) { saved = { stamp, sha256: createHash('sha256').update(await readFile(artifact)).digest('hex') }; }
+    artifactCache.delete(artifact); artifactCache.set(artifact, saved);
+    while (artifactCache.size > MAX_ARTIFACT_CACHE) {
+      const oldest = artifactCache.keys().next().value;
+      if (oldest === undefined) break;
+      artifactCache.delete(oldest);
+    }
     if (saved.sha256 !== value.asarSha256) throw fail('source-artifact-changed');
   }
   return { ...value, origin: origin.origin, executable, storagePath, generation: claudeDesktopOwnerGeneration({ ...value, executable }) };

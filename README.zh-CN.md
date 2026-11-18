@@ -1,6 +1,6 @@
 # Codelync
 
-[网站与 Mac 下载](https://codelync.novarock.io/) · [源码](https://github.com/mapix/Codelync) · [MIT 许可](LICENSE) · [English](README.md)
+[网站与 Mac 下载](https://codelync.novarock.io/) · [源码](https://github.com/mapix/Codelync) · [MIT 许可](LICENSE) · [English](README.md) · [日本語](README.ja.md)
 
 Codelync 面向已在 Codex、Antigravity Desktop 或 Claude Desktop 配置
 Gateway 模式的用户。在 iPhone 查看已有项目、会话和可用子代理日志，按各桌面应用的
@@ -34,11 +34,8 @@ Relay 和网络通道不同。
 
 ## 当前发行
 
-- Mac 预览版：Apple Silicon、macOS 14+，Developer ID 签名、Apple 公证及
-  ticket stapling。版本与 SHA-256 在下载页可核对。
-- 当前公开 Mac 下载 0.6.1 包含三桌面接入，各应用仅提供已确认的原生能力。
-- iPhone 客户端：目前需从源码构建并使用自己的 Apple 开发签名。
-  尚无公开 App Store/TestFlight 发行，不提供带私人设备登记信息的开发 IPA。
+- Mac 预览版：Apple Silicon、macOS 14+，包含在各原应用已确认能力范围内的三桌面接入；公开下载经过 Developer ID 签名、Apple 公证及 ticket stapling，版本与 SHA-256 在下载页可核对。
+- iPhone 客户端：官网显示当前 TestFlight Beta 状态；也可从源码构建并使用自己的 Apple 开发签名。不公开分发绑定私人设备登记信息的开发 IPA。
 - 安装后在手机扫描 Mac 二维码，无需另外注册 Codelync 账号或安装 VPN。
   一个二维码包含全部已启用地址。手机自动选择已验证的可用连接，也可以在
   “连接方式”面板随时手动切换，或恢复“自动”。
@@ -115,7 +112,7 @@ Expo/React Native 客户端，`src` 为会话桥接，`packages/relay` 为嵌入
 性能基准记录的是合成历史下的 Mac CPU 与请求工作量，不代表已测得的
 iPhone 帧率、续航或温度，也不保证手机不会发热。
 
-Codelync 是独立开源项目，不隶属于 OpenAI。基于 Happy 的 MIT 组件构建，
+Codelync 是独立开源项目，不隶属于 OpenAI、Anthropic 或 Google。基于 Happy 的 MIT 组件构建，
 保留原许可证和第三方归属，详见 [第三方说明](THIRD-PARTY-NOTICES.md)。
 
 ## 来源与许可

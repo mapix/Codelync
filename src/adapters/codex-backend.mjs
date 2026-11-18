@@ -8,7 +8,7 @@ import { BridgeError } from '../errors.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve, isAbsolute } from 'node:path';
 import { writePrivateJson } from '../private-json.mjs';
@@ -631,6 +631,7 @@ function projectHistory(state, previous) {
     if (entry.silent) silentTurn = entry.source;
     for (const candidate of entry.candidates) {
       if (seen.has(candidate.sourceId) || seen.has(candidate.row.id)) continue;
+      seen.add(candidate.sourceId);
       seen.add(candidate.row.id);
       rows.push(candidate.row);
     }
@@ -1052,6 +1053,8 @@ async function openLocalCodexDesktop(uri) {
   await promisify(execFile)('/usr/bin/open', ['-a', app, uri], { timeout: 5000, maxBuffer: 4096 });
 }
 
+const MAX_NATIVE_CATALOG_CACHE = 32;
+const MAX_CATALOG_BYTES = 2 * 1024 * 1024;
 const nativeCatalogCache = /** @type {Map<string,{expires:number,value:Promise<Value>}>} */ (new Map());
 /** Narrow scalar TOML reader: unsupported provider syntax leaves controls unavailable rather than guessing credentials.
  * @param {string} text @returns {Map<string,Value>} */
@@ -1082,7 +1085,12 @@ export async function loadNativeCodexModelCatalog(modelProvider, currentModel, o
   const explicitFile = global.model_catalog_json;
   if (typeof explicitFile === 'string') {
     const path = isAbsolute(explicitFile) ? explicitFile : resolve(root, explicitFile);
-    const data = JSON.parse(await readFile(path, 'utf8'));
+    const info = await stat(path);
+    if (!info.isFile() || info.size > MAX_CATALOG_BYTES) throw new BridgeError('native-model-catalog-unavailable', 'The original provider catalog exceeded its size limit.');
+    const text = await readFile(path, 'utf8');
+    if (Buffer.byteLength(text) > MAX_CATALOG_BYTES) throw new BridgeError('native-model-catalog-unavailable', 'The original provider catalog exceeded its size limit.');
+    const data = JSON.parse(text);
+    if (!data || typeof data !== 'object') throw new BridgeError('native-model-catalog-unavailable', 'The original provider returned no model catalog.');
     return { models: normaliseNativeCodexModels(data.models ?? data, currentModel), catalogSource: 'original-config-catalog' };
   }
   const endpoint = typeof provider.model_catalog_url === 'string' ? provider.model_catalog_url : typeof provider.base_url === 'string' ? provider.base_url.replace(/\/$/u, '') + '/models' : null;
@@ -1093,12 +1101,17 @@ export async function loadNativeCodexModelCatalog(modelProvider, currentModel, o
   const credential = typeof provider.experimental_bearer_token === 'string' ? provider.experimental_bearer_token : typeof provider.env_key === 'string' ? process.env[provider.env_key] : null;
   if (!credential) throw new BridgeError('native-model-catalog-unavailable', 'The original provider credential is unavailable.');
   const fingerprint = createHash('sha256').update(JSON.stringify([root, providerId, url.toString(), credential, cached.identity, cached.fetched_at])).digest('hex');
+  const now = Date.now();
+  for (const [key, cachedEntry] of nativeCatalogCache) if (cachedEntry.expires < now) nativeCatalogCache.delete(key);
   let entry = nativeCatalogCache.get(fingerprint);
-  if (!entry || entry.expires < Date.now()) {
+  if (entry) {
+    nativeCatalogCache.delete(fingerprint);
+    nativeCatalogCache.set(fingerprint, entry);
+  } else {
     const value = (async () => {
       const response = await (options.fetch ?? fetch)(url.toString(), { headers: { Authorization: `Bearer ${credential}`, Accept: 'application/json' }, redirect: 'error', signal: AbortSignal.timeout(15000) });
       if (!response.ok) throw new BridgeError('native-model-catalog-unavailable', 'The original provider catalog is unavailable.');
-      const text = await response.text(); if (Buffer.byteLength(text) > 2 * 1024 * 1024) throw new BridgeError('native-model-catalog-unavailable', 'The original provider catalog exceeded its size limit.');
+      const text = await response.text(); if (Buffer.byteLength(text) > MAX_CATALOG_BYTES) throw new BridgeError('native-model-catalog-unavailable', 'The original provider catalog exceeded its size limit.');
       const data = JSON.parse(text);
       if (Array.isArray(data.models)) return { raw: data.models, catalogSource: 'original-provider-catalog', imageModelAvailable: data.models.some((/** @type {Value} */ m) => (m.slug ?? m.id) === 'gpt-image-2.5-flare') };
       if (!Array.isArray(data.data)) throw new BridgeError('native-model-catalog-unavailable', 'The original provider returned no model catalog.');
@@ -1106,7 +1119,12 @@ export async function loadNativeCodexModelCatalog(modelProvider, currentModel, o
       // 只按原 provider 的实时 ID 授权；模型缓存来自其他账号时也不能引入不在此 provider 的候选项。
       return { raw: (Array.isArray(cached.models) ? cached.models : []).filter((/** @type {Value} */ m) => ids.has(m.slug ?? m.model ?? m.id)), catalogSource: 'provider-models+desktop-capabilities', imageModelAvailable: ids.has('gpt-image-2.5-flare') };
     })();
-    entry = { expires: Date.now() + 300000, value }; nativeCatalogCache.set(fingerprint, entry);
+    entry = { expires: now + 300000, value }; nativeCatalogCache.set(fingerprint, entry);
+    while (nativeCatalogCache.size > MAX_NATIVE_CATALOG_CACHE) {
+      const oldest = nativeCatalogCache.keys().next().value;
+      if (oldest === undefined) break;
+      nativeCatalogCache.delete(oldest);
+    }
     value.catch(() => { if (nativeCatalogCache.get(fingerprint)?.value === value) nativeCatalogCache.delete(fingerprint); });
   }
   const data = await entry.value;
