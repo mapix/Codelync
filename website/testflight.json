@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
-  "status": "in-review",
+  "status": "available",
   "version": "1.0.0",
   "build": "2026111705",
   "appId": "6835734876",
   "groupId": "eaa4762f-309c-4938-882e-8f245c7e1c92",
-  "publicURL": null,
-  "externalApproved": false,
+  "publicURL": "https://testflight.apple.com/join/rMpuyvr8",
+  "externalApproved": true,
   "externalGroupEnabled": true,
   "externalGroupContainsBuild": true,
-  "publishedAt": "2026-11-17T09:12:32.196032+00:00"
+  "publishedAt": "2026-11-18T06:11:37.179144+00:00"
 }
