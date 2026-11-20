@@ -708,7 +708,7 @@ class Sync {
     }
 
     private async scheduleBackgroundSendTimeoutNotification() {
-        if (Platform.OS === 'web' || this.backgroundSendNotificationId) {
+        if (Platform.OS === 'web' || (config.noninvasiveLocal && Platform.OS === 'android') || this.backgroundSendNotificationId) {
             return;
         }
         try {
@@ -742,7 +742,7 @@ class Sync {
     }
 
     private async notifyMessageSendFailed() {
-        if (Platform.OS === 'web') {
+        if (Platform.OS === 'web' || (config.noninvasiveLocal && Platform.OS === 'android')) {
             return;
         }
         try {
@@ -2618,9 +2618,9 @@ class Sync {
         const entry = { credentials, promise: Promise.resolve() as Promise<void> };
         entry.promise = this.getSessionMessageLock(sessionId).inLock(() => this.fetchPeerRecentWindow(sessionId, true)).then(value => {
             cached = value; codelyncLoadingProgress.endSession(sessionId, progress);
+            if (cached && this.credentials === credentials) this.revalidatePeerMessages(sessionId, credentials, progress);
         }).catch(error => { codelyncLoadingProgress.endSession(sessionId, progress, true); throw error; }).finally(() => {
             if (this.codelyncPeerReadFlights.get(sessionId) === entry) this.codelyncPeerReadFlights.delete(sessionId);
-            if (cached && this.credentials === credentials) this.revalidatePeerMessages(sessionId, credentials, progress);
         });
         this.codelyncPeerReadFlights.set(sessionId, entry); return entry.promise;
     }
@@ -2642,7 +2642,7 @@ class Sync {
 
     private fetchPeerRecentWindow = async (sessionId: string, cacheFirst = false): Promise<boolean> => {
         const credentials = this.credentials;
-        const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1, ...(cacheFirst ? { readPolicy: 'cache-first' } : {}) }) });
+        const response = await apiSocket.peerRequest(`/api/peer/sessions/${encodeURIComponent(sessionId)}/recent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 25, ...(cacheFirst ? { readPolicy: 'cache-first' } : {}) }) });
         if (!response.ok) throw Error(`Fresh native messages unavailable: ${response.status}`);
         const data = await response.json() as PeerRecentWindow;
         const current = storage.getState();
@@ -2971,7 +2971,7 @@ class Sync {
                 hasToken: !!result.token,
                 permission: result.permission.status,
             }));
-            if (!result.permission.granted) {
+            if (!result.permission.granted && result.permission.status !== 'unsupported') {
                 console.log('Failed to get push token for push notification!');
             }
         } catch (error) {

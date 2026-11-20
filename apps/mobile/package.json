@@ -1,7 +1,7 @@
 {
   "name": "@codelync/mobile",
   "main": "index.ts",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -21,6 +21,9 @@
     "android:dev": "cross-env APP_ENV=development expo run:android",
     "android:preview": "cross-env APP_ENV=preview expo run:android",
     "android:production": "cross-env APP_ENV=production expo run:android --variant release",
+    "prebuild:android": "cross-env APP_ENV=production expo prebuild --platform android --no-install",
+    "build:android:debug": "node ../../scripts/build-mobile.mjs --platform android --configuration Debug",
+    "build:android:release": "node ../../scripts/build-mobile.mjs --platform android --configuration Release",
     "start:dev": "cross-env APP_ENV=development expo start",
     "start:preview": "cross-env APP_ENV=preview expo start",
     "start:production": "cross-env APP_ENV=production expo start",

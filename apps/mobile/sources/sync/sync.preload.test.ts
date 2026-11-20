@@ -351,8 +351,8 @@ describe('Codelync recent-first entry and peer reads', () => {
         await vi.waitFor(() => expect(codelyncLoadingProgress.getSession('child').revalidating).toBe(false));
         expect(mocks.state.sessions.child.metadata.capabilities.readOnly).toBe(false);
         expect(engine.codelyncHistoryCursors.get('child')).toBe('earlier'); expect(mocks.select).not.toHaveBeenCalled();
-        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 1, readPolicy: 'cache-first' });
-        expect(JSON.parse(mocks.peerRequest.mock.calls[1][1].body)).toEqual({ limit: 1 });
+        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 25, readPolicy: 'cache-first' });
+        expect(JSON.parse(mocks.peerRequest.mock.calls[1][1].body)).toEqual({ limit: 25 });
     });
     it('failed fresh revalidation retains the cached body/draft and ends without an initial-error spinner', async () => {
         peer(); mocks.state.currentViewingSessionId = 'child'; const data: any = uncachedChild();
@@ -460,7 +460,7 @@ describe('Codelync recent-first entry and peer reads', () => {
         await vi.waitFor(() => expect(mocks.applyMessagesLoaded).toHaveBeenCalled());
         expect(mocks.select).toHaveBeenCalledTimes(1); expect(mocks.activate).not.toHaveBeenCalled();
         expect(mocks.peerRequest).toHaveBeenCalledTimes(1); expect(mocks.peerRequest.mock.calls[0][0]).toContain('/recent');
-        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 1, readPolicy: 'cache-first' });
+        expect(JSON.parse(mocks.peerRequest.mock.calls[0][1].body)).toEqual({ limit: 25, readPolicy: 'cache-first' });
         expect(mocks.applyMessages.mock.calls.at(-1)?.[1][0].content.text).toBe('full latest native content');
     });
     it('a pending desktop navigation cannot block the combined authoritative peer recent read', async () => {

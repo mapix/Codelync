@@ -113,6 +113,19 @@ sequenceDiagram
 
 ## Website and platform truth
 
+### Release 1.0.2 (build 2026112001) — 2026-11-20
+
+Mac, iPhone and Android advance to `1.0.2` (`2026112001`), packaged for Mac as
+`Codelync-1.0.2-macos-arm64.zip`. This release adds adaptive 2x portrait
+`CGVirtualDisplay` Phone Screen and non-intrusive AX window fill/restore to
+Remote Desktop, push-free Android mobile app parity and standalone Release APK
+builds, continuous foreground project/session status preservation during
+in-flight refreshes, and bounded collapsed-tool-group viewport traversal plus
+64-step Antigravity trajectory suffixes so tool-heavy sessions open directly to
+conversation content. Prior immutable Mac archives (`1.0.0`, `1.0.1`) remain
+retained, and `website/testflight.json` continues to reflect only Apple's
+verified external-review build state.
+
 ### Release 1.0.1 (build 2026111801) — 2026-11-18
 
 Mac and iPhone advance to `1.0.1` (`2026111801`), packaged for Mac as

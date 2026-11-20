@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     platform: { OS: 'ios' },
+    cacheDirectory: 'file:///cache/' as string | null,
+    initialSelectedImages: [] as any[],
     requestMediaLibraryPermissionsAsync: vi.fn(),
     launchImageLibraryAsync: vi.fn(),
     manipulateAsync: vi.fn(),
     generateThumbhash: vi.fn(),
     getInfoAsync: vi.fn(),
+    copyAsync: vi.fn(),
+    deleteAsync: vi.fn(),
     writeAsStringAsync: vi.fn(),
     hasImageAsync: vi.fn(),
     getImageAsync: vi.fn(),
@@ -16,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 
 // Exercise the picker callback and its state update without native UI modules.
 vi.mock('react', () => ({
-    useState: () => [[], mocks.setSelectedImages],
+    useState: () => [mocks.initialSelectedImages, mocks.setSelectedImages],
     useRef: <T,>(value: T) => ({ current: value }),
     useCallback: <T,>(callback: T) => callback,
     useEffect: (effect: () => void) => { effect(); },
@@ -41,8 +45,10 @@ vi.mock('@/modal', () => ({
 }));
 
 vi.mock('expo-file-system/legacy', () => ({
-    cacheDirectory: 'file:///cache/',
+    get cacheDirectory() { return mocks.cacheDirectory; },
     getInfoAsync: mocks.getInfoAsync,
+    copyAsync: mocks.copyAsync,
+    deleteAsync: mocks.deleteAsync,
     writeAsStringAsync: mocks.writeAsStringAsync,
 }));
 
@@ -59,7 +65,20 @@ vi.mock('@/utils/thumbhash', () => ({
     generateThumbhash: mocks.generateThumbhash,
 }));
 
-import { MAX_FILE_SIZE, normalizePickedAssetForUpload, readImageDataUri, useImagePicker } from './useImagePicker';
+import {
+    ATTACHMENT_JPEG_QUALITY,
+    ATTACHMENT_MAX_DIMENSION,
+    ATTACHMENT_MAX_FILE_SIZE,
+    IOS_ATTACHMENT_JPEG_QUALITY,
+    IOS_ATTACHMENT_MAX_DIMENSION,
+    IOS_ATTACHMENT_MAX_FILE_SIZE,
+    MAX_FILE_SIZE,
+    MAX_IMAGES_PER_MESSAGE,
+    normalizePickedAssetForUpload,
+    readImageDataUri,
+    resolveLocalUriByteSize,
+    useImagePicker,
+} from './useImagePicker';
 import type { AttachmentPreview } from './useImagePicker';
 
 const photo = {
@@ -74,15 +93,105 @@ const photo = {
 beforeEach(() => {
     vi.resetAllMocks();
     mocks.platform.OS = 'ios';
+    mocks.cacheDirectory = 'file:///cache/';
+    mocks.initialSelectedImages = [];
     mocks.getInfoAsync.mockResolvedValue({ exists: true, isDirectory: false, size: 3_000_000 });
+    mocks.copyAsync.mockResolvedValue(undefined);
+    mocks.deleteAsync.mockResolvedValue(undefined);
     mocks.manipulateAsync.mockResolvedValue({ uri: 'file:///test/normalized.jpg', width: 2304, height: 3072 });
     mocks.requestMediaLibraryPermissionsAsync.mockResolvedValue({ status: 'granted' });
     mocks.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [photo] });
     mocks.generateThumbhash.mockResolvedValue('thumbhash');
 });
 
+describe('exported attachment constants', () => {
+    it('exports cross-platform attachment constants alongside backward-compatible iOS aliases', () => {
+        expect(MAX_IMAGES_PER_MESSAGE).toBe(20);
+        expect(MAX_FILE_SIZE).toBe(10 * 1024 * 1024);
+        expect(ATTACHMENT_JPEG_QUALITY).toBe(0.92);
+        expect(ATTACHMENT_MAX_DIMENSION).toBe(3072);
+        expect(ATTACHMENT_MAX_FILE_SIZE).toBe(10_485_720);
+        expect(IOS_ATTACHMENT_JPEG_QUALITY).toBe(ATTACHMENT_JPEG_QUALITY);
+        expect(IOS_ATTACHMENT_MAX_DIMENSION).toBe(ATTACHMENT_MAX_DIMENSION);
+        expect(IOS_ATTACHMENT_MAX_FILE_SIZE).toBe(ATTACHMENT_MAX_FILE_SIZE);
+    });
+});
+
+describe('resolveLocalUriByteSize', () => {
+    it('returns exact file:// byte size directly from getInfoAsync without staging', async () => {
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: 2_468_135 });
+        await expect(resolveLocalUriByteSize('file:///cache/picked.jpg')).resolves.toBe(2_468_135);
+        expect(mocks.copyAsync).not.toHaveBeenCalled();
+        expect(mocks.deleteAsync).not.toHaveBeenCalled();
+    });
+
+    it('stages Android content:// directly via copyAsync without calling getInfoAsync(contentUri), avoiding IOException and 4 KB pipe under-reporting', async () => {
+        const contentUri = 'content://media/picker/0/com.android.providers.media.photopicker/media/42';
+        mocks.getInfoAsync.mockImplementation(async (target: string) => {
+            if (target.startsWith('content://')) {
+                throw new Error('IOException: stream does not support available()');
+            }
+            return { exists: true, isDirectory: false, size: 15_728_640 };
+        });
+
+        await expect(resolveLocalUriByteSize(contentUri)).resolves.toBe(15_728_640);
+
+        expect(mocks.copyAsync).toHaveBeenCalledOnce();
+        const stagedTarget = mocks.copyAsync.mock.calls[0][0].to as string;
+        expect(mocks.copyAsync).toHaveBeenCalledWith({ from: contentUri, to: stagedTarget });
+        expect(stagedTarget).toMatch(/^file:\/\/\/cache\/codelync_size_/);
+        expect(mocks.getInfoAsync).toHaveBeenCalledExactlyOnceWith(stagedTarget);
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith(stagedTarget, { idempotent: true });
+    });
+
+    it('measures full staged size instead of buffered 4096-byte pipe chunk on cloud-backed content:// URIs', async () => {
+        const contentUri = 'content://com.google.android.apps.photos.contentprovider/-1/1/content%3A%2F%2Fmedia%2Fexternal%2Fimages%2Fmedia%2F88/ORIGINAL/NONE/123';
+        mocks.getInfoAsync.mockImplementation(async (target: string) => (
+            target.startsWith('content://')
+                ? { exists: true, isDirectory: false, size: 4096 }
+                : { exists: true, isDirectory: false, size: 15_728_640 }
+        ));
+
+        await expect(resolveLocalUriByteSize(contentUri)).resolves.toBe(15_728_640);
+        expect(mocks.getInfoAsync).not.toHaveBeenCalledWith(contentUri);
+    });
+
+    it('cleans up temp file via deleteAsync even when copyAsync or staged getInfoAsync fails', async () => {
+        const contentUri = 'content://media/picker/0/com.android.providers.media.photopicker/media/99';
+        mocks.copyAsync.mockRejectedValueOnce(new Error('provider stream error'));
+
+        await expect(resolveLocalUriByteSize(contentUri)).rejects.toThrow('provider stream error');
+
+        expect(mocks.copyAsync).toHaveBeenCalledOnce();
+        const stagedTarget = mocks.copyAsync.mock.calls[0][0].to as string;
+        expect(mocks.getInfoAsync).not.toHaveBeenCalled();
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith(stagedTarget, { idempotent: true });
+    });
+
+    it('cleans up temp file and throws when staged content:// copy reports 0 bytes', async () => {
+        const contentUri = 'content://media/picker/0/com.android.providers.media.photopicker/media/100';
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: 0 });
+
+        await expect(resolveLocalUriByteSize(contentUri)).rejects.toThrow('Could not determine image size');
+
+        const stagedTarget = mocks.copyAsync.mock.calls[0][0].to as string;
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith(stagedTarget, { idempotent: true });
+    });
+
+    it('falls back to getInfoAsync(uri) on content:// only when cacheDirectory is unavailable', async () => {
+        mocks.cacheDirectory = null;
+        const contentUri = 'content://media/picker/0/com.android.providers.media.photopicker/media/55';
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: 1_234_567 });
+
+        await expect(resolveLocalUriByteSize(contentUri)).resolves.toBe(1_234_567);
+        expect(mocks.copyAsync).not.toHaveBeenCalled();
+        expect(mocks.getInfoAsync).toHaveBeenCalledExactlyOnceWith(contentUri);
+    });
+});
+
 describe('normalizePickedAssetForUpload', () => {
-    it('normalizes iOS image picker assets to JPEG before upload', async () => {
+    it.each(['ios', 'android'] as const)('normalizes %s image picker assets to <=3072px 0.92 JPEG before upload', async (platform) => {
+        mocks.platform.OS = platform;
         mocks.manipulateAsync.mockResolvedValue({
             uri: 'file:///tmp/ImageManipulator/IMG_9824.jpg',
             width: 3072,
@@ -110,6 +219,90 @@ describe('normalizePickedAssetForUpload', () => {
             height: 2304,
             size: 3_000_000,
         });
+    });
+
+    it('enforces post-decode <=3072px resize and deletes intermediate file when Android content:// asset reports 0x0 dimensions', async () => {
+        mocks.platform.OS = 'android';
+        const rawContentUri = 'content://media/picker/0/com.android.providers.media.photopicker/media/77';
+        mocks.manipulateAsync
+            .mockResolvedValueOnce({ uri: 'file:///cache/first_pass.jpg', width: 6000, height: 4000 })
+            .mockResolvedValueOnce({ uri: 'file:///cache/second_pass.jpg', width: 3072, height: 2048 });
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: 1_850_000 });
+
+        const normalized = await normalizePickedAssetForUpload({
+            uri: rawContentUri,
+            width: 0,
+            height: 0,
+            fileName: 'raw_photo.webp',
+            fileSize: undefined,
+        });
+
+        expect(mocks.manipulateAsync).toHaveBeenNthCalledWith(
+            1,
+            rawContentUri,
+            [],
+            { compress: 0.92, format: 'jpeg' },
+        );
+        expect(mocks.manipulateAsync).toHaveBeenNthCalledWith(
+            2,
+            'file:///cache/first_pass.jpg',
+            [{ resize: { width: 3072 } }],
+            { compress: 0.92, format: 'jpeg' },
+        );
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith('file:///cache/first_pass.jpg', { idempotent: true });
+        expect(normalized).toEqual({
+            uri: 'file:///cache/second_pass.jpg',
+            width: 3072,
+            height: 2048,
+            mimeType: 'image/jpeg',
+            name: 'raw_photo.jpg',
+            size: 1_850_000,
+        });
+    });
+
+    it('deletes intermediate first_pass file and preserves primary error when 0x0 content:// decodes >3072px and second manipulateAsync throws', async () => {
+        mocks.platform.OS = 'android';
+        const rawContentUri = 'content://media/picker/0/com.android.providers.media.photopicker/media/78';
+        mocks.manipulateAsync
+            .mockResolvedValueOnce({ uri: 'file:///cache/first_pass.jpg', width: 3073, height: 100 })
+            .mockRejectedValueOnce(new Error('OutOfMemoryError: bitmap allocation failed'));
+        mocks.deleteAsync.mockRejectedValueOnce(new Error('secondary unlink error'));
+
+        await expect(normalizePickedAssetForUpload({
+            uri: rawContentUri,
+            width: 0,
+            height: 0,
+            fileName: 'giant_panorama.webp',
+            fileSize: undefined,
+        })).rejects.toThrow('OutOfMemoryError: bitmap allocation failed');
+
+        expect(mocks.manipulateAsync).toHaveBeenCalledTimes(2);
+        expect(mocks.manipulateAsync).toHaveBeenNthCalledWith(
+            2,
+            'file:///cache/first_pass.jpg',
+            [{ resize: { width: 3072 } }],
+            { compress: 0.92, format: 'jpeg' },
+        );
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith('file:///cache/first_pass.jpg', { idempotent: true });
+        expect(mocks.getInfoAsync).not.toHaveBeenCalled();
+    });
+
+    it('never deletes source asset.uri if first pass returns asset.uri unchanged and second manipulateAsync throws', async () => {
+        mocks.platform.OS = 'android';
+        const sourceUri = 'file:///storage/emulated/0/Pictures/original.jpg';
+        mocks.manipulateAsync
+            .mockResolvedValueOnce({ uri: sourceUri, width: 100, height: 3073 })
+            .mockRejectedValueOnce(new Error('codec error'));
+
+        await expect(normalizePickedAssetForUpload({
+            uri: sourceUri,
+            width: 0,
+            height: 0,
+            fileName: 'original.jpg',
+            fileSize: undefined,
+        })).rejects.toThrow('codec error');
+
+        expect(mocks.deleteAsync).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -147,20 +340,137 @@ describe('normalizePickedAssetForUpload', () => {
         { exists: true, size: -1 },
         { exists: true, size: NaN },
         { exists: true, size: Infinity },
-    ])('rejects unreadable/unknown transformed filesize: %j', async (info) => {
+    ])('rejects unreadable/unknown transformed filesize and cleans up converted temp file: %j', async (info) => {
         mocks.getInfoAsync.mockResolvedValue(info);
         await expect(normalizePickedAssetForUpload(photo)).rejects.toThrow();
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith('file:///test/normalized.jpg', { idempotent: true });
     });
 
-    it.each(['android', 'web'])('preserves the existing %s path', async (platform) => {
-        mocks.platform.OS = platform;
-        const normalized = await normalizePickedAssetForUpload(photo);
+    it('preserves primary size-check error and skips deleting asset.uri when converted.uri matches asset.uri', async () => {
+        mocks.manipulateAsync.mockResolvedValueOnce({ uri: photo.uri, width: 2304, height: 3072 });
+        mocks.getInfoAsync.mockRejectedValueOnce(new Error('stat failed'));
+        await expect(normalizePickedAssetForUpload(photo)).rejects.toThrow('stat failed');
+        expect(mocks.deleteAsync).not.toHaveBeenCalled();
+    });
+
+    it('preserves the existing web pass-through path without calling manipulateAsync', async () => {
+        mocks.platform.OS = 'web';
+        const webAsset = {
+            uri: 'blob:https://codelync.invalid/asset-1',
+            width: 1600,
+            height: 1200,
+            mimeType: 'image/png',
+            fileName: 'web.png',
+            fileSize: 512_000,
+        };
+        const normalized = await normalizePickedAssetForUpload(webAsset);
         expect(normalized).toEqual({
-            uri: photo.uri, width: photo.width, height: photo.height,
-            mimeType: photo.mimeType, name: photo.fileName, size: photo.fileSize,
+            uri: webAsset.uri, width: webAsset.width, height: webAsset.height,
+            mimeType: webAsset.mimeType, name: webAsset.fileName, size: webAsset.fileSize,
         });
         expect(mocks.manipulateAsync).not.toHaveBeenCalled();
         expect(mocks.getInfoAsync).not.toHaveBeenCalled();
+    });
+});
+
+describe('useImagePicker Android Photo Picker permissions, limits & cap parity', () => {
+    function addedImages(): AttachmentPreview[] {
+        expect(mocks.setSelectedImages).toHaveBeenCalledTimes(1);
+        return mocks.setSelectedImages.mock.calls[0][0]([]);
+    }
+
+    it('launches Android System Photo Picker without calling requestMediaLibraryPermissionsAsync even if mocked denied', async () => {
+        mocks.platform.OS = 'android';
+        mocks.requestMediaLibraryPermissionsAsync.mockResolvedValue({ status: 'denied' });
+        mocks.launchImageLibraryAsync.mockResolvedValue({
+            canceled: false,
+            assets: [{
+                uri: 'content://media/picker/0/com.android.providers.media.photopicker/media/101',
+                width: 4032,
+                height: 3024,
+                mimeType: 'image/heic',
+                fileName: 'IMG_ANDROID.HEIC',
+                fileSize: undefined,
+            }],
+        });
+
+        await useImagePicker().pickImages();
+
+        expect(mocks.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
+        expect(mocks.launchImageLibraryAsync).toHaveBeenCalledExactlyOnceWith({
+            mediaTypes: ['images'],
+            allowsMultipleSelection: true,
+            selectionLimit: 20,
+            quality: 1,
+            exif: false,
+        });
+        expect(addedImages()).toEqual([expect.objectContaining({
+            uri: 'file:///test/normalized.jpg',
+            mimeType: 'image/jpeg',
+            name: 'IMG_ANDROID.jpg',
+            size: 3_000_000,
+        })]);
+        expect(mocks.alert).not.toHaveBeenCalled();
+    });
+
+    it('continues checking requestMediaLibraryPermissionsAsync on iOS and alerts when denied', async () => {
+        mocks.platform.OS = 'ios';
+        mocks.requestMediaLibraryPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+
+        await useImagePicker().pickImages();
+
+        expect(mocks.requestMediaLibraryPermissionsAsync).toHaveBeenCalledOnce();
+        expect(mocks.launchImageLibraryAsync).not.toHaveBeenCalled();
+        expect(mocks.alert).toHaveBeenCalledExactlyOnceWith(
+            'imageUpload.permissionTitle',
+            'imageUpload.permissionMessage',
+            expect.any(Array),
+        );
+    });
+
+    it('accepts exact MAX_FILE_SIZE - 40 (10,485,720 B) and rejects 10,485,721 B on Android even when asset.fileSize was 0 or undefined', async () => {
+        mocks.platform.OS = 'android';
+        mocks.launchImageLibraryAsync.mockResolvedValue({
+            canceled: false,
+            assets: [{ ...photo, fileSize: 0 }],
+        });
+
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: MAX_FILE_SIZE - 40 });
+        await useImagePicker().pickImages();
+        expect(addedImages()[0].size).toBe(10_485_720);
+        expect(mocks.alert).not.toHaveBeenCalled();
+
+        mocks.setSelectedImages.mockClear();
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: MAX_FILE_SIZE - 39 });
+        await useImagePicker().pickImages();
+        expect(mocks.setSelectedImages).not.toHaveBeenCalled();
+        expect(mocks.alert).toHaveBeenCalledExactlyOnceWith(
+            'imageUpload.fileTooLargeTitle',
+            'imageUpload.fileTooLargeMessage',
+            expect.any(Array),
+        );
+    });
+
+    it('enforces MAX_IMAGES_PER_MESSAGE = 20 cap on Android', async () => {
+        mocks.platform.OS = 'android';
+        mocks.initialSelectedImages = Array.from({ length: MAX_IMAGES_PER_MESSAGE }, (_, idx) => ({
+            id: `img-${idx}`,
+            uri: `file:///test/${idx}.jpg`,
+            width: 100,
+            height: 100,
+            mimeType: 'image/jpeg',
+            size: 1000,
+            name: `${idx}.jpg`,
+        }));
+
+        await useImagePicker().pickImages();
+
+        expect(mocks.launchImageLibraryAsync).not.toHaveBeenCalled();
+        expect(mocks.alert).toHaveBeenCalledExactlyOnceWith(
+            'imageUpload.limitTitle',
+            'imageUpload.limitMessage',
+            expect.any(Array),
+        );
     });
 });
 
@@ -181,12 +491,21 @@ describe('useImagePicker transformed upload validation', () => {
         expect(mocks.alert).not.toHaveBeenCalled();
     });
 
-    it.each([MAX_FILE_SIZE + 1, MAX_FILE_SIZE, MAX_FILE_SIZE - 39])('rejects transformed size %i including encryption overhead', async (size) => {
+    it.each([MAX_FILE_SIZE + 1, MAX_FILE_SIZE, MAX_FILE_SIZE - 39])('rejects transformed size %i including encryption overhead and cleans up converted temp file', async (size) => {
         mocks.getInfoAsync.mockResolvedValue({ exists: true, isDirectory: false, size });
         await useImagePicker().pickImages();
+        expect(mocks.deleteAsync).toHaveBeenCalledExactlyOnceWith('file:///test/normalized.jpg', { idempotent: true });
         expect(mocks.alert).toHaveBeenCalledWith('imageUpload.fileTooLargeTitle', 'imageUpload.fileTooLargeMessage', expect.any(Array));
         expect(mocks.generateThumbhash).not.toHaveBeenCalled();
         expect(mocks.setSelectedImages).not.toHaveBeenCalled();
+    });
+
+    it('never deletes source asset.uri when rejecting an oversized image whose normalized URI equals asset.uri', async () => {
+        mocks.manipulateAsync.mockResolvedValueOnce({ uri: photo.uri, width: 2304, height: 3072 });
+        mocks.getInfoAsync.mockResolvedValueOnce({ exists: true, isDirectory: false, size: MAX_FILE_SIZE });
+        await useImagePicker().pickImages();
+        expect(mocks.deleteAsync).not.toHaveBeenCalled();
+        expect(mocks.alert).toHaveBeenCalledWith('imageUpload.fileTooLargeTitle', 'imageUpload.fileTooLargeMessage', expect.any(Array));
     });
 
     it('accepts the exact encrypted upload boundary and reports plaintext bytes', async () => {
@@ -337,30 +656,35 @@ describe('useImagePicker pasting', () => {
         await vi.waitFor(() => expect(mocks.launchImageLibraryAsync).toHaveBeenCalledOnce());
     });
 
-    // Off iOS nothing downstream measures an image, so a paste that is not
-    // weighed here counts as nothing at all.
     describe('on Android', () => {
         beforeEach(() => { mocks.platform.OS = 'android'; });
 
-        it('weighs the file it wrote', async () => {
+        it('writes clipboard PNG to cache, normalizes to JPEG, and measures normalized bytes', async () => {
             mocks.hasImageAsync.mockResolvedValue(true);
             mocks.getImageAsync.mockResolvedValue(clipboardImage);
-            mocks.getInfoAsync.mockResolvedValue({ exists: true, isDirectory: false, size: 1_234_567 });
+            mocks.getInfoAsync
+                .mockResolvedValueOnce({ exists: true, isDirectory: false, size: 2_000_000 })
+                .mockResolvedValueOnce({ exists: true, isDirectory: false, size: 1_234_567 });
 
             await expect(useImagePicker().pasteImages()).resolves.toBe(true);
 
+            expect(mocks.manipulateAsync).toHaveBeenCalledExactlyOnceWith(
+                expect.stringMatching(/^file:\/\/\/cache\/paste_\d+\.png$/),
+                [],
+                { compress: 0.92, format: 'jpeg' },
+            );
             const added = mocks.setSelectedImages.mock.calls[0][0]([]);
             expect(added).toEqual([expect.objectContaining({
-                uri: expect.stringMatching(/^file:\/\/\/cache\/paste_\d+\.png$/),
-                mimeType: 'image/png',
+                uri: 'file:///test/normalized.jpg',
+                mimeType: 'image/jpeg',
                 size: 1_234_567,
             })]);
         });
 
-        it('holds a pasted image to the same size limit as a picked one', async () => {
+        it('holds a pasted image on Android to the MAX_FILE_SIZE - 40 (10,485,720 B) limit', async () => {
             mocks.hasImageAsync.mockResolvedValue(true);
             mocks.getImageAsync.mockResolvedValue(clipboardImage);
-            mocks.getInfoAsync.mockResolvedValue({ exists: true, isDirectory: false, size: MAX_FILE_SIZE + 1 });
+            mocks.getInfoAsync.mockResolvedValue({ exists: true, isDirectory: false, size: MAX_FILE_SIZE - 39 });
 
             await expect(useImagePicker().pasteImages()).resolves.toBe(false);
             expect(mocks.setSelectedImages).not.toHaveBeenCalled();

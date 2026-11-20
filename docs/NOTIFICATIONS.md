@@ -1,6 +1,6 @@
 # iPhone notifications
 
-Codelync (`1.0.1`, build `2026111801`) sends Apple APNs alerts for original-owner
+Codelync (`1.0.2`, build `2026112001`) sends Apple APNs alerts for original-owner
 turn completion, failure, and newly required input or approval from verified
 Codex, Antigravity Desktop and Claude Desktop (Gateway) sessions. The Mac and
 original Desktop owner must remain running and online. Only sessions already

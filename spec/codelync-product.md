@@ -5,14 +5,58 @@
 当前产品名、源码命名空间、App 标识、配对协议和本地存储统一为 Codelync。
 首次 Codelync 发行使用 Mac/iPhone 1.0.0、构建号 2026111705，官网为
 `https://codelync.novarock.io/`，源码为 `https://github.com/mapix/Codelync`。
-iPhone bundle ID 为 `com.learnings.codelync`，Mac 为
-`com.learnings.codelync.mac`。用户明确不要求旧 CodeLight 标识兼容或数据迁移；
+iPhone bundle ID 与 Android `applicationId` 均为 `com.learnings.codelync`
+（Mac 为 `com.learnings.codelync.mac`）。用户明确不要求旧 CodeLight 标识兼容或数据迁移；
 旧应用及数据备份仅作为历史资料保留，不进入新安装和公开包。原 Desktop 会话
 与运行时仍由原应用持有，不因产品更名修改或重启它们。
 
 早期 CodeLight 手机端与加密同步服务基于 Happy 的 MIT 许可源码。
 当前 Codelync 保留相关版权、许可和继承说明；后续原生 Desktop 接入与控制
 不将第三方 Desktop 软件打包分发。
+
+## Android 正式版与无推送功能对齐 — 2026-11-18
+
+Codelync Android 客户端（`applicationId` 为 `com.learnings.codelync`，主入口
+`com.learnings.codelync/.MainActivity`，URI scheme 为 `codelync://`，整数
+`versionCode` 与当前移动构建号对齐）面向日常使用与正式安装包交付，同时支持本地开发
+构建（Debug APK，`assembleDebug`）与内嵌 Hermes 字节码、静态资源和原生动态库、可脱离
+Metro 独立安装冷启动的签名正式包（Release APK，`APP_ENV=production ./gradlew assembleRelease`）。
+Android 自适应桌面图标（foreground/monochrome）与明暗启动页统一使用 Codelync 品牌资产，
+不保留上游历史 `"H"` 图标；本地签名密钥与 keystore 严格保留在未追踪路径，不进入仓库或公开包。
+
+Android 版本除推送通知能力外与现有 iPhone 版本全面对齐：
+
+- **支持范围与原桌面所有者一致**：仅连接并呈现已启用桌面来源（`Codex`、`Antigravity Desktop`
+  与 `Claude Desktop (Gateway)`）的原生项目、会话、子代理、原生后台任务与原应用已确认可用的
+  控制操作；独立 CLI/TUI 家族、其他 harness 与窗口/AX 控制继续延期，不发现、不激活、不在界面宣传。
+- **跨平台扫码、配对深链与局域网直连 HTTP**：应用内扫码统一使用 `expo-camera` `CameraView`
+  （iOS `AVFoundation`、Android `CameraX`/`Camera2`）读取 QR，相机权限被拒绝时提供直达系统应用设置
+  （`Linking.openSettings()`）与粘贴配对链接回退（`codelync://pair?...`），扫码弹窗响应 Android
+  系统返回关闭。Android 注册 `codelync://pair` 的 `VIEW`/`BROWSABLE`/`DEFAULT` intent filter
+  （正式构建同时声明 `https://codelync.novarock.io` App Links）以支持冷启动与前台唤起配对。
+  鉴于 Mac 局域网通道绑定私有 IPv4 明文传输层（`http://<mac-lan-ip>:<port>` 与 `ws://<mac-lan-ip>:<port>`，
+  全负载仍由 Codelync X25519 box / secretbox / Peer Codec v3 端到端加密且每请求强制携带
+  `Authorization: Codelync <packet>` 密封设备证明），Android Debug 与 Release APK 均允许本地网络明文
+  HTTP 通信（`usesCleartextTraffic: true`）；公网 `cloudflare` 与 `relay` 通道继续强制 HTTPS/WSS 证书校验。
+- **无权限系统选图与加密附件上传对齐**：Android 图片选择直接调用系统 Photo Picker
+  （`PickVisualMedia` / `PickMultipleVisualMedia`），不声明 `READ_EXTERNAL_STORAGE`、
+  `WRITE_EXTERNAL_STORAGE`、`READ_MEDIA_IMAGES` 或 `READ_MEDIA_VIDEO`，且在 Android 上跳过
+  `requestMediaLibraryPermissionsAsync()` 以避免 Android 12 及以下因禁用旧存储权限被误拒。
+  选图与剪贴板粘贴图片与 iPhone 执行同一归一化与校验规则：单条消息最多 `20` 张图片，按长边不超过
+  `3072` 像素等比缩放并转为 JPEG（质量 `0.92`），通过文件系统实测转换后字节数（防止缺失或 `0`
+  `fileSize` 绕过上限），并在加密前按 `MAX_FILE_SIZE - 40`（`10,485,720` 明文字节，预留 40 字节
+  secretbox nonce + MAC 开销以符合 `10 MiB` 密文上限）完成校验与上传。
+- **无推送（Push-Free）运行模式与前台会话租约**：Android 本期不包含远程推送能力。Android 清单移除并禁止
+  `android.permission.POST_NOTIFICATIONS`；客户端在启动、配对完成与回到前台时直接短路推送注册
+  （返回 `status: 'unsupported'`），不弹出系统通知权限框、不获取设备推送 token、不调用仅接受 APNs
+  十六进制 token 的 `POST /codelync/notifications/device`，也不产生错误提示、日志告警、无效设置项或同步阻塞。
+  Mac 设备列表中该设备 `notifications` 为 `false`，“测试通知”自动禁用，在线状态与撤销不受影响。
+  与此同时，Android 前台活跃期间每 `15` 秒及切换会话焦点时照常发送密封的
+  `POST /codelync/notifications/presence`（`{ active, sessionId, sequence }`），维持 `DeviceRegistry.viewedSessions()`
+  的 `<= 45` 秒可见会话租约，与 iPhone 一致地保护当前查看会话的原生观察器不被后台回收或 LRU 淘汰。
+- **Android 全面屏安全区、软键盘避让与系统返回**：关键页面与透明系统栏弹窗遵循边到边安全区与输入法避让、非 Compose
+  尺寸塌缩规避及单层优先的硬件返回键／边缘返回手势规则，详见 [移动端导航合同](codelync-mobile-navigation.md) 与
+  [远程桌面移动端体验合同](codelync-remote-desktop-mobile-experience.md)。
 
 ## 当前发行定位 — 2026-11-17
 
@@ -24,12 +68,14 @@ App、TestFlight、GitHub Release 与官网面向已在原桌面应用配置模�
 手机远程桌面是可选功能，首次和升级默认不显示入口，用户在 Settings 的功能
 开关中主动启用后才显示。该开关不替代 Mac 的远控启用、屏幕录制或辅助功能授权。
 
-TestFlight 发行使用 production APNs 签名。设备的已验证注册声明对应的 APNs
+iPhone TestFlight 发行使用 production APNs 签名。iOS 设备的已验证注册声明对应的 APNs
 环境；Mac 发送器按设备环境投递至 Apple 的 sandbox 或 production，保留原有
-开发设备。密钥和设备 token 保留在设备及个人 Mac，不进入公开源码或发行包。
+开发设备；Android 客户端运行于无推送模式，不注册推送 token。密钥和设备 token
+保留在设备及个人 Mac，不进入公开源码或发行包。
 
-手机二维码配对（“扫描二维码” / “扫描 Mac 二维码”）使用应用内 `AVFoundation`
-相机扫码视图（`CameraView` QR 元数据输出）与粘贴链接回退（`codelync://pair?...`），
+手机二维码配对（“扫描二维码” / “扫描 Mac 二维码”）在 iPhone 与 Android 上统一使用应用内
+`expo-camera` `CameraView` 相机扫码视图（iOS `AVFoundation`、Android `CameraX`/`Camera2`
+QR 元数据输出）、配对深链唤起与粘贴链接回退（`codelync://pair?...`），
 通过即时相机权限检查（被拒绝时提供直达系统“设置”的引导）并在首次引导与
 Settings 中明确提示权限或配对错误，不被后台自动恢复阻塞。
 
@@ -176,7 +222,8 @@ sequenceDiagram
 - Empty bootstrap and identical metadata/state updates do not rewrite encrypted
   journals or issue new CAS updates. Real native content changes and admission
   receipts remain durable.
-- When push is unavailable, remembered history entries are not all restored as
+- When push is unavailable (including push-free Android clients and unsigned
+  simulator builds), remembered history entries are not all restored as
   full observers. Selected/viewed sources and unfinished work remain protected;
   unviewed quiescent observers can retire while history and receipts remain.
   Lightweight project activity remains separate from full message observation.
@@ -227,7 +274,7 @@ sequenceDiagram
 
 ## RPC scope 与事件顺序
 
-- 手机前台会话状态独立于推送权限。v2 peer 必须通过当前认证连接发送密封请求；同一 Mac 换通道后使用当前 endpoint 与最新 peer 凭据，不能继续向旧地址发送普通 Bearer。
+- 手机前台会话状态（`POST /codelync/notifications/presence`，`<= 45` 秒租约）独立于推送权限与平台推送能力，在 iPhone 与无推送 Android 客户端上一致运行。v2 peer 必须通过当前认证连接发送密封请求；同一 Mac 换通道后使用当前 endpoint 与最新 peer 凭据，不能继续向旧地址发送普通 Bearer。
 - 当前可见会话的前台状态保护既有 observer/RPC attachment；离开前台才允许其按现有空闲规则回收。连接或 peer 改变时，旧状态不能发送到另一个 Mac。
 - RPC broker 在没有目标、参数无效或试图自调用且尚未 emit 时返回明确的 `effectMayHaveOccurred:false`。手机只将这种已确认未派发的新操作视为可重试；emit 后的断线/超时仍保留原编号并只读查询。旧版本留下的未知记录不因新规则自动重发或删除。
 
@@ -263,18 +310,18 @@ sequenceDiagram
 
 ## 构建边界
 
-本产品是用户明确要求开发并在模拟器测试的独立 fork，Codelync 本地编译与测试针对当前源码。上游 Happy 的 EAS/OTA/商店发布流程属于上游产品发布；本轮不运行这些流程。独立产品输出需有对应的源码版本、构建标识、校验和及验证报告。
+本产品是用户明确要求开发并在本地模拟器／设备测试的独立 fork，Codelync 本地编译与测试针对当前源码（覆盖 Mac App、iOS 构建以及 Android 本地 Debug APK 与可独立安装的签名 Release APK）。上游 Happy 的 EAS/OTA/商店发布流程属于上游产品发布；本轮不运行这些流程。独立产品输出需有对应的源码版本、构建标识、校验和及验证报告。
 
 ## 验收
 
-完整网络验收包含当前 Mac App 的内置同步服务、出站隧道、Connector 和原生手机 App。Codex 桌面须已运行；发现和观察只绑定既有原 owner，绝不新建同会话 writer。类型/单测、模拟器、真机安装、网络可达与温度/帧率分别记录，不能互相代替。
+完整网络验收包含当前 Mac App 的内置同步服务、局域网与出站通道、Connector 和原生手机 App（iPhone 与 Android）。原桌面应用须由原 owner 持有会话；发现和观察只绑定既有原 owner，绝不新建同会话 writer。类型/单测、模拟器、真机安装、网络可达与温度/帧率分别记录，不能互相代替。
 
-1. 打开独立 Mac App，手机扫码完成配对，连接已经运行的 Codex 原 owner，读取真实专用验证聊天。
-2. 原生界面显示 Codelync、历史和工具；原输入、停止、问题/权限回应只作用于所见原会话身份。常规 UI、状态和恢复验收不发送新模型测试输入。
-3. 字符增长、非 prefix 修订、工具输出、重复消息、Connector 重启和 App 重启正确恢复，不重复 native dispatch。
-4. 图片点击打开、缩放、平移、关闭；附件只经源绑定加密链路提供，错误可见且可重试读取。
-5. 前台项目状态、会话选择框和语言切换通过对应回归与原生验收；历史多 harness/window spec 不计入当前支持清单。
-6. 提供可重建的源码、启动命令、本地模拟器包与当前验证报告，准确列出尚未验证的平台或能力。
+1. 打开独立 Mac App，手机（通过应用内相机扫码、`codelync://pair?...` 深链唤起或粘贴配对链接，含局域网直连场景）完成端到端加密配对，连接已启用桌面来源原 owner 并同步项目与原生会话。
+2. 原生界面显示 Codelync、历史和工具；原输入、停止、模型/推理强度确认更新、问题/权限回应只作用于所见原会话身份。常规 UI、状态和恢复验收不向用户私人会话发送新模型测试输入。
+3. 字符增长、非 prefix 修订、工具输出、重复消息、Connector 重启和 App 重启正确恢复，不重复 native dispatch；Android 无推送模式下前台在线租约与实时消息同步正常，无推送报错、权限弹窗或阻塞。
+4. 手机系统选图与粘贴图片归一化加密上传，以及会话内图片/受限视频/文件点击打开、缩放、平移、保存与关闭；附件只经源绑定加密链路提供，错误可见且可重试读取。
+5. 前台项目状态、会话选择框、可选独立远程桌面（画面解密与触控/键盘输入）和语言/主题切换通过对应回归与原生验收；Android 模拟器正式安装包（Release APK，停止 Metro 独立冷启动）通过引导/配对页、项目与会话列表页、会话详情输入页、远程桌面页、设置页的状态栏、全面屏手势栏/三键导航栏、软键盘避让与系统返回手势/返回键核验，无遮挡、白屏或闪退；历史多 harness/window spec 不计入当前支持清单。
+6. 提供可重建的源码、启动命令、本地模拟器/独立安装包（含 Android Release APK）与当前验证报告，准确列出尚未验证的平台或能力。
 
 ```mermaid
 sequenceDiagram

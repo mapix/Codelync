@@ -50,3 +50,20 @@ website/downloads/
 
 # Private implementation diaries and real-device acceptance notes stay local.
 docs/tasks/
+
+# Android generated directories, local SDK paths, APKs and untracked release signing material.
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/local.properties
+apps/mobile/android/.cxx/
+apps/mobile/android/app/.cxx/
+apps/mobile/android/.kotlin/
+apps/mobile/android/app/.kotlin/
+apps/mobile/android/.signing/
+**/local.properties
+**/.cxx/
+**/.kotlin/
+*.apk
+*.aab
+*.key

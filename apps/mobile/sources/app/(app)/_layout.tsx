@@ -68,6 +68,7 @@ export default function RootLayout() {
                 }}
             />
             <Stack.Screen name="pair" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="desktop" options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }} />
             <Stack.Screen
                 name="inbox/index"
                 options={{

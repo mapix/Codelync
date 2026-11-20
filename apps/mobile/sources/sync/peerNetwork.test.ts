@@ -95,7 +95,14 @@ it('manual route fence blocks new mutations but admits only known reads/receipts
  expect(()=>assertPeerRouteWrite(peer,'communication')).toThrow();expect(()=>assertPeerRouteWrite(peer,'bridge-receipt')).not.toThrow();
  expect(()=>peerAuthorization('fixture',peer,origin,'POST',origin+'/api/peer/sessions/fixture/recent')).not.toThrow();
  expect(()=>peerAuthorization('fixture',peer,origin,'POST',origin+'/api/peer/activity')).not.toThrow();
+ expect(()=>peerAuthorization('fixture',peer,origin,'POST',origin+'/api/peer/desktop/windows')).not.toThrow();
  expect(()=>peerAuthorization('fixture',peer,origin,'POST',origin+'/api/peer/desktop/input')).toThrow();
+ try {
+  peerAuthorization('fixture',peer,origin,'POST',origin+'/api/peer/desktop/window');
+  expect.unreachable('mutating desktop window route must remain write-fenced');
+ } catch (err) {
+  expect(err).toMatchObject({ code: 'preferred-route-unavailable', effectMayHaveOccurred: false });
+ }
  expect(()=>assertPeerRouteWrite({...peer,device:{...peer.device,secretKey:'other-device'}},'communication')).not.toThrow();
  setPeerRouteWriteFence(peer,origin);expect(()=>assertPeerRouteWrite(peer,'communication',undefined,origin)).not.toThrow();
  expect(()=>assertPeerRouteWrite(peer,'communication',revision,origin)).toThrow();expect(()=>assertPeerRouteWrite(peer,'communication',undefined,'https://other-route.example')).toThrow();

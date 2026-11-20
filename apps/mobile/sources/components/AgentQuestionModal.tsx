@@ -128,13 +128,42 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
     const KeyboardContainer: React.ComponentType<any> = Object.prototype.hasOwnProperty.call(rn, 'KeyboardAvoidingView') && rn.KeyboardAvoidingView
         ? rn.KeyboardAvoidingView
         : View;
+    const isAndroid = Object.prototype.hasOwnProperty.call(rn, 'Platform') && rn.Platform?.OS === 'android';
     const keyboardBehavior = Object.prototype.hasOwnProperty.call(rn, 'Platform') && rn.Platform?.OS === 'ios' ? 'padding' : undefined;
+    const [androidImeHeight, setAndroidImeHeight] = React.useState(0);
+
+    React.useEffect(() => {
+        if (!visible || !isAndroid) {
+            setAndroidImeHeight(0);
+            return;
+        }
+        const keyboard = rn.Keyboard;
+        if (typeof keyboard?.addListener !== 'function') return;
+        const onShow = keyboard.addListener('keyboardDidShow', (event: { endCoordinates?: { height?: number; screenY?: number } }) => {
+            const height = Math.max(0, event?.endCoordinates?.height ?? 0);
+            const screenHeight = rn.Dimensions?.get?.('screen')?.height;
+            const screenY = event?.endCoordinates?.screenY;
+            const overlap = typeof screenY === 'number' && typeof screenHeight === 'number' && screenHeight > 0 && screenY >= 0 && screenY <= screenHeight
+                ? Math.max(height, screenHeight - screenY)
+                : height > 0 ? height + safeArea.bottom : 0;
+            setAndroidImeHeight(overlap);
+        });
+        const onHide = keyboard.addListener('keyboardDidHide', () => {
+            setAndroidImeHeight(0);
+        });
+        return () => {
+            onShow?.remove?.();
+            onHide?.remove?.();
+        };
+    }, [visible, isAndroid, safeArea.bottom]);
 
     return (
         <Modal
             visible={visible}
             animationType="slide"
             presentationStyle="fullScreen"
+            statusBarTranslucent
+            navigationBarTranslucent
             onRequestClose={handleDismiss}
         >
             <View testID="codelync-question-modal" style={[styles.container, { paddingTop: safeArea.top }]}>
@@ -249,7 +278,7 @@ export function AgentQuestionModal({ pending, sessionId, visible, onClose }: Age
                         )}
                     </ScrollView>
 
-                    <View style={[styles.footer, { paddingBottom: safeArea.bottom + 12 }]}>
+                    <View style={[styles.footer, { paddingBottom: (isAndroid && androidImeHeight > 0 ? androidImeHeight : safeArea.bottom) + 12 }]}>
                         <Pressable
                             testID="codelync-question-submit"
                             accessibilityRole="button"

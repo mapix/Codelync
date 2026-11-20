@@ -10,7 +10,7 @@ import {
   validatePublicTestflightManifest
 } from '../scripts/audit-public-release.mjs';
 
-test('R095: docs align with 1.0.1/2026111801, three-Desktop scope, copy-update inputs, and R080/R085 tooling', async () => {
+test('R095: docs align with 1.0.2/2026112001, three-Desktop scope, copy-update inputs, and R080/R085 tooling', async () => {
   const [pkgRaw, testflightRaw, buildDoc, releaseDoc, notifDoc, selfHostEn, selfHostZh] = await Promise.all([
     readFile(new URL('../package.json', import.meta.url), 'utf8'),
     readFile(new URL('../website/testflight.json', import.meta.url), 'utf8'),
@@ -22,13 +22,13 @@ test('R095: docs align with 1.0.1/2026111801, three-Desktop scope, copy-update i
   ]);
   const pkg = JSON.parse(pkgRaw);
   const beta = JSON.parse(testflightRaw);
-  assert.equal(pkg.version, '1.0.1');
-  assert.equal(pkg.codelyncBuild, '2026111801');
-  assert.ok(['1.0.0', '1.0.1'].includes(beta.version));
-  assert.match(beta.build, /^2026111[78]\d{2}$/);
+  assert.equal(pkg.version, '1.0.2');
+  assert.equal(pkg.codelyncBuild, '2026112001');
+  assert.ok(['1.0.0', '1.0.1', '1.0.2'].includes(beta.version));
+  assert.match(beta.build, /^202611(?:1[78]|20)\d{2}$/);
 
-  assert.match(buildDoc, /1\.0\.1/);
-  assert.match(buildDoc, /2026111801/);
+  assert.match(buildDoc, /1\.0\.2/);
+  assert.match(buildDoc, /2026112001/);
   assert.match(buildDoc, /pnpm security:release/);
   assert.match(buildDoc, /Codex, Antigravity Desktop and Claude Desktop \(Gateway\)/);
 
@@ -39,8 +39,8 @@ test('R095: docs align with 1.0.1/2026111801, three-Desktop scope, copy-update i
   assert.match(releaseDoc, /site\/testflight\.json/);
   assert.doesNotMatch(releaseDoc, /only the four landing assets/);
 
-  assert.match(notifDoc, /1\.0\.1/);
-  assert.match(notifDoc, /2026111801/);
+  assert.match(notifDoc, /1\.0\.2/);
+  assert.match(notifDoc, /2026112001/);
   assert.match(notifDoc, /Codex, Antigravity Desktop and Claude Desktop \(Gateway\)/);
   assert.match(notifDoc, /verify-mobile-push\.mjs/);
 
@@ -53,8 +53,8 @@ test('R095: docs align with 1.0.1/2026111801, three-Desktop scope, copy-update i
 test('R100: validatePublicTestflightManifest validates website/testflight.json against schema and rejects violations', async () => {
   const valid = await validatePublicTestflightManifest();
   assert.equal(valid.schemaVersion, 2);
-  assert.ok(['1.0.0', '1.0.1'].includes(valid.version));
-  assert.match(valid.build, /^2026111[78]\d{2}$/);
+  assert.ok(['1.0.0', '1.0.1', '1.0.2'].includes(valid.version));
+  assert.match(valid.build, /^202611(?:1[78]|20)\d{2}$/);
 
   const dir = await mkdtemp(join(tmpdir(), 'codelync-tf-schema-'));
   try {

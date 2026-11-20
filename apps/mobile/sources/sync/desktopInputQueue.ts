@@ -12,6 +12,14 @@ export class DesktopInputQueueError extends Error {
     constructor() { super('desktop-input-busy'); this.name = 'DesktopInputQueueError'; }
 }
 
+function validScrollAnchor(input: Extract<DesktopInput, { action: 'scroll' }>): { x: number; y: number } | null {
+    return typeof input.x === 'number' && typeof input.y === 'number'
+        && Number.isFinite(input.x) && Number.isFinite(input.y)
+        && input.x >= 0 && input.x <= 1 && input.y >= 0 && input.y <= 1
+        ? { x: input.x, y: input.y }
+        : null;
+}
+
 /** Moves and adjacent bounded scrolls may coalesce; other input keeps its order. */
 export class DesktopInputQueue {
     private closed = false;
@@ -27,7 +35,11 @@ export class DesktopInputQueue {
             } else if (input.action === 'scroll' && last?.input.action === 'scroll'
                 && Math.sign(input.deltaY) === Math.sign(last.input.deltaY)
                 && Math.abs(input.deltaY + last.input.deltaY) <= 1200) {
-                last.resolve(false); this.waiting[this.waiting.length - 1] = { input: { action: 'scroll', deltaY: input.deltaY + last.input.deltaY }, resolve };
+                const anchor = validScrollAnchor(last.input);
+                const merged: DesktopInput = anchor
+                    ? { action: 'scroll', deltaY: input.deltaY + last.input.deltaY, x: anchor.x, y: anchor.y }
+                    : { action: 'scroll', deltaY: input.deltaY + last.input.deltaY };
+                last.resolve(false); this.waiting[this.waiting.length - 1] = { input: merged, resolve };
             } else if (this.waiting.length < 16) this.waiting.push({ input, resolve });
             else { resolve(false); this.close(); this.failed(new DesktopInputQueueError()); }
             void this.drain();

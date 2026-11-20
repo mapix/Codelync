@@ -394,3 +394,16 @@ test('warm visible rows use the native small replica and recover gaps without pe
   assert.deepEqual(poll(f.service, 'phone', 15, visible).groups[0].sessions, [{ id: 'phone-0', known: true, active: false, waiting: true }]);
   await flush(); assert.equal(ipc.subscriptions, 1); assert.equal(ipc.refreshes, 1);
 });
+
+test('group summary stays refreshing while an observer refresh is actively starting in flight after a prior unavailable state', async t => {
+  const f = fixture(t, { deferred: true });
+  poll(f.service, 'phone', 1);
+  await flush();
+  f.created[0].value = { known: false, active: false, waiting: false, status: 'unavailable' };
+  const entry = f.service.entries.values().next().value;
+  assert.equal(entry?.starting, true);
+  assert.equal(poll(f.service, 'phone', 2).groups[0].status, 'refreshing');
+  f.created[0].finish?.();
+  await flush();
+  assert.equal(poll(f.service, 'phone', 3).groups[0].status, 'ready');
+});

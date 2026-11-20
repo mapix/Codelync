@@ -4,3 +4,19 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+# Android native build caches and untracked signing material
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.cxx/
+android/app/.cxx/
+android/.kotlin/
+android/app/.kotlin/
+android/.signing/
+*.keystore
+*.jks
+*.key
+*.apk
+*.aab

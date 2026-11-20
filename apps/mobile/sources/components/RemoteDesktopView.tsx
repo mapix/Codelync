@@ -1,6 +1,8 @@
 import * as React from 'react';
+import * as RN from 'react-native';
 import { ActivityIndicator, Keyboard, PanResponder, Platform, Pressable, ScrollView, Text, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
 import { StyleSheet } from 'react-native-unistyles';
+import * as SafeAreaContext from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { RoomContext, VideoTrack, useTracks, isTrackReference } from '@livekit/react-native';
@@ -9,13 +11,22 @@ import { BlurView } from 'expo-blur';
 import { RemoteDesktopKeyboard } from './RemoteDesktopKeyboard';
 import { useRouter } from 'expo-router';
 import { useRemoteDesktop } from '@/hooks/useRemoteDesktop';
-import { desktopPoint, type DesktopInput } from '@/sync/remoteDesktop';
+import * as RemoteDesktopSync from '@/sync/remoteDesktop';
+import { desktopPoint, type DesktopDisplay, type DesktopInput } from '@/sync/remoteDesktop';
 import { desktopViewportFocus, type DesktopViewport, type DesktopViewportCamera, type DesktopViewportTarget } from '@/sync/desktopViewportFocus';
 import { remoteDesktopLabels, remoteDesktopError } from '@/text/remoteDesktopLabels';
 
 type Controller = ReturnType<typeof useRemoteDesktop>;
 type KeyboardCamera = { viewport: DesktopViewport; camera: DesktopViewportCamera; target: DesktopViewportTarget | null;
     display: DesktopViewport; displayId: string; geometry: string };
+
+const backHandler = 'BackHandler' in RN ? RN.BackHandler : undefined;
+const initialMetrics = 'initialWindowMetrics' in SafeAreaContext ? SafeAreaContext.initialWindowMetrics : null;
+const resolveSafeViewport = 'resolvePortraitSafeViewport' in RemoteDesktopSync ? RemoteDesktopSync.resolvePortraitSafeViewport : undefined;
+
+function isDisplayVirtual(display?: { id?: string; kind?: string } | null): boolean {
+    return !!display && (display.kind === 'virtual' || display.id === 'virtual');
+}
 
 function DesktopCanvas({ controller, zoom, offset, setZoom, setOffset, mode, onViewport, onTarget }: {
     controller: Controller; zoom: number; offset: { x: number; y: number };
@@ -43,6 +54,7 @@ function DesktopCanvas({ controller, zoom, offset, setZoom, setOffset, mode, onV
         return () => { cancelled = true; clearInterval(timer); };
     }, [track, reference && isTrackReference(reference) ? reference.publication.trackSid : null, controller.videoReady, controller.grant?.trackSid, controller.ready]);
     const controlsEnabled = controller.ready && controller.inputAllowed && controller.status?.permissions?.accessibility === true && !controller.busy;
+    const isVirtualDisplay = isDisplayVirtual(controller.grant?.display);
     const point = (x: number, y: number) => controller.grant ? desktopPoint(x, y, viewport, controller.grant.display, zoom, offset) : null;
     const send = (input: DesktopInput) => { if (controlsEnabled) void controller.input(input); };
     const responder = PanResponder.create({
@@ -70,8 +82,23 @@ function DesktopCanvas({ controller, zoom, offset, setZoom, setOffset, mode, onV
                 setOffset({ x: initial.offset.x + x - initial.startX, y: initial.offset.y + y - initial.startY }); return;
             }
             if (mode === 'pointer' && zoom > 1) { setOffset({ x: initial.offset.x + x - initial.startX, y: initial.offset.y + y - initial.startY }); return; }
-            if (Date.now() - initial.lastMove < 60) return; initial.lastMove = Date.now();
-            if (mode === 'scroll') { send({ action: 'scroll', deltaY: Math.max(-1200, Math.min(1200, Math.round(y - initial.lastY))) }); initial.lastY = y; return; }
+            if (isVirtualDisplay && mode === 'pointer' && zoom === 1) {
+                if (!initial.moved || !initial.validPoint) return;
+                if (Date.now() - initial.lastMove < 60) return;
+                const deltaY = Math.max(-1200, Math.min(1200, Math.round(y - initial.lastY)));
+                if (deltaY === 0) return;
+                initial.lastMove = Date.now(); initial.lastY = y;
+                send({ action: 'scroll', deltaY, x: initial.point.x, y: initial.point.y }); return;
+            }
+            if (Date.now() - initial.lastMove < 60) return;
+            if (mode === 'scroll') {
+                const deltaY = Math.max(-1200, Math.min(1200, Math.round(y - initial.lastY)));
+                if (deltaY === 0) return;
+                initial.lastMove = Date.now(); initial.lastY = y;
+                send(initial.validPoint ? { action: 'scroll', deltaY, x: initial.point.x, y: initial.point.y } : { action: 'scroll', deltaY });
+                return;
+            }
+            initial.lastMove = Date.now();
             const target = point(x, y); if (target) { initial.point = target; send({ action: 'pointer', phase: 'move', ...target }); }
         },
         onPanResponderRelease: () => {
@@ -94,7 +121,7 @@ function DesktopCanvas({ controller, zoom, offset, setZoom, setOffset, mode, onV
     </View>;
 }
 
-type Panel = 'controls' | 'display' | 'quality' | 'spaces' | 'status' | null;
+type Panel = 'controls' | 'display' | 'quality' | 'spaces' | 'windows' | 'status' | null;
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 const COLORS = { canvas: '#020406', glass: 'rgba(16,25,34,0.76)', foreground: '#E8EEF4', quiet: '#80929C', action: '#88C9E5', warning: '#F2B765' };
 
@@ -106,7 +133,12 @@ function Glass({ children, style, testID }: { children: React.ReactNode; style?:
     </View>;
 }
 
-export function RemoteDesktopView() {
+export type RemoteDesktopViewProps = {
+    focused?: boolean;
+    onOrientationModeChange?: (mode: 'portrait' | 'landscape') => void;
+};
+
+export function RemoteDesktopView({ focused = true, onOrientationModeChange }: RemoteDesktopViewProps = {}) {
     const controller = useRemoteDesktop(), labels = remoteDesktopLabels(), insets = useSafeAreaInsets(), window = useWindowDimensions(), router = useRouter();
     const [selected, setSelected] = React.useState(''), [zoom, setZoom] = React.useState(1), [offset, setOffset] = React.useState({ x: 0, y: 0 });
     const [mode, setMode] = React.useState<'pointer' | 'drag' | 'right' | 'scroll'>('pointer');
@@ -115,9 +147,41 @@ export function RemoteDesktopView() {
     const exitFlight = React.useRef(false);
     const viewport = React.useRef<DesktopViewport | null>(null), target = React.useRef<DesktopViewportTarget | null>(null);
     const keyboardCamera = React.useRef<KeyboardCamera | null>(null), keyboardVisible = React.useRef(false);
+    const cachedPortrait = React.useRef<DesktopViewport | null>(null);
     const connected = !!controller.grant && !!controller.room;
-    const displayId = controller.grant?.display.id ?? (controller.displays.some(display => display.id === selected) ? selected : controller.displays[0]?.id);
+    const displayId = controller.grant?.display.id
+        ?? (controller.displays.some(display => display.id === selected) ? selected
+            : controller.selectedDisplayId && controller.displays.some(display => display.id === controller.selectedDisplayId) ? controller.selectedDisplayId
+                : controller.displays[0]?.id);
+    const currentDisplay = controller.grant?.display ?? controller.displays.find(display => display.id === displayId) ?? null;
+    const isVirtualDisplay = controller.grant ? isDisplayVirtual(controller.grant.display) : (isDisplayVirtual(currentDisplay) || Boolean(controller.isVirtualDisplay && !currentDisplay));
+    const connectedVirtual = connected && isDisplayVirtual(controller.grant?.display);
     const inputEnabled = connected && controller.ready && controller.inputAllowed && controller.status?.permissions?.accessibility === true && !controller.busy && !exiting;
+    const windows = controller.windows ?? [];
+    const windowsLoading = controller.windowsLoading ?? false;
+    const activeWindowId = controller.activeWindowId ?? null;
+    const displayName = (display?: Pick<DesktopDisplay, 'id' | 'name' | 'kind'> | null) => !display ? labels.display : isDisplayVirtual(display) ? labels.phoneScreen : display.name;
+
+    React.useEffect(() => {
+        if (!keyboardOpen && keyboardHeight <= 0 && window.height > window.width) {
+            const rawW = Math.max(1, window.width - Math.max(0, insets.left) - Math.max(0, insets.right));
+            const rawH = Math.max(1, window.height - Math.max(0, insets.top) - Math.max(0, insets.bottom));
+            const width = Math.min(10_000, Math.max(100, Math.round(rawW)));
+            const height = Math.min(10_000, Math.max(width, Math.round(rawH)));
+            cachedPortrait.current = { width, height };
+        }
+    }, [window.width, window.height, insets.top, insets.bottom, insets.left, insets.right, keyboardOpen, keyboardHeight]);
+
+    React.useEffect(() => {
+        if (!exiting) onOrientationModeChange?.(isVirtualDisplay ? 'portrait' : 'landscape');
+    }, [isVirtualDisplay, exiting, onOrientationModeChange]);
+
+    const refreshWindows = controller.refreshWindows;
+    React.useEffect(() => {
+        if (panel === 'windows' && !connectedVirtual) { setPanel(null); return; }
+        if (panel === 'windows' && connectedVirtual) void refreshWindows?.();
+    }, [panel, connectedVirtual, refreshWindows]);
+
     React.useEffect(() => {
         target.current = null; keyboardCamera.current = null;
         setZoom(1); setOffset({ x: 0, y: 0 }); setMode('pointer');
@@ -133,14 +197,36 @@ export function RemoteDesktopView() {
         const prior = keyboardCamera.current; keyboardCamera.current = null;
         if (prior) { setZoom(prior.camera.zoom); setOffset(prior.camera.offset); }
     }, []);
-    const onTarget = React.useCallback((selected: DesktopViewportTarget) => { target.current = { ...selected }; }, []);
+    const resolveVirtualViewport = React.useCallback((): DesktopViewport => {
+        const isPad = Platform.OS === 'ios' && Boolean((Platform as { isPad?: boolean }).isPad);
+        if (resolveSafeViewport) {
+            return resolveSafeViewport({
+                window,
+                insets,
+                keyboardHeight,
+                cachedPortrait: cachedPortrait.current,
+                initialMetrics,
+                platformOS: Platform.OS,
+                isPad,
+            });
+        }
+        if (cachedPortrait.current) return cachedPortrait.current;
+        const portraitWidth = Math.min(window.width, window.height);
+        const portraitHeight = Math.max(window.width, window.height);
+        const portraitTop = Math.max(0, insets.top, insets.left, insets.right);
+        const portraitBottom = Platform.OS === 'ios' && !isPad && insets.bottom > 0 ? 34 : Math.max(0, insets.bottom);
+        const width = Math.min(10_000, Math.max(100, Math.round(portraitWidth)));
+        const height = Math.min(10_000, Math.max(width, Math.round(portraitHeight - portraitTop - portraitBottom)));
+        return { width, height };
+    }, [window, insets, keyboardHeight]);
+    const onTarget = React.useCallback((selectedTarget: DesktopViewportTarget) => { target.current = { ...selectedTarget }; }, []);
     const onViewport = React.useCallback((next: DesktopViewport) => {
         viewport.current = next;
         const prior = keyboardCamera.current, display = controller.grant?.display;
         if (!keyboardVisible.current || !prior || !display || display.id !== prior.displayId || display.geometry !== prior.geometry) return;
-        const camera = desktopViewportFocus(prior.display, prior.viewport, next, prior.camera, prior.target);
+        const camera = desktopViewportFocus({ width: display.width, height: display.height }, prior.viewport, next, prior.camera, prior.target);
         if (camera) { setZoom(camera.zoom); setOffset(camera.offset); }
-    }, [controller.grant?.display.id, controller.grant?.display.geometry]);
+    }, [controller.grant?.display.id, controller.grant?.display.geometry, controller.grant?.display.width, controller.grant?.display.height]);
     const openPanel = (next: NonNullable<Panel>) => { closeKeyboard(); setPanel(previous => previous === next ? null : next); };
     const openKeyboard = () => {
         setPanel(null); setImmersive(false);
@@ -150,12 +236,30 @@ export function RemoteDesktopView() {
             target: target.current ? { ...target.current } : null, display: { width: display.width, height: display.height }, displayId: display.id, geometry: display.geometry } : null;
         keyboardVisible.current = true; setKeyboardOpen(true);
     };
-    const exit = () => {
+    const exit = React.useCallback(() => {
         if (exitFlight.current) return; exitFlight.current = true; setExiting(true); setPanel(null); closeKeyboard();
+        onOrientationModeChange?.('portrait');
         // disconnect clears live input synchronously; weak-network leave cleanup
         // continues after navigation without keeping the user on this page.
         void controller.disconnect().catch(() => {});
         if (router.canGoBack()) router.back(); else router.replace('/');
+    }, [closeKeyboard, controller, onOrientationModeChange, router]);
+
+    React.useEffect(() => {
+        if (!focused || Platform.OS !== 'android' || !backHandler?.addEventListener) return;
+        const sub = backHandler.addEventListener('hardwareBackPress', () => {
+            if (keyboardVisible.current || keyboardOpen) { closeKeyboard(); return true; }
+            if (panel !== null) { setPanel(null); return true; }
+            if (immersive) { setImmersive(false); return true; }
+            exit();
+            return true;
+        });
+        return () => sub.remove();
+    }, [focused, keyboardOpen, panel, immersive, closeKeyboard, exit]);
+
+    const selectDisplay = (id: string) => {
+        setSelected(id);
+        controller.selectDisplay?.(id);
     };
     const button = (title: string, action: () => void, disabled = false, active = false, testID?: string) => <Pressable key={testID ?? title} testID={testID}
         accessibilityRole="button" accessibilityState={{ disabled, selected: active }} disabled={disabled} onPress={action}
@@ -179,14 +283,14 @@ export function RemoteDesktopView() {
                 : controller.status?.permissions?.accessibility !== true ? labels.inputChecking : labels.connected;
     const warning = !!controller.error || !!controller.notice || !inputEnabled;
     const panelTitle = panel === 'display' ? labels.display : panel === 'quality' ? labels.settings : panel === 'spaces' ? labels.desktops
-        : panel === 'status' ? labels.connection : labels.controls;
+        : panel === 'windows' ? labels.windows : panel === 'status' ? labels.connection : labels.controls;
     const compactLandscape = window.height < 460;
     const popoverWidth = Math.min(360, Math.max(1, window.width - insets.left - insets.right - 24));
     const popoverHeight = Math.max(1, window.height - insets.top - insets.bottom - 92);
-    // Android's resize mode already reduces the window for the OS keyboard.
-    const keyboardInset = keyboardOpen && Platform.OS !== 'android' ? Math.max(0, keyboardHeight) : 0;
+    // Edge-to-edge KeyboardProvider requires explicit IME inset on both iOS and Android.
+    const keyboardInset = keyboardOpen ? Math.max(0, keyboardHeight) : 0;
     return <View testID="remote-desktop-page" style={[styles.root, { paddingBottom: keyboardInset }]}>
-        <View testID="desktop-video-stage" style={styles.stage}>
+        <View testID="desktop-video-stage" style={[styles.stage, connectedVirtual && { paddingTop: insets.top, paddingBottom: keyboardOpen ? 0 : insets.bottom }]}>
             {connected && controller.room ? <RoomContext.Provider value={controller.room}>
                 <DesktopCanvas controller={controller} zoom={zoom} offset={offset} setZoom={setZoom} setOffset={setOffset} mode={mode}
                     onViewport={onViewport} onTarget={onTarget} />
@@ -198,9 +302,15 @@ export function RemoteDesktopView() {
                 <Ionicons name="desktop-outline" size={38} color={COLORS.quiet} />
                 <Text accessibilityLiveRegion="polite" style={styles.emptyMessage}>{emptyMessage}</Text>
                 {controller.status?.enabled && !controller.status.permissions?.locked && controller.status.permissions?.screenRecording !== false ? <>
-                    {controller.displays.length > 1 ? button(controller.displays.find(display => display.id === displayId)?.name ?? labels.display, () => openPanel('display'), controller.busy, false, 'desktop-choose-display') : null}
+                    {controller.displays.length > 1 ? button(displayName(controller.displays.find(display => display.id === displayId)), () => openPanel('display'), controller.busy, false, 'desktop-choose-display')
+                        : isVirtualDisplay && currentDisplay ? <Text testID="desktop-single-display-label" style={styles.secondary}>{displayName(currentDisplay)}</Text> : null}
                     {button(controller.closing ? labels.disconnecting : controller.busy ? labels.connecting : labels.connect,
-                        () => { if (displayId) void controller.connect(displayId); }, !displayId || controller.busy || exiting, false, 'desktop-connect')}
+                        () => {
+                            if (!displayId) return;
+                            const targetDisplay = controller.displays.find(display => display.id === displayId);
+                            if (displayId === 'virtual' || isDisplayVirtual(targetDisplay)) void controller.connect(displayId, resolveVirtualViewport());
+                            else void controller.connect(displayId);
+                        }, !displayId || controller.busy || exiting, false, 'desktop-connect')}
                 </> : button(labels.refresh, () => { void controller.refresh(); }, controller.busy, false, 'desktop-refresh')}
             </ScrollView>}
             <View pointerEvents="box-none" style={StyleSheet.absoluteFillObject}>
@@ -224,13 +334,19 @@ export function RemoteDesktopView() {
                                 {icon('remove-outline', labels.zoomOut, () => setZoom(Math.max(1, zoom - .5)), 'desktop-zoom-out', zoom <= 1)}
                                 <Text accessibilityLabel={labels.zoom} style={styles.utility}>{Math.round(zoom * 100)}%</Text>
                                 {icon('add-outline', labels.zoomIn, () => setZoom(Math.min(4, zoom + .5)), 'desktop-zoom-in', zoom >= 4)}</View>
-                            {menuRow('desktop-outline', labels.display, () => setPanel('display'), controller.grant?.display.name, 'desktop-display-menu')}
+                            {menuRow('desktop-outline', labels.display, () => setPanel('display'), controller.grant ? displayName(controller.grant.display) : undefined, 'desktop-display-menu')}
+                            {connectedVirtual ? menuRow('browsers-outline', labels.windows, () => setPanel('windows'), undefined, 'desktop-windows-menu') : null}
                             {menuRow('options-outline', labels.settings, () => setPanel('quality'), `${controller.quality.width} · ${controller.quality.fps} fps`, 'desktop-settings')}
                             {menuRow('copy-outline', labels.desktops, () => setPanel('spaces'), undefined, 'desktop-spaces-menu')}
                             {menuRow('expand-outline', labels.fullscreen, () => { setPanel(null); setImmersive(true); }, undefined, 'desktop-fullscreen')}
                         </> : null}
-                        {panel === 'display' ? <View style={styles.choices}>{controller.displays.map(display => button(display.name, () => {
-                            if (controller.grant) void controller.switchDisplay(display.id); else setSelected(display.id);
+                        {panel === 'display' ? <View style={styles.choices}>{controller.displays.map(display => button(displayName(display), () => {
+                            if (controller.grant) {
+                                if (isDisplayVirtual(display)) void controller.switchDisplay(display.id, resolveVirtualViewport());
+                                else void controller.switchDisplay(display.id);
+                            } else {
+                                selectDisplay(display.id);
+                            }
                         }, controller.busy, displayId === display.id, `desktop-display-${display.id}`))}</View> : null}
                         {panel === 'quality' ? <>
                             <Text style={styles.sectionTitle}>{labels.clarity}</Text><View style={styles.choices}>{([1280, 1920, 2560] as const).map((width, index) =>
@@ -243,9 +359,35 @@ export function RemoteDesktopView() {
                             {button(labels.nextDesktop, () => { void controller.navigateSpace('next'); }, !inputEnabled, false, 'desktop-space-next')}
                             {button(labels.overview, () => { void controller.navigateSpace('overview'); }, !inputEnabled, false, 'desktop-space-overview')}
                         </View> : null}
+                        {panel === 'windows' ? <>
+                            <View style={styles.choices}>
+                                {button(labels.refresh, () => { void controller.refreshWindows?.(); }, controller.busy || windowsLoading, false, 'desktop-windows-refresh')}
+                                {button(labels.restoreWindows, () => { void controller.restoreWindow?.(); }, !inputEnabled || windowsLoading, false, 'desktop-windows-restore')}
+                            </View>
+                            {windowsLoading && windows.length === 0 ? <View testID="desktop-windows-loading" style={styles.windowStatus}>
+                                <ActivityIndicator size="small" color={COLORS.action} />
+                                <Text style={styles.secondary}>{labels.windowsLoading}</Text>
+                            </View> : windows.length === 0 ? <Text testID="desktop-windows-empty" style={styles.secondary}>{labels.windowsEmpty}</Text> : windows.map(item => {
+                                const isActive = activeWindowId === item.id || item.onVirtualDisplay;
+                                const rowTitle = item.title.trim() || labels.untitledWindow;
+                                const badges = [isActive ? labels.windowOnPhone : null, item.minimized ? labels.windowMinimized : null].filter(Boolean).join(' · ');
+                                const rowDisabled = !inputEnabled || windowsLoading;
+                                return <Pressable key={item.id} testID={`desktop-window-${item.id}`} accessibilityRole="button"
+                                    accessibilityLabel={[item.appName, rowTitle, badges].filter(Boolean).join(', ')}
+                                    accessibilityState={{ disabled: rowDisabled, selected: isActive }}
+                                    disabled={rowDisabled} onPress={() => { void controller.fillWindow?.(item.id); }}
+                                    style={({ pressed }) => [styles.windowRow, isActive && styles.selected, pressed && styles.pressed, rowDisabled && styles.disabled]}>
+                                    <View style={styles.windowTextColumn}>
+                                        <Text numberOfLines={1} style={[styles.buttonText, isActive && styles.selectedText]}>{item.appName}</Text>
+                                        <Text numberOfLines={1} style={styles.windowSubtitle}>{rowTitle}</Text>
+                                    </View>
+                                    {badges ? <Text numberOfLines={1} style={[styles.windowBadge, isActive && styles.selectedText]}>{badges}</Text> : null}
+                                </Pressable>;
+                            })}
+                        </> : null}
                         {panel === 'status' ? <>
                             <Text accessibilityLiveRegion="polite" style={styles.statusDetail}>{connectionMessage}</Text>
-                            {controller.grant ? <Text numberOfLines={2} style={styles.menuDetail}>{controller.grant.display.name}</Text> : null}
+                            {controller.grant ? <Text numberOfLines={2} style={styles.menuDetail}>{displayName(controller.grant.display)}</Text> : null}
                             {button(labels.refresh, () => { void controller.refresh(); }, controller.busy, false, 'desktop-details-refresh')}
                             {button(labels.exit, () => { void exit(); }, exiting, false, 'desktop-disconnect')}
                         </> : null}
@@ -261,6 +403,7 @@ export function RemoteDesktopView() {
                         onPress={() => openPanel('status')} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed, exiting && styles.disabled]}>
                         {controller.busy ? <ActivityIndicator size="small" color={COLORS.warning} /> : <Ionicons name={warning ? 'alert-circle-outline' : 'radio-button-on'} size={20} color={warning ? COLORS.warning : COLORS.action} />}
                     </Pressable>
+                    {connectedVirtual ? icon('browsers-outline', labels.windows, () => openPanel('windows'), 'desktop-windows', exiting, panel === 'windows') : null}
                     {icon('keypad-outline', labels.keyboard, openKeyboard, 'desktop-keyboard', !connected, keyboardOpen)}
                     {icon('ellipsis-horizontal', labels.controls, () => openPanel('controls'), 'desktop-more', false, panel === 'controls')}
                 </Glass> : null}
@@ -291,5 +434,10 @@ const styles = StyleSheet.create(() => ({
     utility: { color: COLORS.quiet, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', minWidth: 42, textAlign: 'center' },
     menuRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }, menuText: { color: COLORS.foreground, fontSize: 14, flexShrink: 1 }, menuDetail: { flex: 1, color: COLORS.quiet, fontSize: 12, textAlign: 'right' },
     sectionTitle: { color: COLORS.quiet, fontSize: 12, marginTop: 4 }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, statusDetail: { color: COLORS.foreground, fontSize: 14, lineHeight: 20 },
+    windowStatus: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    windowRow: { minHeight: 48, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, backgroundColor: 'rgba(232,238,244,0.07)' },
+    windowTextColumn: { flex: 1, gap: 2 },
+    windowSubtitle: { color: COLORS.quiet, fontSize: 12 },
+    windowBadge: { color: COLORS.quiet, fontSize: 11, fontWeight: '600', flexShrink: 0 },
     keyboardContainer: { flexGrow: 0, backgroundColor: COLORS.canvas },
 }));

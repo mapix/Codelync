@@ -256,9 +256,10 @@ describe('native adjacent tool groups', () => {
     it('mounts only a collapsed summary, then virtualizes original tool IDs on explicit expansion', () => {
         state.native = true; state.session = { id: 'native-tool-group', metadata: { client: { id: 'noninvasive-bridge' } }, thinking: true };
         state.messages = [toolMessage('newest-tool', 3), toolMessage('middle-tool', 2), toolMessage('oldest-tool', 1)];
-        state.hasMoreOlder = true;
+        state.hasMoreOlder = false;
         const generation = codelyncLoadingProgress.beginSession(state.session.id); codelyncLoadingProgress.endSession(state.session.id, generation);
         const renderer = renderChat(undefined);
+        expect(renderer.root.findByType('FlashList').props.alwaysBounceVertical).toBe(true);
         const summary = renderer.root.findByType('ToolsGroupHeader');
         expect(summary.props.expanded).toBe(false); expect(summary.props.group.messages).toHaveLength(3);
         expect(summary.props.metadata).toBe(state.session.metadata);
@@ -272,6 +273,65 @@ describe('native adjacent tool groups', () => {
         expect(messageIds(renderer)).toEqual(['newest-tool', 'middle-tool', 'oldest-tool']);
         expect(renderer.root.findAllByType('ToolsGroupHeader')).toHaveLength(2);
         expect(vi.mocked(sync.loadOlderMessages)).not.toHaveBeenCalled();
+    });
+
+    it('waits for cache-first revalidation and traverses collapsed tail tool batches until conversation messages cover the first viewport', async () => {
+        state.native = true;
+        state.session = { id: 'tool-heavy-session', metadata: { client: { id: 'noninvasive-bridge' } }, thinking: true };
+        state.messages = [toolMessage('tool-20', 20), toolMessage('tool-19', 19)];
+        state.hasMoreOlder = false;
+        const generation = codelyncLoadingProgress.beginSession(state.session.id);
+        codelyncLoadingProgress.endSession(state.session.id, generation);
+        codelyncLoadingProgress.revalidateSession(state.session.id, generation, true);
+
+        const pages: Array<(advanced: boolean) => void> = [];
+        vi.mocked(sync.loadOlderMessages).mockImplementation(() => {
+            state.isLoadingOlder = true;
+            return new Promise<boolean>(resolve => { pages.push(resolve); });
+        });
+
+        const renderer = renderChat(undefined);
+        act(() => {
+            const list = renderer.root.findByType('FlashList');
+            list.props.onLayout({ nativeEvent: { layout: { height: 600 } } });
+            list.props.onContentSizeChange(390, 44);
+        });
+        // Revalidation still pending: must NOT prematurely stop or call loadOlderMessages.
+        expect(pages).toHaveLength(0);
+
+        // Fresh revalidation completes with hasMoreOlder = true.
+        await act(async () => {
+            state.hasMoreOlder = true;
+            codelyncLoadingProgress.revalidateSession(state.session.id, generation, false);
+            renderChat(renderer);
+        });
+        expect(pages).toHaveLength(1);
+        expect(vi.mocked(sync.loadOlderMessages)).toHaveBeenLastCalledWith('tool-heavy-session', { limit: 8 });
+
+        // Batch 1 brings more tool calls in the same collapsed group (height stays 44pt, no onContentSizeChange).
+        await act(async () => {
+            state.messages = [toolMessage('tool-20', 20), toolMessage('tool-19', 19), toolMessage('tool-18', 18), toolMessage('tool-17', 17)];
+            state.isLoadingOlder = false;
+            renderChat(renderer);
+            pages[0](true);
+            renderChat(renderer);
+        });
+        expect(renderer.root.findByType('ToolsGroupHeader').props.group.messages).toHaveLength(4);
+        expect(pages).toHaveLength(2);
+
+        // Batch 2 reaches the user prompt and earlier assistant design reply.
+        await act(async () => {
+            state.messages = [...state.messages, userMessage('user-prompt', 10), agentMessage('assistant-design', 9)];
+            state.isLoadingOlder = false;
+            renderChat(renderer);
+            pages[1](true);
+            renderChat(renderer);
+        });
+        expect(messageIds(renderer)).toEqual(['user-prompt']);
+        act(() => { renderer.root.findByType('FlashList').props.onContentSizeChange(390, 180); });
+        expect(messageIds(renderer)).toEqual(['user-prompt', 'assistant-design']);
+        act(() => { renderer.root.findByType('FlashList').props.onContentSizeChange(390, 680); });
+        expect(pages).toHaveLength(2);
     });
 
     it('retains explicit expansion when a run grows, closes locally, and does not carry it to another session', () => {

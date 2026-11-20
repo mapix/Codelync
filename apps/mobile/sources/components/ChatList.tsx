@@ -655,7 +655,10 @@ const ChatListInternal = React.memo((props: {
     const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
         const distanceFromNewest = Math.max(0, contentOffset.y);
-        if (config.noninvasiveLocal && olderGestureRef.current && distanceFromNewest > scrollMetricsRef.current.offsetY + 1) olderGesturePermitRef.current = true;
+        if (config.noninvasiveLocal && olderGestureRef.current && distanceFromNewest > scrollMetricsRef.current.offsetY + 1) {
+            olderGesturePermitRef.current = true;
+            olderCollapsedGestureStepsRef.current = 0;
+        }
         scrollMetricsRef.current.offsetY = distanceFromNewest;
         if (contentSize.height > 0) {
             scrollMetricsRef.current.contentHeight = contentSize.height;
@@ -743,11 +746,15 @@ const ChatListInternal = React.memo((props: {
     // page that extends the oldest collapsed turn must. null means an empty
     // list; undefined means no page is awaiting assessment.
     const olderPageRef = React.useRef<string | null | undefined>(undefined);
+    const olderListCountRef = React.useRef<number | undefined>(undefined);
+    const olderCollapsedGestureStepsRef = React.useRef(0);
     const invisibleOlderPagesRef = React.useRef(0);
     const [olderSettled, setOlderSettled] = React.useState(0);
     React.useEffect(() => () => {
         pendingOlderRef.current = null;
         olderPageRef.current = undefined;
+        olderListCountRef.current = undefined;
+        olderCollapsedGestureStepsRef.current = 0;
         invisibleOlderPagesRef.current = 0;
     }, [sessionId]);
     const fillOlder = useCallback(() => {
@@ -755,32 +762,74 @@ const ChatListInternal = React.memo((props: {
         const { contentHeight, viewportHeight, offsetY } = scrollMetricsRef.current;
         const all = messagesRef.current, currentEnd = windowRef.current.length;
         const { hasMoreOlder: more, isLoadingOlder: loading, olderBlocked: blocked, active } = paginationRef.current;
+        const oldest = listItemsRef.current[listItemsRef.current.length - 1];
+        const collapsedTail = Boolean(
+            (oldest?.type === 'tools-header' && !isToolsGroupExpanded(oldest.group))
+            || (oldest?.type === 'work-header' && !isGroupExpanded(oldest.group)),
+        );
         if (native && active && !olderGesturePermitRef.current && !nativeFill.reason) {
-            const measurement: NativeViewportMeasurement = { viewportHeight, contentHeight, windowEnd: currentEnd,
-                visibleKey: listItemsRef.current.map(item => item.id).join('\n'), measureVersion: contentMeasureVersionRef.current,
-                ready: nativeProgressRef.current.phase === 'complete' };
+            const revalidating = nativeProgressRef.current.revalidating === true;
+            const measurement: NativeViewportMeasurement = {
+                viewportHeight,
+                contentHeight,
+                windowEnd: currentEnd,
+                visibleKey: listItemsRef.current.map(item => item.id).join('\n'),
+                boundaryKey: oldestBoundary(listItemsRef.current) ?? '',
+                collapsedTail,
+                measureVersion: contentMeasureVersionRef.current,
+                ready: nativeProgressRef.current.phase === 'complete',
+            };
             if (nativePageReadyRef.current && !loading && measurement.ready) {
                 nativePageReadyRef.current = false;
                 if (all.length > currentEnd) { const next = codelyncNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
-                nativeFill.stop('no-progress'); setOlderBlocked('limit'); return;
+                if (currentEnd > requestedWindowEndRef.current && currentEnd > 0) {
+                    requestedWindowEndRef.current = currentEnd;
+                    setOldestRenderedId(all[currentEnd - 1].id);
+                } else {
+                    nativeFill.stop('no-progress'); setOlderBlocked('limit'); return;
+                }
             }
             if (currentEnd < requestedWindowEndRef.current || loading || pendingOlderRef.current || blocked) return;
             const decision = nativeFill.decide(measurement);
             if (decision === 'no-progress') { setOlderBlocked('limit'); return; }
             if (decision !== 'advance') return;
-            nativeFill.requested(measurement);
-            if (all.length > currentEnd) { const next = codelyncNativeWindowEnd(all.length, currentEnd + 1); requestedWindowEndRef.current = next; setOldestRenderedId(all[next - 1].id); return; }
+            if (all.length > currentEnd) {
+                nativeFill.requested(measurement);
+                const next = codelyncNativeWindowEnd(all.length, currentEnd + 1);
+                requestedWindowEndRef.current = next;
+                setOldestRenderedId(all[next - 1].id);
+                return;
+            }
+            if (revalidating) return;
             if (!more) { nativeFill.stop(); return; }
-            const oldest = listItemsRef.current[listItemsRef.current.length - 1];
-            // A collapsed summary cannot fill a viewport by downloading more
-            // tool payloads into the same row. History still follows a gesture.
-            if (oldest?.type === 'tools-header' && !isToolsGroupExpanded(oldest.group)) { nativeFill.stop(); return; }
-            const request = sync.loadOlderMessages(sessionId, { limit: 1 }); pendingOlderRef.current = request;
+            requestedWindowEndRef.current = currentEnd;
+            nativeFill.requested(measurement);
+            const request = sync.loadOlderMessages(sessionId, { limit: collapsedTail ? 8 : 1 }); pendingOlderRef.current = request;
             request.then(advanced => {
                 if (pendingOlderRef.current !== request) return; pendingOlderRef.current = null;
                 if (advanced) nativePageReadyRef.current = true; else nativeFill.stop(); setOlderSettled(n => n + 1);
             }, () => { if (pendingOlderRef.current === request) { pendingOlderRef.current = null; nativeFill.stop(); setOlderBlocked('error'); } });
             return;
+        }
+        if (native && !olderGesturePermitRef.current && olderPageRef.current !== undefined && pendingOlderRef.current === null && !loading) {
+            const boundaryAdvanced = oldestBoundary(listItemsRef.current) !== olderPageRef.current;
+            const noNewVisibleItem = olderListCountRef.current !== undefined && listItemsRef.current.length <= olderListCountRef.current;
+            if (collapsedTail && boundaryAdvanced && noNewVisibleItem) {
+                if (olderCollapsedGestureStepsRef.current < MAX_INVISIBLE_OLDER_PAGES - 1) {
+                    olderCollapsedGestureStepsRef.current += 1;
+                    olderGesturePermitRef.current = true;
+                } else {
+                    olderCollapsedGestureStepsRef.current = 0;
+                    olderPageRef.current = undefined;
+                    olderListCountRef.current = undefined;
+                    setOlderBlocked('limit');
+                    return;
+                }
+            } else {
+                olderCollapsedGestureStepsRef.current = 0;
+                olderPageRef.current = undefined;
+                olderListCountRef.current = undefined;
+            }
         }
         // 布局/新消息也会进入短列表的阈值；Codelync 必须有新的用户向旧历史滚动意图，不能首屏自动翻页。
         if (native && !olderGesturePermitRef.current) return;
@@ -806,6 +855,7 @@ const ChatListInternal = React.memo((props: {
         const pageBaseline = olderPageRef.current;
         if (pageBaseline !== undefined && pendingOlderRef.current === null) {
             olderPageRef.current = undefined;
+            olderListCountRef.current = undefined;
             if (oldestBoundary(listItemsRef.current) !== pageBaseline) {
                 invisibleOlderPagesRef.current = 0;
                 setOlderBlocked(null);
@@ -831,6 +881,7 @@ const ChatListInternal = React.memo((props: {
         const request = native ? sync.loadOlderMessages(sessionId, { limit: pageSize }) : sync.loadOlderMessages(sessionId);
         pendingOlderRef.current = request;
         olderPageRef.current = oldestBoundary(listItemsRef.current);
+        olderListCountRef.current = listItemsRef.current.length;
         request.then(
             (advanced) => {
                 if (pendingOlderRef.current !== request) return;
@@ -839,6 +890,7 @@ const ChatListInternal = React.memo((props: {
                     setOlderSettled((n) => n + 1);
                 } else {
                     olderPageRef.current = undefined;
+                    olderListCountRef.current = undefined;
                 }
             },
             () => {
@@ -846,10 +898,11 @@ const ChatListInternal = React.memo((props: {
                 // Keep the request as a synchronous block until Retry: a web
                 // scroll can arrive before the error state commits.
                 olderPageRef.current = undefined;
+                olderListCountRef.current = undefined;
                 setOlderBlocked('error');
             },
         );
-    }, [sessionId, nativeFill, isToolsGroupExpanded]);
+    }, [sessionId, nativeFill, isToolsGroupExpanded, isGroupExpanded]);
     const fillOlderRef = React.useRef(fillOlder);
     fillOlderRef.current = fillOlder;
     // A page landing, or the window growing, is checked without waiting for a
@@ -860,12 +913,14 @@ const ChatListInternal = React.memo((props: {
     const retryOlder = useCallback(() => {
         nativeFill.stop(nativeFill.reason === 'no-progress' ? 'no-progress' : 'covered');
         olderGesturePermitRef.current = true;
+        olderCollapsedGestureStepsRef.current = 0;
         pendingOlderRef.current = null;
         setOlderBlocked(null);
     }, [nativeFill]);
     const loadMoreOlder = useCallback(() => {
         nativeFill.stop(nativeFill.reason === 'no-progress' ? 'no-progress' : 'covered');
         olderGesturePermitRef.current = true;
+        olderCollapsedGestureStepsRef.current = 0;
         invisibleOlderPagesRef.current = 0;
         setOlderBlocked(null);
         fillOlderRef.current();
@@ -896,6 +951,7 @@ const ChatListInternal = React.memo((props: {
                 // See MAINTAIN_VISIBLE_CONTENT_POSITION: item 0 is the newest
                 // message and offset 0 is the bottom of the screen.
                 inverted
+                alwaysBounceVertical
                 keyExtractor={keyExtractor}
                 getItemType={getItemType}
                 maintainVisibleContentPosition={MAINTAIN_VISIBLE_CONTENT_POSITION}

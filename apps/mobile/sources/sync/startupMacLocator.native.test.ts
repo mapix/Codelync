@@ -13,18 +13,33 @@ beforeEach(() => {
     state.info.mockResolvedValue({ exists: true, isDirectory: false, size: 100 }); state.bootstrap.mockResolvedValue(undefined); state.remove.mockResolvedValue(undefined);
     state.read.mockResolvedValue(JSON.stringify({ version: 1, peerId: 'fixture-mac', origins: ['https://fixture.example'], expiresAt: Date.now() + 60_000 }));
 });
-it('reads and deletes only the fixed private Documents locator through one startup attempt', async () => {
+it.each([
+    ['ios', 'file:///fixture/Documents/', ['https://fixture.example']],
+    ['android', 'file:///data/user/0/com.learnings.codelync/files/', ['http://192.168.3.186:50256', 'https://fixture.example']],
+] as const)('reads, bootstraps, and deletes the fixed private %s locator through one startup attempt', async (os, directory, origins) => {
+    state.os = os;
+    state.directory = directory;
+    state.read.mockResolvedValue(JSON.stringify({ version: 1, peerId: 'fixture-mac', origins: [...origins], expiresAt: Date.now() + 60_000 }));
     expect(await consumeNativeStartupMacLocator()).toBe(true);
-    const path = 'file:///fixture/Documents/codelync-mac-locator.json';
+    const path = directory + 'codelync-mac-locator.json';
     expect(state.info).toHaveBeenCalledExactlyOnceWith(path); expect(state.read).toHaveBeenCalledExactlyOnceWith(path);
     expect(state.remove).toHaveBeenCalledExactlyOnceWith(path, { idempotent: true });
-    expect(state.bootstrap).toHaveBeenCalledExactlyOnceWith(['https://fixture.example'], { expectedPeerId: 'fixture-mac' });
+    expect(state.bootstrap).toHaveBeenCalledExactlyOnceWith([...origins], { expectedPeerId: 'fixture-mac' });
 });
-it.each([{ os: 'android' }, { appId: 'com.learnings.codelync.preview' }, { directory: '' }])('does no file or credential work outside the shipping iOS sandbox', async change => {
+it.each([{ os: 'web' }, { appId: 'com.learnings.codelync.preview' }, { appId: 'com.learnings.codelync.dev' }, { directory: '' }])('does no file or credential work outside shipping iOS and Android sandboxes: %j', async change => {
     Object.assign(state, change); expect(await consumeNativeStartupMacLocator()).toBe(false);
     expect(state.info).not.toHaveBeenCalled(); expect(state.read).not.toHaveBeenCalled(); expect(state.credentials).not.toHaveBeenCalled();
 });
-it.each([{ exists: false }, { exists: true, isDirectory: true }, { exists: true, isDirectory: false, size: 8193 }])('does not read absent/directory/oversized locators', async info => {
+it.each([
+    ['ios', { exists: false }],
+    ['ios', { exists: true, isDirectory: true }],
+    ['ios', { exists: true, isDirectory: false, size: 8193 }],
+    ['android', { exists: false }],
+    ['android', { exists: true, isDirectory: true }],
+    ['android', { exists: true, isDirectory: false, size: 8193 }],
+] as const)('does not read absent/directory/oversized locators on %s: %j', async (os, info) => {
+    state.os = os;
+    state.directory = os === 'android' ? 'file:///data/user/0/com.learnings.codelync/files/' : 'file:///fixture/Documents/';
     state.info.mockResolvedValue(info); expect(await consumeNativeStartupMacLocator()).toBe(false);
     expect(state.info).toHaveBeenCalledOnce(); expect(state.read).not.toHaveBeenCalled(); expect(state.bootstrap).not.toHaveBeenCalled(); expect(state.remove).not.toHaveBeenCalled();
 });

@@ -19,6 +19,20 @@ const en = {
     viewChanged: 'The desktop picture changed. Wait for the latest picture before continuing.',
     preferredRoute: 'Connect the selected route before controlling your Mac.',
     inputBusy: 'Too many inputs are waiting. Reconnect to control your Mac.',
+    phoneScreen: 'Phone Screen',
+    windows: 'Windows',
+    restoreWindows: 'Restore window',
+    windowsLoading: 'Loading running windows…',
+    windowsEmpty: 'No standard app windows are open on your Mac.',
+    untitledWindow: 'Untitled window',
+    windowOnPhone: 'Filled',
+    windowMinimized: 'Minimized',
+    virtualDisplayUnavailable: 'Phone Screen is unavailable on this Mac. Choose a physical display instead.',
+    virtualDisplayRequired: 'Switch to Phone Screen before moving a window here.',
+    windowUnavailable: 'That window was closed or can no longer be moved. Refresh the window list.',
+    windowUnresponsive: 'That app is not responding to Accessibility right now. Try again in a moment.',
+    restorePersistFailed: 'Could not save the window’s original position on your Mac. The window was not moved.',
+    displayChanged: 'The display layout changed. Wait for the updated picture or reconnect.',
     keyEscape: 'Escape', keyTab: 'Tab', keyEnter: 'Return', keyBackspace: 'Delete',
     keyLeft: 'Left arrow', keyUp: 'Up arrow', keyDown: 'Down arrow', keyRight: 'Right arrow',
     keyCommand: 'Command', keyShift: 'Shift',
@@ -39,6 +53,20 @@ const zh: typeof en = {
     viewChanged: '桌面画面已变化，请等待最新画面后继续。',
     preferredRoute: '请先接通所选连接方式，再控制 Mac。',
     inputBusy: '输入等待过多，请重新连接。',
+    phoneScreen: '手机竖屏',
+    windows: '窗口',
+    restoreWindows: '还原窗口',
+    windowsLoading: '正在获取运行窗口…',
+    windowsEmpty: 'Mac 上当前没有可移入的应用窗口。',
+    untitledWindow: '未命名窗口',
+    windowOnPhone: '当前铺满',
+    windowMinimized: '已最小化',
+    virtualDisplayUnavailable: '此 Mac 当前不支持手机竖屏，请改选物理显示器。',
+    virtualDisplayRequired: '请先切换到手机竖屏，再移入应用窗口。',
+    windowUnavailable: '该窗口已关闭或无法移动，请刷新窗口列表。',
+    windowUnresponsive: '目标应用暂未响应辅助功能请求，请稍后重试。',
+    restorePersistFailed: '无法在 Mac 上保存窗口原始位置，已取消移动窗口。',
+    displayChanged: '显示器布局已变化，请等待画面更新或重新连接。',
     keyEscape: 'Esc 键', keyTab: 'Tab 键', keyEnter: '回车', keyBackspace: '退格',
     keyLeft: '左方向键', keyUp: '上方向键', keyDown: '下方向键', keyRight: '右方向键',
     keyCommand: 'Command', keyShift: 'Shift',
@@ -59,6 +87,20 @@ const zhHant: typeof en = {
     viewChanged: '桌面畫面已變更，請等待最新畫面後繼續。',
     preferredRoute: '請先接通所選連線方式，再控制 Mac。',
     inputBusy: '輸入等待過多，請重新連線。',
+    phoneScreen: '手機直向螢幕',
+    windows: '視窗',
+    restoreWindows: '還原視窗',
+    windowsLoading: '正在載入執行中的視窗…',
+    windowsEmpty: 'Mac 上目前沒有可移入的應用程式視窗。',
+    untitledWindow: '未命名視窗',
+    windowOnPhone: '目前已鋪滿',
+    windowMinimized: '已最小化（視窗）',
+    virtualDisplayUnavailable: '此 Mac 目前不支援手機直向螢幕，請改選實體顯示器。',
+    virtualDisplayRequired: '請先切換至手機直向螢幕，再移入應用程式視窗。',
+    windowUnavailable: '該視窗已關閉或無法移動，請重新整理視窗列表。',
+    windowUnresponsive: '目標應用程式暫未回應輔助使用請求，請稍後再試。',
+    restorePersistFailed: '無法在 Mac 上儲存視窗原始位置，已取消移動視窗。',
+    displayChanged: '顯示器版面已變更，請等待畫面更新或重新連線。',
     keyEscape: 'Esc 鍵', keyTab: 'Tab 鍵', keyEnter: '換行', keyBackspace: '退格',
     keyLeft: '左方向鍵', keyUp: '上方向鍵', keyDown: '下方向鍵', keyRight: '右方向鍵',
     keyCommand: 'Command', keyShift: 'Shift',
@@ -81,6 +123,20 @@ const ja: typeof en = {
     viewChanged: 'デスクトップの映像が変わりました。最新の映像を待ってから続けてください。',
     preferredRoute: 'Mac を操作する前に、選択した接続を確立してください。',
     inputBusy: '入力待ちが多すぎます。Mac を操作するには再接続してください。',
+    phoneScreen: 'スマホ縦画面',
+    windows: 'ウインドウ',
+    restoreWindows: 'ウインドウを元の位置に戻す',
+    windowsLoading: '実行中のウインドウを読み込み中…',
+    windowsEmpty: 'Mac で開いている対象ウインドウがありません。',
+    untitledWindow: '名称未設定のウインドウ',
+    windowOnPhone: '表示中',
+    windowMinimized: '最小化',
+    virtualDisplayUnavailable: 'この Mac ではスマホ縦画面を利用できません。物理ディスプレイを選択してください。',
+    virtualDisplayRequired: 'ウインドウを移動するには、先にスマホ縦画面へ切り替えてください。',
+    windowUnavailable: 'このウインドウは閉じられたか移動できません。一覧を更新してください。',
+    windowUnresponsive: '対象のアプリがアクセシビリティに応答していません。しばらくしてから再試行してください。',
+    restorePersistFailed: 'Mac 上でウインドウの元の位置を保存できなかったため、移動を中止しました。',
+    displayChanged: 'ディスプレイ構成が変わりました。映像の更新を待つか再接続してください。',
     keyEscape: 'エスケープ', keyTab: 'タブ', keyEnter: '改行', keyBackspace: '削除',
     keyLeft: '左矢印', keyUp: '上矢印', keyDown: '下矢印', keyRight: '右矢印',
     keyCommand: 'コマンド', keyShift: 'シフト',
@@ -93,16 +149,22 @@ export function remoteDesktopError(code: string) {
     const labels = remoteDesktopLabels();
     if (code === 'desktop-disabled') return labels.disabled;
     if (code === 'desktop-screen-permission-required') return labels.permission;
-    if (code === 'desktop-input-permission-required') return labels.inputPermission;
+    if (code === 'desktop-input-permission-required' || code === 'desktop-accessibility-required') return labels.inputPermission;
+    if (code === 'desktop-virtual-display-unavailable') return labels.virtualDisplayUnavailable;
+    if (code === 'desktop-virtual-display-required') return labels.virtualDisplayRequired;
+    if (code === 'desktop-window-unavailable') return labels.windowUnavailable;
+    if (code === 'desktop-window-unresponsive') return labels.windowUnresponsive;
+    if (code === 'desktop-restore-persist-failed') return labels.restorePersistFailed;
     if (code === 'desktop-locked') return labels.locked;
     if (code === 'desktop-in-use') return labels.inUse;
     if (code === 'desktop-operation-unknown') return labels.uncertain;
     if (code === 'desktop-view-changed') return labels.viewChanged;
+    if (code === 'desktop-display-changed') return labels.displayChanged;
     if (code === 'preferred-route-unavailable') return labels.preferredRoute;
     if (code === 'desktop-input-busy') return labels.inputBusy;
     if (code === 'desktop-space-unconfirmed') return labels.spaceUnconfirmed;
     if (['desktop-space-shortcut-disabled', 'desktop-space-shortcut-unavailable'].includes(code)) return labels.spaceShortcut;
-    if (['desktop-disconnected', 'desktop-display-changed', 'desktop-request-expired'].includes(code)) return labels.changed;
+    if (['desktop-disconnected', 'desktop-request-expired'].includes(code)) return labels.changed;
     if (code === 'desktop-relay-unavailable' || code === 'desktop-media-connect-failed') return labels.failed;
     return labels.unavailable;
 }

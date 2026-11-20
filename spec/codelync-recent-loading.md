@@ -106,11 +106,25 @@ borrowed to enable the replacement's controls.
 Cached approval and message-option callbacks also recheck their captured native
 source, owner and turn against live metadata before dispatch; a positive
 replacement cannot repurpose an old callback.
-Native phone entry requests the latest single complete row first. Measured list
-height may extend that tail only until the first viewport is covered, without
-walking a collapsed group whose extra rows make no visible progress. Thereafter
-only an upward history gesture or explicit Retry/Load more extends the window.
-Native rendering does not extend to a complete turn merely to fill a row budget.
+Native phone entry requests a bounded latest window (`limit: 25`) first while
+initially mounting only the newest single row (or its contiguous collapsed tool
+summary) and extending that window in memory by measured list height until the
+first viewport is covered. While a `cache-first` recent read is still
+revalidating against the fresh native owner, first-viewport filling may advance
+already cached rows in memory, and waits for revalidation to settle before
+concluding history is exhausted or issuing `/history` cursor requests. When the
+oldest rendered item is a collapsed tool/work group whose oldest member
+boundary advances as earlier rows fold into that summary, first-viewport
+filling traverses bounded older batches (`limit: 8`, up to 12 collapsed steps)
+until visible conversation rows cover the first viewport, history ends, or the
+bounded cap settles into an explicit `Load more` control. Native `FlashList`
+enables vertical bounce (`alwaysBounceVertical`) so short viewports remain
+scrollable by gesture on iOS, and an upward history gesture whose fetched batch
+folds entirely into a collapsed tail group without adding a new list item
+continues up to the bounded invisible-page cap (`5` pages) until a visible row
+appears. Thereafter only an upward history gesture or explicit Retry/Load more
+extends the window. Native rendering does not extend to a complete turn merely
+to fill a row budget.
 The two native observers retain at most 100 rows for incremental publication.
 Their first attachment and newly discovered historical rows prime local delta
 baselines without broadcasting old message bodies. The authoritative recent or

@@ -55,13 +55,19 @@ function getExpoProjectId(): string | null {
     return Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? null;
 }
 
+const UNSUPPORTED_PUSH_PERMISSION: PushPermissionInfo = {
+    status: 'unsupported',
+    granted: false,
+    canAskAgain: false,
+};
+
+function isPushUnsupportedOnPlatform(): boolean {
+    return Platform.OS === 'web' || Boolean(config.noninvasiveLocal && Platform.OS === 'android');
+}
+
 export async function getPushPermissionInfo(): Promise<PushPermissionInfo> {
-    if (Platform.OS === 'web') {
-        return {
-            status: 'unsupported',
-            granted: false,
-            canAskAgain: false,
-        };
+    if (isPushUnsupportedOnPlatform()) {
+        return { ...UNSUPPORTED_PUSH_PERMISSION };
     }
 
     try {
@@ -77,15 +83,11 @@ export async function getPushPermissionInfo(): Promise<PushPermissionInfo> {
 }
 
 export async function requestPushPermissionOrOpenSettings(): Promise<PushPermissionRequestResult> {
-    if (Platform.OS === 'web') {
+    if (isPushUnsupportedOnPlatform()) {
         return {
             granted: false,
             openedSettings: false,
-            permission: {
-                status: 'unsupported',
-                granted: false,
-                canAskAgain: false,
-            }
+            permission: { ...UNSUPPORTED_PUSH_PERMISSION },
         };
     }
 
@@ -116,7 +118,7 @@ export async function requestPushPermissionOrOpenSettings(): Promise<PushPermiss
 }
 
 export async function getCurrentExpoPushToken(): Promise<string | null> {
-    if (Platform.OS === 'web') {
+    if (isPushUnsupportedOnPlatform()) {
         return null;
     }
 
@@ -140,15 +142,11 @@ export async function getCurrentExpoPushToken(): Promise<string | null> {
 }
 
 export async function syncCurrentPushToken(credentials: AuthCredentials): Promise<SyncCurrentPushTokenResult> {
-    if (Platform.OS === 'web') {
+    if (isPushUnsupportedOnPlatform()) {
         return {
             registered: false,
             token: null,
-            permission: {
-                status: 'unsupported',
-                granted: false,
-                canAskAgain: false,
-            }
+            permission: { ...UNSUPPORTED_PUSH_PERMISSION },
         };
     }
 

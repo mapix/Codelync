@@ -151,7 +151,7 @@ test('running suffix snapshot preserves higher unary stepCount when reactive sum
       if (method === 'GetCascadeTrajectorySteps') return { steps: steps.slice(body.stepOffset) };
       throw Error(`Unexpected method ${method}`);
     } };
-  const backend = new AntigravityBackend({ rpc, historyIndex: false,
+  const backend = new AntigravityBackend({ rpc, historyIndex: false, historyBatchSteps: 16,
     summaryStreamFactory: () => {
       stream = streamFixture(scope, { 'running-id': { trajectoryId: 'traj-1', stepCount: 32, status: 'CASCADE_RUN_STATUS_RUNNING', notFullyIdle: true } }, () => 1000);
       return stream;

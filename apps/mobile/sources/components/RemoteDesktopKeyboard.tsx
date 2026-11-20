@@ -87,7 +87,15 @@ export function RemoteDesktopKeyboard({ visible, enabled, onInput, onClose, hint
             const overlap = Math.max(0, Dimensions.get('screen').height - event.endCoordinates.screenY);
             latest.current.onKeyboardHeight?.(Math.min(event.endCoordinates.height, overlap));
         });
-        const shown = Keyboard.addListener('keyboardDidShow', (event: KeyboardEvent) => latest.current.onKeyboardHeight?.(event.endCoordinates.height));
+        const shown = Keyboard.addListener('keyboardDidShow', (event: KeyboardEvent) => {
+            const height = Math.max(0, event.endCoordinates.height);
+            const screenHeight = Platform.OS === 'android' ? Dimensions.get('screen')?.height : undefined;
+            const screenY = event.endCoordinates.screenY;
+            const overlap = Platform.OS === 'android' && typeof screenY === 'number' && typeof screenHeight === 'number' && screenHeight > 0 && screenY >= 0 && screenY <= screenHeight
+                ? Math.max(height, screenHeight - screenY)
+                : height;
+            latest.current.onKeyboardHeight?.(overlap);
+        });
         const hidden = Keyboard.addListener('keyboardDidHide', () => latest.current.onKeyboardHeight?.(0));
         return () => { cancelAnimationFrame(frame); changed.remove(); shown.remove(); hidden.remove(); };
     }, [visible, focus, finish]);
@@ -168,7 +176,7 @@ export function RemoteDesktopKeyboard({ visible, enabled, onInput, onClose, hint
         <View style={styles.inputRow}>
             <TextInput ref={input} testID="desktop-text-input" accessibilityLabel={labels.text} placeholder={labels.text}
                 value={text} onChangeText={edit} autoFocus multiline submitBehavior="newline" autoCorrect={false}
-                autoCapitalize="none" spellCheck={false} textContentType="none" keyboardAppearance="dark"
+                autoCapitalize="none" spellCheck={false} textContentType="none" keyboardAppearance="dark" disableFullscreenUI
                 placeholderTextColor="#80929C" selectionColor="#88C9E5" style={styles.input}
                 onLayout={() => { if (!openingFocused.current) { openingFocused.current = true; focus(); } }}
                 onEndEditing={event => { const current = nativeCommit.current; if (current) void submitCommitted(current, event.nativeEvent.text); }} />

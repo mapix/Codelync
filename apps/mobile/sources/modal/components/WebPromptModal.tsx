@@ -5,6 +5,7 @@ import { PromptModalConfig } from '../types';
 import { Typography } from '@/constants/Typography';
 import { useUnistyles } from 'react-native-unistyles';
 import { MobileGlassSurface } from '@/components/MobileGlass';
+import { t } from '@/text';
 
 interface WebPromptModalProps {
     config: PromptModalConfig;
@@ -180,7 +181,7 @@ export function WebPromptModal({ config, onConfirm }: WebPromptModalProps) {
                             styles.cancelText,
                             Typography.default()
                         ]}>
-                            {config.cancelText || 'Cancel'}
+                            {config.cancelText || t('common.cancel')}
                         </Text>
                     </Pressable>
                     <View style={styles.buttonSeparator} />
@@ -195,7 +196,7 @@ export function WebPromptModal({ config, onConfirm }: WebPromptModalProps) {
                             styles.buttonText,
                             Typography.default('semiBold')
                         ]}>
-                            {config.confirmText || 'OK'}
+                            {config.confirmText || t('common.ok')}
                         </Text>
                     </Pressable>
                 </View>

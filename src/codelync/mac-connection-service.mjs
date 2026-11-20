@@ -171,7 +171,7 @@ export class MacConnectionService extends EventEmitter {
       return { version: 1 };
     }
     if (url.pathname === '/api/peer/channels' && method === 'GET') return { version: 2, channels: this.candidates() };
-    const desktopAction = url.pathname.match(/^\/api\/peer\/desktop\/(status|displays|join|ready|heartbeat|quality|display|space|input|leave)$/u);
+    const desktopAction = url.pathname.match(/^\/api\/peer\/desktop\/(status|displays|join|ready|heartbeat|quality|display|space|windows|window|input|leave)$/u);
     if (desktopAction && !url.search && this.options.remoteDesktop) return this.options.remoteDesktop.api(desktopAction[1], method, body, device, origin);
     const params = Object.fromEntries(url.searchParams);
     if (url.pathname === '/api/peer/activity' && method === 'POST') {

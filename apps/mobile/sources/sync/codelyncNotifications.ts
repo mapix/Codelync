@@ -30,10 +30,11 @@ async function postDevice(credentials: AuthCredentials, path: string, value: unk
     } finally { deadline.dispose(); }
 }
 export async function syncCodelyncPushToken(credentials: AuthCredentials, granted: boolean) {
+    if (Platform.OS !== 'ios') return null;
     if (!granted) { await postDevice(credentials, '/codelync/notifications/device', { enabled: false }); return null; }
     const environment = config.codelyncPushEnvironment;
     // 通知权限不等于 APNs entitlement；本地试装包未配置推送签名时不能借用上游 Expo 项目。
-    if (Platform.OS !== 'ios' || !Device.isDevice || !environment) return null;
+    if (!Device.isDevice || !environment) return null;
     const token = (await Notifications.getDevicePushTokenAsync()).data;
     if (typeof token !== 'string') throw Error('Native push token unavailable');
     const result = await postDevice(credentials, '/codelync/notifications/device', { enabled: true, token, environment });

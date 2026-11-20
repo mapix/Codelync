@@ -1,7 +1,7 @@
 {
   "name": "codelync",
-  "version": "1.0.1",
-  "codelyncBuild": "2026111801",
+  "version": "1.0.2",
+  "codelyncBuild": "2026112001",
   "private": true,
   "type": "module",
   "description": "Codelync phone companion for existing Codex, Antigravity Desktop and Claude Desktop sessions in Gateway setups",
@@ -26,6 +26,8 @@
     "dev:mobile": "pnpm --filter @codelync/mobile start",
     "build:mac": "node scripts/build-mac-app.mjs",
     "build:mobile": "node scripts/build-mobile.mjs",
+    "build:android:debug": "node scripts/build-mobile.mjs --platform android --configuration Debug",
+    "build:android:release": "node scripts/build-mobile.mjs --platform android --configuration Release",
     "build:native": "sh native/build.sh && node scripts/build-desktop-runtime.mjs",
     "build:desktop": "node scripts/build-desktop-runtime.mjs"
   },

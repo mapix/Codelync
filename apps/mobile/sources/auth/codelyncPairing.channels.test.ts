@@ -26,3 +26,66 @@ it('same-Mac v2 scan refreshes location without generating, exchanging, or repla
  recover.mockRejectedValueOnce(Error('Wrong account or location'));
  await expect(controller.connect(qr())).rejects.toMatchObject({code:'location'});expect(generate).not.toHaveBeenCalled();expect(exchange).not.toHaveBeenCalled();expect(save).not.toHaveBeenCalled();
 });
+
+it.each([
+ [409, 'used'],
+ [410, 'expired'],
+] as const)('v2 multi-channel exchange maps HTTP %i to %s instead of masking as network', async (status, expectedCode) => {
+ const save = vi.fn(), select = vi.fn();
+ const controller = new CodelyncPairingController({
+  load: async () => null,
+  save: async () => {},
+  clear: async () => {},
+  generateKey: () => ({ publicKey: 'd'.repeat(43), secretKey: 'e'.repeat(43) }),
+  encrypt: () => ({ publicKey: 'packet', nonce: 'nonce', ciphertext: 'sealed' }),
+  exchange: async origin => {
+   if (origin.startsWith('https:')) throw new Error('timeout');
+   throw { response: { status } };
+  },
+  decrypt: vi.fn(),
+  currentOrigin: () => channels[1].url,
+  selectOrigin: select,
+  credentials: () => null,
+  saveCredentials: save,
+  login: async () => {},
+  reload: async () => {},
+  validatePeer: async () => true,
+ });
+ await expect(controller.connect(qr())).rejects.toMatchObject({ code: expectedCode });
+ expect(save).not.toHaveBeenCalled();
+ expect(select).not.toHaveBeenCalled();
+});
+
+it('v2 multi-channel exchange maps HTTP 429 on all channels to network and succeeds over LAN HTTP when remote channel returns 429', async () => {
+ const save = vi.fn(), select = vi.fn(), reload = vi.fn();
+ let allowLocal = false;
+ const controller = new CodelyncPairingController({
+  load: async () => null,
+  save: async () => {},
+  clear: async () => {},
+  generateKey: () => ({ publicKey: 'd'.repeat(43), secretKey: 'e'.repeat(43) }),
+  encrypt: () => ({ publicKey: 'packet', nonce: 'nonce', ciphertext: 'sealed' }),
+  exchange: async origin => {
+   if (origin.startsWith('http://') && allowLocal) return {};
+   throw { response: { status: 429 } };
+  },
+  decrypt: () => ({ version: 2, origin: channels[0].url, macKey: key, credentials: { token: 'fixture', secret, serverUrl: channels[0].url }, peer: { id: 'f'.repeat(64), key, channels } }),
+  currentOrigin: () => channels[1].url,
+  selectOrigin: select,
+  credentials: () => null,
+  saveCredentials: save,
+  login: async () => {},
+  reload,
+  validatePeer: async () => true,
+ });
+
+ await expect(controller.connect(qr())).rejects.toMatchObject({ code: 'network' });
+ expect(save).not.toHaveBeenCalled();
+
+ allowLocal = true;
+ await controller.connect(qr());
+ expect(save).toHaveBeenCalledOnce();
+ expect(save.mock.calls[0][0]).toMatchObject({ serverUrl: channels[0].url, peer: { selectedChannel: 'local', automatic: true } });
+ expect(select).toHaveBeenCalledWith(channels[0].url);
+ expect(reload).toHaveBeenCalledOnce();
+});

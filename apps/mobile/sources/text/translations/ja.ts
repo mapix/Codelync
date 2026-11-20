@@ -986,7 +986,7 @@ export const ja: TranslationStructure = {
         helpDiscord: 'Discord で質問', helpBra1nDump: 'X で @bra1n_dump に連絡', helpEx3ndr: 'X で @Ex3NDR に連絡', helpIssues: '既知の問題を確認',
         logoutStartOver: 'ログアウトしてやり直す', logoutFooter: 'このアカウントにはまだデータがありません。',
         logoutConfirmTitle: 'ログアウトしてやり直しますか？', logoutConfirmBody: 'アカウント作成に戻ります。コンピューターの内容は変わりません。',
-        restoreTitle: 'アカウントを復元', restoreScan: 'もう一台の iPhone でこのコードをスキャンしてください。',
+        restoreTitle: 'アカウントを復元', restoreScan: 'もう一台のモバイル端末でこのコードをスキャンしてください。',
         restoreScanPath: 'Codelync › 設定 › アカウント › 新しいデバイスを接続', restoreUseKey: 'シークレットキーを使用',
         secretKeyTitle: 'シークレットキー', secretKeyBody: 'シークレットキーを貼り付けてください。もう一台のデバイスの Codelync › 設定 › アカウントにあります。', restoreButton: '復元',
         headline: "Codex / Antigravity / Claude Desktop セッションを、\nどこにいても",

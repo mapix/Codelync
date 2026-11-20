@@ -1,0 +1,27 @@
+# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+
+# Bundle artifacts
+*.jsbundle
+
+# Kotlin, CMake, APK/AAB outputs and untracked local release signing
+.kotlin/
+app/.kotlin/
+app/.cxx/
+.signing/
+*.keystore
+*.jks
+*.key
+*.apk
+*.aab

@@ -298,7 +298,7 @@ export class NativeProjectActivityService {
       let status;
       try { status = inventoryAvailable && entry && !entry.closed ? entry.observer.status() : null; } catch { status = null; }
       states.set(source.id, status);
-      if (!status?.known) { unknown++; refreshing ||= status?.status === 'refreshing' || !!entry?.queued; }
+      if (!status?.known) { unknown++; refreshing ||= status?.status === 'refreshing' || !!entry?.queued || !!entry?.starting; }
       else { if (status.active === true) active++; if (status.waiting === true) waiting++; }
     }
     return { id: group.id, total: members.length, active, waiting, unknown,

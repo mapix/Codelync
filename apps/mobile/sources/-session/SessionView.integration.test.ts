@@ -11,10 +11,12 @@ import { nativeComposerInputReadOnly } from '@/utils/nativeComposerInputReadOnly
 import { codelyncSavedHistory } from '@/utils/nativeSavedHistory';
 import { nativeSessionAvailability } from '@/utils/nativeSessionAvailability';
 import { nativeSessionAvailabilityLabels } from '@/text/nativeSessionAvailabilityLabels';
+import { nativeCachedReadControlsUnavailable } from '@/utils/nativeCachedRead';
 
 const state = { connected: true, draft: 'Retained draft', send: vi.fn(), abort: vi.fn(), modes: vi.fn(), goal: vi.fn(),
-    clear: vi.fn(), nativeCommand: vi.fn(), visible: vi.fn(), refresh: vi.fn(async () => {}), retryRead: vi.fn(async () => {}), replace: vi.fn(),
-    landscape: false, tablet: false, loaded: true, older: false, phase: 'complete', readPhase: 'complete', selectedActivity:vi.fn(), sessions: {} as Record<string, any> };
+    clear: vi.fn(), clearImages: vi.fn(), nativeCommand: vi.fn(), visible: vi.fn(), refresh: vi.fn(async () => {}), retryRead: vi.fn(async () => {}), replace: vi.fn(),
+    landscape: false, tablet: false, loaded: true, older: false, phase: 'complete', readPhase: 'complete', selectedActivity: vi.fn(),
+    selectedImages: [] as any[], sessions: {} as Record<string, any> };
 const host = (name: string) => (props: any) => React.createElement(name, props, props.children);
 const noop = () => {};
 const models = { native: true, enabled: true, models: [{ key: 'a', name: 'A' }], currentModel: { key: 'a', name: 'A' },
@@ -55,11 +57,12 @@ const modules: Record<string, any> = {
     '@/utils/nativeComposerInputReadOnly': { nativeComposerInputReadOnly },
     '@/utils/nativeReadingWindow': reading,
     '@/utils/nativeSavedHistory': { codelyncSavedHistory },
+    '@/utils/nativeCachedRead': { nativeCachedReadControlsUnavailable },
     '@/utils/nativeParentControl': { nativeParentControl: () => null },
     '@/utils/nativeQuery': { readNativeQuery: () => null },
     '@/utils/nativeModelControls': { readNativeModelControlScope: () => null, nativeModelControlScopesEqual: () => false },
     '@/utils/codelyncNativeCommands': { handleCodelyncSlashSubmission: () => false },
-    '@/sync/rig': { isRigMetadata: () => false, isRigMetadataV1: () => false, isRigPermissionSelectionEnabled: () => true, isRigModelSelectionEnabled: () => true, isRigReasoningSelectionEnabled: () => true, rigCanAbort: () => true },
+    '@/sync/rig': { isRigMetadata: () => false, isRigMetadataV1: (m: any) => Boolean(m?.capabilities?.attachments), isRigPermissionSelectionEnabled: () => true, isRigModelSelectionEnabled: () => true, isRigReasoningSelectionEnabled: () => true, rigCanAbort: () => true, rigCanUseAttachments: (m: any) => m?.capabilities?.attachments?.enabled === true },
     '@/utils/responsive': { useIsLandscape: () => state.landscape, useIsTablet: () => state.tablet, useHeaderHeight: () => 44, useLayoutDimensions: () => ({ width: 402 }) },
     '@/utils/platform': { isRunningOnMac: () => false },
     '@/utils/sessionUtils': { useSessionStatus: () => ({ isConnected: true, state: 'thinking' }), getResumeCommandBlock: () => null,
@@ -68,7 +71,7 @@ const modules: Record<string, any> = {
     '@/hooks/useCodelyncModelControls': { useCodelyncModelControls: () => models },
     '@/hooks/useCodelyncConnectionState': { useCodelyncConnectionState: () => ({ state: { kind: state.connected ? 'connected' : 'failed' } }) },
     '@/hooks/useComposerModes': { useComposerModes: () => ({ availableModes: [], availableModels: [], availableEffortLevels: [], permissionMode: { key: 'default', name: 'Default' } }) },
-    '@/hooks/useImagePicker': { useImagePicker: () => ({ selectedImages: [], removeImage: noop }) },
+    '@/hooks/useImagePicker': { useImagePicker: () => ({ selectedImages: state.selectedImages, attachImages: noop, removeImage: noop, clearImages: state.clearImages, addImages: noop }) },
     '@/hooks/useDraft': { useDraft: () => ({ clearDraft: state.clear }) },
     '@/hooks/useSessionVisibility': { useSessionVisibility: state.visible },
     '@/sync/codelyncLoadingProgress': { useCodelyncMessageProgress: () => ({ phase: state.readPhase }), useCodelyncDiscoveryProgress: () => ({ phase: state.phase }) },
@@ -100,7 +103,7 @@ new Function('require', 'exports', code)((name: string) => modules[name] ?? new 
 const SessionViewLoaded = exports.SessionViewLoaded;
 const fixture = () => ({ id: 'native', draft: 'Retained draft', metadata: { client: { id: 'noninvasive-bridge' }, capabilities: { readOnly: false, steering: true },
     bridge: { controlMode: 'session', sourceStatus: 'connected', currentTurnId: 'turn', source: { app: 'codex', id: 'native-id', hostId: 'local', kind: 'session', runtimeGeneration: 'owner' } } }, agentState: {} });
-beforeEach(() => { vi.clearAllMocks(); state.connected = true; state.landscape = false; state.tablet = false; state.loaded = true; state.older = false; state.phase = 'complete'; state.readPhase = 'complete'; state.draft = 'Retained draft'; state.send.mockResolvedValue(false); });
+beforeEach(() => { vi.clearAllMocks(); state.connected = true; state.landscape = false; state.tablet = false; state.loaded = true; state.older = false; state.phase = 'complete'; state.readPhase = 'complete'; state.draft = 'Retained draft'; state.selectedImages = []; state.send.mockResolvedValue(false); });
 it('HTTP-good cached content survives WS failure while real native composer bindings disable writes and stale callbacks dispatch nothing', async () => {
     const session = fixture(); state.sessions = { native: session }; let screen!: ReturnType<typeof create>;
     act(() => { screen = create(React.createElement(SessionViewLoaded, { sessionId: 'native', session })); });
@@ -154,5 +157,45 @@ it('actual SessionView gives an unavailable foreground route its header inset an
     expect(screen.root.findByType('Unavailable').props).toMatchObject({ topInset: 111, loading: false });
     state.tablet = true; act(() => screen.update(React.createElement(Component, { id: 'uncached-child' })));
     expect(screen.root.findByType('Unavailable').props.topInset).toBe(0);
+    act(() => screen.unmount());
+});
+
+it('preserves picked image attachments across transient cached revalidation frames and clears only when settled without capability', () => {
+    const picked = [{ id: 'img-1', uri: 'file:///cache/ImageManipulator/picked.jpg', width: 1200, height: 800, mimeType: 'image/jpeg', name: 'picked.jpg', size: 4096 }];
+    state.selectedImages = picked;
+    const enabledSession = {
+        ...fixture(),
+        metadata: {
+            ...fixture().metadata,
+            capabilities: { readOnly: false, steering: true, attachments: { enabled: true, maxBytes: 10 * 1024 * 1024, mediaTypes: ['image/*'] } },
+        },
+    };
+    state.sessions = { native: enabledSession };
+    let screen!: ReturnType<typeof create>;
+    act(() => { screen = create(React.createElement(SessionViewLoaded, { sessionId: 'native', session: enabledSession })); });
+    expect(screen.root.findByType('AgentInput').props.selectedImages).toBe(picked);
+    expect(state.clearImages).not.toHaveBeenCalled();
+
+    const cachedRevalidatingSession = {
+        ...enabledSession,
+        metadata: {
+            ...enabledSession.metadata,
+            nativeReadFreshness: { version: 1, mode: 'cached', currentControlAuthority: false, ownerGeneration: 'owner' },
+            capabilities: { readOnly: true, steering: false, attachments: { enabled: false, maxBytes: 0, mediaTypes: [] } },
+        },
+    };
+    act(() => { screen.update(React.createElement(SessionViewLoaded, { sessionId: 'native', session: cachedRevalidatingSession })); });
+    expect(state.clearImages).not.toHaveBeenCalled();
+    expect(screen.root.findByType('AgentInput').props.selectedImages).toBe(picked);
+
+    const settledDisabledSession = {
+        ...enabledSession,
+        metadata: {
+            ...enabledSession.metadata,
+            capabilities: { readOnly: false, steering: true, attachments: { enabled: false, maxBytes: 0, mediaTypes: [] } },
+        },
+    };
+    act(() => { screen.update(React.createElement(SessionViewLoaded, { sessionId: 'native', session: settledDisabledSession })); });
+    expect(state.clearImages).toHaveBeenCalledTimes(1);
     act(() => screen.unmount());
 });

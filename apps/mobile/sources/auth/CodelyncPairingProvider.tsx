@@ -16,7 +16,7 @@ import { useCheckScannerPermissions } from '@/hooks/useCheckCameraPermissions';
 import { CodelyncQrScannerModal } from '@/components/CodelyncQrScannerModal';
 import { Modal } from '@/modal';
 import { config } from '@/config';
-import { t, getCurrentLanguage } from '@/text';
+import { t, getCurrentLanguage, type SupportedLanguage } from '@/text';
 import { bootstrapMacDiagnostics } from '@/sync/bootstrapMacDiagnostics';
 import { sameLocatorOwner } from '@/sync/startupMacLocatorCore';
 import DeviceInfo from 'react-native-device-info';
@@ -26,12 +26,17 @@ const DEVICE_KEY = 'codelync_device_box_key_v1';
 type PairingContext = { busy: boolean; error: string | null; scan: () => Promise<void>; connect: (url: string) => Promise<void> };
 const Context = createContext<PairingContext | null>(null);
 
-function formatPairingError(failure: unknown): string {
+const PAIRING_LOCATION_ERRORS: Partial<Record<SupportedLanguage, string>> & Record<'en' | 'zh-Hans' | 'zh-Hant' | 'ja', string> = {
+    en: 'Could not verify this Mac’s location. Check the network and scan again.',
+    'zh-Hans': '这台 Mac 的位置验证失败，请检查网络后重新扫描。',
+    'zh-Hant': '無法驗證這台 Mac 的位置，請檢查網路後重新掃描。',
+    ja: 'この Mac の接続先を確認できませんでした。ネットワークを確認して、もう一度スキャンしてください。',
+};
+
+export function formatPairingError(failure: unknown, language: SupportedLanguage = getCurrentLanguage()): string {
     const code = failure instanceof CodelyncPairingError ? failure.code : 'network';
     if (code === 'location') {
-        return getCurrentLanguage().startsWith('zh')
-            ? '这台 Mac 的位置验证失败，请检查网络后重新扫描。'
-            : 'Could not verify this Mac’s location. Check the network and scan again.';
+        return PAIRING_LOCATION_ERRORS[language] ?? PAIRING_LOCATION_ERRORS.en;
     }
     if (code === 'expired' || code === 'used') return t('codelyncPairing.refresh');
     if (code === 'storage') return t('codelyncPairing.storage');
@@ -60,12 +65,13 @@ export function CodelyncPairingProvider({ children }: { children: React.ReactNod
         generateKey: async () => {
             const saved = Platform.OS === 'web' ? localStorage.getItem(DEVICE_KEY) : await SecureStore.getItemAsync(DEVICE_KEY);
             if (saved) return JSON.parse(saved);
-            const key = generateAuthKeyPair(), value = { publicKey: encodeBase64(key.publicKey, 'base64url'), secretKey: encodeBase64(key.secretKey, 'base64url'), name: DeviceInfo.getModel() };
+            const model = DeviceInfo.getModel()?.trim();
+            const key = generateAuthKeyPair(), value = { publicKey: encodeBase64(key.publicKey, 'base64url'), secretKey: encodeBase64(key.secretKey, 'base64url'), name: model || 'Phone' };
             if (Platform.OS === 'web') localStorage.setItem(DEVICE_KEY, JSON.stringify(value)); else await SecureStore.setItemAsync(DEVICE_KEY, JSON.stringify(value));
             return value;
         },
         encrypt: (code, device) => {
-            const nonce = getRandomBytes(24), plain = new TextEncoder().encode(JSON.stringify({ version: code.version ?? 1, invite: code.invite, origin: code.origin, deviceName: device.name ?? 'Phone' }));
+            const nonce = getRandomBytes(24), plain = new TextEncoder().encode(JSON.stringify({ version: code.version ?? 1, invite: code.invite, origin: code.origin, deviceName: device.name?.trim() || 'Phone' }));
             const ciphertext = sodium.crypto_box_easy(plain, nonce, decodeBase64(code.key, 'base64url'), decodeBase64(device.secretKey, 'base64url'));
             return { publicKey: device.publicKey, nonce: encodeBase64(nonce, 'base64url'), ciphertext: encodeBase64(ciphertext, 'base64url') };
         },

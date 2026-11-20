@@ -687,6 +687,7 @@ type UsageRowProps = {
     weekPercent: number | null;
     /** Prebuilt "Session — 32% · resets 6 PM" rows for the week popup. */
     usageMenuOptions: NativeSettingsMenuOption[];
+    useNativeSettingsMenus: boolean;
 };
 
 // Sits under the composer card, right-aligned with the effort label: week
@@ -695,6 +696,7 @@ type UsageRowProps = {
 const AgentInputUsageRow = React.memo(function AgentInputUsageRow(p: UsageRowProps) {
     const { theme } = useUnistyles();
     const [showPreciseContext, setShowPreciseContext] = React.useState(false);
+    const [usageSheetOpen, setUsageSheetOpen] = React.useState(false);
     if (!p.contextStatus && p.weekPercent == null) {
         return null;
     }
@@ -717,23 +719,56 @@ const AgentInputUsageRow = React.memo(function AgentInputUsageRow(p: UsageRowPro
         }}>
             {weekText && (
                 p.usageMenuOptions.length > 0 ? (
-                    <NativeSettingsMenu
-                        anchor="bottom"
-                        groups={[{
-                            key: 'usage',
-                            label: '',
-                            title: '',
-                            options: p.usageMenuOptions,
-                            selectedKey: null,
-                            onSelect: () => { },
-                        }]}
-                    >
-                        {/* Native menu triggers hit only their own bounds, so
-                            pad the target out and pull the layout back in. */}
-                        <View style={{ padding: 10, margin: -10 }}>
-                            {weekText}
-                        </View>
-                    </NativeSettingsMenu>
+                    p.useNativeSettingsMenus ? (
+                        <NativeSettingsMenu
+                            anchor="bottom"
+                            groups={[{
+                                key: 'usage',
+                                label: '',
+                                title: '',
+                                options: p.usageMenuOptions,
+                                selectedKey: null,
+                                onSelect: () => { },
+                            }]}
+                        >
+                            {/* Native menu triggers hit only their own bounds, so
+                                pad the target out and pull the layout back in. */}
+                            <View style={{ padding: 10, margin: -10 }}>
+                                {weekText}
+                            </View>
+                        </NativeSettingsMenu>
+                    ) : (
+                        <>
+                            <Pressable
+                                testID="agent-input-week-quota"
+                                onPress={() => setUsageSheetOpen(true)}
+                                hitSlop={{ top: 12, bottom: 14, left: 10, right: 10 }}
+                                accessibilityRole="button"
+                            >
+                                {weekText}
+                            </Pressable>
+                            <PickerSheet
+                                visible={usageSheetOpen}
+                                title={t('agentInput.context.percentWeek', { percent: Math.round(p.weekPercent!) })}
+                                onClose={() => setUsageSheetOpen(false)}
+                            >
+                                {p.usageMenuOptions.map((opt) => {
+                                    const [primaryLabel, ...restLines] = opt.label.split('\n');
+                                    const description = restLines.length > 0 ? restLines.join(' · ') : undefined;
+                                    return (
+                                        <PickerSheetOption
+                                            key={opt.key}
+                                            label={primaryLabel}
+                                            description={description}
+                                            selected={false}
+                                            action
+                                            onPress={() => setUsageSheetOpen(false)}
+                                        />
+                                    );
+                                })}
+                            </PickerSheet>
+                        </>
+                    )
                 ) : weekText
             )}
             {p.contextStatus && (
@@ -2311,6 +2346,7 @@ export const AgentInput = React.memo(React.forwardRef<MultiTextInputHandle, Agen
                         contextStatus={contextStatus}
                         weekPercent={weekPercent}
                         usageMenuOptions={usageMenuOptions}
+                        useNativeSettingsMenus={useNativeSettingsMenus}
                     />
                 </AnimatedFade>
             </View>

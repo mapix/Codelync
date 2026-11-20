@@ -73,6 +73,14 @@ export function validateCodelyncPairingCredentials(value: unknown, code: Codelyn
     return { ...credentials, serverUrl: code.origin };
 }
 
+function mapPairingExchangeError(error: unknown, fallbackMessage: string): CodelyncPairingError {
+    if (error instanceof CodelyncPairingError) return error;
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status === 410) return new CodelyncPairingError('expired', 'The pairing invitation expired.');
+    if (status === 409) return new CodelyncPairingError('used', 'The pairing invitation was used by another device.');
+    return new CodelyncPairingError('network', fallbackMessage);
+}
+
 export class CodelyncPairingController {
     private flight: { key: string; promise: Promise<void> } | null = null;
     constructor(private readonly dependencies: {
@@ -121,12 +129,24 @@ export class CodelyncPairingController {
             const result = await Promise.any((code.channels ?? []).map(async channel => {
                 const candidate = { ...code, origin: channel.url };
                 const encrypted = this.dependencies.encrypt(candidate, device);
-                const response = await this.dependencies.exchange(channel.url, encrypted);
+                let response: unknown;
+                try {
+                    response = await this.dependencies.exchange(channel.url, encrypted);
+                } catch (error) {
+                    throw mapPairingExchangeError(error, 'The Mac could not be reached.');
+                }
                 const decoded = this.dependencies.decrypt(candidate, device, response) as { peer: {id:string;key:string;channels:PeerChannel[]} };
                 const credentials = validateCodelyncPairingCredentials(decoded, candidate);
                 if (!this.dependencies.validatePeer || !await this.dependencies.validatePeer(decoded.peer.id, code.key, credentials.secret)) throw new CodelyncPairingError('identity', 'Wrong peer identity');
                 return { ...credentials, peer: { ...decoded.peer, channels: channelList(decoded.peer.channels), device, automatic: true, selectedChannel: channel.id } };
-            })).catch(() => { throw new CodelyncPairingError('network', 'No authenticated Mac channel could be reached'); });
+            })).catch((err: unknown) => {
+                const errors = err instanceof AggregateError ? err.errors : [err];
+                for (const code of ['used', 'expired', 'identity', 'invalid'] as const) {
+                    const matched = errors.find((item): item is CodelyncPairingError => item instanceof CodelyncPairingError && item.code === code);
+                    if (matched) throw matched;
+                }
+                throw new CodelyncPairingError('network', 'No authenticated Mac channel could be reached');
+            });
             // 通道候选只能在 Mac 密钥验证之后成为认证来源；一次扫码保存同一 peer 的设备私钥与地址集。
             await this.dependencies.saveCredentials(result); await this.dependencies.clear();
             this.dependencies.selectOrigin(result.serverUrl); await this.dependencies.reload(); return;
@@ -138,10 +158,7 @@ export class CodelyncPairingController {
         const packet = this.dependencies.encrypt(code, pending.device);
         let response: unknown;
         try { response = await this.dependencies.exchange(code.origin, packet); } catch (error) {
-            const status = (error as { response?: { status?: number } })?.response?.status;
-            if (status === 410) throw new CodelyncPairingError('expired', 'The pairing invitation expired.');
-            if (status === 409) throw new CodelyncPairingError('used', 'The pairing invitation was used by another device.');
-            throw new CodelyncPairingError('network', 'The Mac could not be reached.');
+            throw mapPairingExchangeError(error, 'The Mac could not be reached.');
         }
         const credentials = validateCodelyncPairingCredentials(this.dependencies.decrypt(code, pending.device, response), code);
         const existing = this.dependencies.credentials();

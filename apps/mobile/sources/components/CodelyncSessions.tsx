@@ -80,9 +80,11 @@ export const CodelyncSessions = React.memo(function CodelyncSessions() {
     React.useEffect(() => {
         if (!focused) return;
         const enabled = new Set(descriptors.map(project => project.id));
-        codelyncProjectActivityStore.mark(visibleProjects.filter(id => !enabled.has(id)), 'unavailable');
-        codelyncProjectActivityStore.markSessions(visibleSessions.filter(row => !enabled.has(row.projectId)).map(row => row.id), 'unavailable');
-    }, [focused, descriptors, visibleProjects, visibleSessions]);
+        const initialSyncPending = machines.length === 0 && (progress.phase === 'loading' || progress.phase === 'idle') && socketStatus !== 'error';
+        const fallbackStatus = initialSyncPending ? 'refreshing' : 'unavailable';
+        codelyncProjectActivityStore.mark(visibleProjects.filter(id => !enabled.has(id)), fallbackStatus);
+        codelyncProjectActivityStore.markSessions(visibleSessions.filter(row => !enabled.has(row.projectId)).map(row => row.id), fallbackStatus);
+    }, [focused, descriptors, visibleProjects, visibleSessions, machines.length, progress.phase, socketStatus]);
     const viewability = useRef({ itemVisiblePercentThreshold: 1, minimumViewTime: 200 }).current;
     const viewableChanged = useCallback(({ viewableItems }: { viewableItems: Array<{ item: CodelyncBrowserRow }> }) => {
         const nextSessions = viewableItems.flatMap(token => token.item.kind === 'session' && token.item.session.metadata?.bridge?.source.id

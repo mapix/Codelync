@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import * as ReactNative from 'react-native';
 import {
     View,
     Modal,
@@ -35,6 +36,33 @@ export function BaseModal({
     closeOnBackdrop = true
 }: BaseModalProps) {
     const fadeAnim = useRef(new Animated.Value(0)).current;
+    const [androidImeHeight, setAndroidImeHeight] = useState(0);
+
+    useEffect(() => {
+        if (!visible || Platform.OS !== 'android') {
+            setAndroidImeHeight(0);
+            return;
+        }
+        const rn = ReactNative as Record<string, any>;
+        const keyboard = rn.Keyboard;
+        if (typeof keyboard?.addListener !== 'function') return;
+        const onShow = keyboard.addListener('keyboardDidShow', (event: { endCoordinates?: { height?: number; screenY?: number } }) => {
+            const height = Math.max(0, event?.endCoordinates?.height ?? 0);
+            const screenHeight = rn.Dimensions?.get?.('screen')?.height;
+            const screenY = event?.endCoordinates?.screenY;
+            const overlap = typeof screenY === 'number' && typeof screenHeight === 'number' && screenHeight > 0 && screenY >= 0 && screenY <= screenHeight
+                ? Math.max(height, screenHeight - screenY)
+                : height;
+            setAndroidImeHeight(overlap);
+        });
+        const onHide = keyboard.addListener('keyboardDidHide', () => {
+            setAndroidImeHeight(0);
+        });
+        return () => {
+            onShow?.remove?.();
+            onHide?.remove?.();
+        };
+    }, [visible]);
 
     useEffect(() => {
         if (visible) {
@@ -63,13 +91,17 @@ export function BaseModal({
             visible={visible}
             transparent={transparent}
             animationType={animationType}
+            statusBarTranslucent
+            navigationBarTranslucent
             onRequestClose={onClose}
         >
             <KeyboardAvoidingView
-                style={styles.container}
-                // Android already resizes the modal window for the IME. Applying
-                // another height adjustment here makes a centered, animated modal
-                // repeatedly re-layout while its input is taking focus.
+                style={[
+                    styles.container,
+                    Platform.OS === 'android' && androidImeHeight > 0 ? { paddingBottom: androidImeHeight } : null,
+                ]}
+                // Edge-to-edge Android modals use SOFT_INPUT_ADJUST_NOTHING under
+                // KeyboardProvider, so pad explicitly for the active IME height.
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 {...webEventHandlers}
             >

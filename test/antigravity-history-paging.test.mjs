@@ -20,7 +20,7 @@ function fixture(userIndex = 50) {
       }
       throw Error('A large child must not read the full trajectory or start a native command.');
     } };
-  const backend = new AntigravityBackend({ rpc, historyIndex: false });
+  const backend = new AntigravityBackend({ rpc, historyIndex: false, historyBatchSteps: 16 });
   return { backend, calls, oversized: (/** @type {number} */ minimum) => { oversized = minimum; }, restart: () => { restart = true; }, changeOwner: () => { generation = 'new-owner'; } };
 }
 
@@ -139,4 +139,37 @@ test('an in-flight history expansion retains its data but cannot restore read in
     const retained = await f.backend.readMaterializedHistory('child', { id: view.rows[8].id, nativeStepOffset: 32 }); assert.ok(retained);
     assert.equal((await f.backend.freshSnapshot('child')).nativeStepOffset, 48);
   } finally { release(); await f.backend.dispose(); }
+});
+
+test('default 64-step suffix batch covers tool-heavy turns and halves oversized backward history steps', async () => {
+  let oversizedTotal = 0;
+  const steps = Array.from({ length: 160 }, (_, index) => index === 110
+    ? { status: 3, userInput: { query: 'Design fix' } }
+    : { status: 3, viewFile: { absolutePathUri: 'file:///workspace/a.ts', content: 'x' }, metadata: { toolCall: { id: `t-${index}`, name: 'read_file' } } });
+  const calls = /** @type {Value[]} */ ([]);
+  const rpc = {
+    latestRuntime: { binary: '/fixture/Antigravity.app/Contents/Resources/bin/language_server', home: '/fixture/home', appDataDir: 'antigravity' },
+    generation: () => 'owner',
+    call: async (/** @type {string} */ method, /** @type {Value} */ body = {}) => {
+      calls.push({ method, body });
+      if (method === 'GetAllCascadeTrajectories') return { trajectorySummaries: { session: { trajectoryId: 'traj', stepCount: steps.length, status: 2 } } };
+      if (method === 'GetCascadeTrajectorySteps') {
+        if (oversizedTotal && steps.length - body.stepOffset >= oversizedTotal) throw new BridgeError('antigravity-response-too-large', 'Fixture oversized history');
+        return { steps: steps.slice(body.stepOffset) };
+      }
+      throw Error(`Unexpected ${method}`);
+    },
+  };
+  const backend = new AntigravityBackend({ rpc, historyIndex: false });
+  try {
+    const tail = await backend.snapshot('session');
+    assert.equal(tail.nativeStepOffset, 96);
+    assert.equal(tail.rows.some(row => row.role === 'user'), true);
+    oversizedTotal = 100;
+    const older = await backend.completeSnapshot('session');
+    assert.equal(older.nativeStepOffset, 64);
+    assert.deepEqual(calls.filter(call => call.method === 'GetCascadeTrajectorySteps').map(call => call.body.stepOffset), [96, 32, 64]);
+  } finally {
+    await backend.dispose();
+  }
 });

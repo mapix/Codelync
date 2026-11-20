@@ -2,10 +2,13 @@
 
 [Website](https://codelync.novarock.io/) · [Source repository](https://github.com/mapix/Codelync) · [MIT license](LICENSE) · [中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-Codelync is a native iPhone companion for people who have configured Gateway
-mode in Codex, Antigravity Desktop or Claude Desktop. Open the Mac companion
-and scan its QR code to view existing projects, sessions and available child
-logs. Actions follow each original desktop's confirmed capabilities.
+Codelync is a native iPhone and Android companion (`com.learnings.codelync`) for
+people who have configured Gateway mode in Codex, Antigravity Desktop or Claude
+Desktop. Open the Mac companion and scan its QR code to view existing projects,
+sessions and available child logs with end-to-end encrypted sync. Actions follow
+each original desktop's confirmed capabilities; Android matches the iPhone
+client's full session, media and optional remote desktop feature set in a
+push-free foreground mode (push notifications are excluded on Android).
 
 For everyday subscription use, we recommend the vendors' official apps.
 Codelync is an independent project. The source is public on GitHub; pairing requires no separate phone account or VPN.
@@ -13,14 +16,16 @@ Codelync is an independent project. The source is public on GitHub; pairing requ
 The public Mac preview targets Apple Silicon with macOS 14+ and includes
 the three-Desktop integration within each owner's confirmed capabilities. Public downloads
 are Developer ID signed, Apple notarized and stapled. The website shows current
-TestFlight beta availability; source builds use your own Apple signing. Device-bound IPAs
-are not public downloads. Remote desktop is hidden by default on iPhone; enable
-its feature switch in Settings when needed.
+iPhone TestFlight beta availability; iOS source builds use your own Apple signing,
+and Android source builds produce local Debug and standalone installable Release
+APKs (`com.learnings.codelync`). Device-bound IPAs and local signing keystores
+are not public downloads. Remote desktop is hidden by default on iPhone and
+Android; enable its feature switch in Settings when needed.
 
 The app and website support English, Chinese and Japanese and default to your
-system language. Select a language in iPhone Settings or on the website to
-override it. The GitHub README, contributor documentation and releases use
-English as their primary language.
+system language. Select a language in mobile Settings (iPhone or Android) or on
+the website to override it. The GitHub README, contributor documentation and
+releases use English as their primary language.
 
 Read [security and trust boundaries](SECURITY.md) before pairing a phone. A paired
 device can control the exposed sessions of your Mac's Codelync account.
@@ -57,7 +62,7 @@ See the [current product contract](spec/codelync-product.md),
 
 | Directory | Purpose |
 | --- | --- |
-| `apps/mobile` | Expo / React Native phone App |
+| `apps/mobile` | Expo / React Native phone App (iPhone and Android, `com.learnings.codelync`) |
 | `apps/mac` | SwiftUI Mac App |
 | `packages/relay` | Embedded encrypted sync API |
 | `packages/wire` | Licensed shared wire protocol |
@@ -108,6 +113,20 @@ The packaging script uses the running Node executable. Supply `CODELYNC_NODE_BIN
 
 For a signed iPhone trial, use `pnpm build:mobile --device YOUR_DEVICE_ID --team YOUR_TEAM_ID` (add `--generic` to compile while the phone is offline). The wrapper uses the local-trial entitlement file. The Xcode workspace remains `apps/mobile/ios/Codelync.xcworkspace`; use your own Apple Development identity/team. The current bundle identifier is `com.learnings.codelync`; the generated target name is an implementation detail retained for existing installs.
 
+For Android (`com.learnings.codelync`, URI scheme `codelync://`), use Node 24.15.0, pnpm 10.11.0, JDK 21, and Android SDK 36 (`build-tools 36.0.0`, NDK `27.1.12297006`) to build a local Debug APK or a standalone installable Release APK (embeds the production Hermes bundle and runs without Metro):
+
+```sh
+# Debug APK -> apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+node scripts/build-mobile.mjs --platform android --configuration Debug
+pnpm --filter @codelync/mobile build:android:debug
+
+# Standalone Release APK -> apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+node scripts/build-mobile.mjs --platform android --configuration Release
+pnpm --filter @codelync/mobile build:android:release
+```
+
+Supply an explicit keystore via `CODELYNC_UPLOAD_STORE_FILE` (and companion store/key credentials) when needed, or let local builds use an untracked gitignored keystore under `apps/mobile/android/.signing/`. Never commit `.keystore` or `.jks` files. See [build and verification details](docs/BUILD-AND-VERIFY.md).
+
 ## Behavior
 
 - Titles publish most recent first using the original desktop update time, grouped by project across worktrees and isolated by app/host. Codex sessions older than 72 hours initially load basic title/project/time fields; opening one loads its richer data.
@@ -137,7 +156,7 @@ For a signed iPhone trial, use `pnpm build:mobile --device YOUR_DEVICE_ID --team
   Select an option, then explicitly submit; the original question identity and
   native acceptance/unknown-receipt rules still apply.
 - Device authorization, rename and individual revocation are managed by the Mac App.
-- Phone background refresh requests a 60-minute minimum schedule from iOS; the operating system chooses actual runs. Mac keeps collecting the selected native sources.
+- Phone background refresh requests a 60-minute minimum schedule from iOS; the operating system chooses actual runs. On both iPhone and Android, active foreground viewing maintains `<45s` `/codelync/notifications/presence` leases and realtime socket/HTTP synchronization while Mac keeps collecting the selected native sources.
 - Where confirmed for the desktop app and mode, native model and reasoning controls update the existing session with conflict and unknown-receipt protection. Unverified settings controls stay unavailable.
 - User-facing strings follow the phone's selected language with a documented fallback. Native UI and runtime support are verified separately from TypeScript or fixture results.
 
@@ -145,9 +164,14 @@ Local addresses/ports and Cloudflare Quick Tunnel addresses can change on Mac
 restart. A configured Relay keeps its authenticated route across reconnections.
 The phone can obtain updated addresses through a working authenticated channel;
 scan the current QR if every stored route is unavailable. Allow local-network
-access when iOS prompts if you want to use LAN. Live APNs push needs publisher
-credentials and push-enabled phone signing; the source-built iPhone client is
-not an App Store/TestFlight release. See [iPhone notification setup and verification](docs/NOTIFICATIONS.md).
+access when iOS prompts if you want to use LAN; on Android, private LAN routes
+(`http://<mac-lan-ip>:<port>` and `ws://<mac-lan-ip>:<port>`) permit local
+cleartext HTTP transport while keeping every device proof and payload sealed
+end-to-end. Push notifications are iPhone-only (APNs): Android omits
+`POST_NOTIFICATIONS` and push token registration without errors or sync
+blocking. Live APNs push needs publisher credentials and push-enabled phone
+signing; the source-built iPhone client is not an App Store/TestFlight release.
+See [iPhone notification setup and verification](docs/NOTIFICATIONS.md).
 
 The normal user entry point is the Mac App. `scripts/codelync-daemon.mjs` remains
 an advanced self-hosted/diagnostic entry point with an explicit server/profile;

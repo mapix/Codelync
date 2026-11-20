@@ -1,4 +1,13 @@
 const { execFileSync } = require('node:child_process');
+const { AndroidConfig, withAndroidManifest } = require('@expo/config-plugins');
+
+function withAndroidCleartextTraffic(config, { usesCleartextTraffic = true } = {}) {
+    return withAndroidManifest(config, (manifestConfig) => {
+        const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(manifestConfig.modResults);
+        mainApplication.$['android:usesCleartextTraffic'] = String(Boolean(usesCleartextTraffic));
+        return manifestConfig;
+    });
+}
 
 // Current distribution always uses the native Desktop/Gateway session owner.
 const localBridge = true;
@@ -62,14 +71,14 @@ export default {
     expo: {
         name: localBridge ? 'Codelync' : name,
         slug: 'codelync',
-        version: "1.0.1",
+        version: "1.0.2",
         runtimeVersion: localBridge ? 'codelync-22' : '21',
         orientation: "default",
         icon: localBridge ? './sources/assets/images/codelync-icon-v2.png' : './sources/assets/images/icon.png',
         scheme: 'codelync',
         userInterfaceStyle: "automatic",
         ios: {
-            ...(localBridge ? { buildNumber: '2026111801' } : {}),
+            ...(localBridge ? { buildNumber: '2026112001' } : {}),
             supportsTablet: true,
             bundleIdentifier: nativeBundleId,
             config: {
@@ -102,18 +111,23 @@ export default {
                 : {})
         },
         android: {
+            ...(localBridge ? { versionCode: 2026112001 } : {}),
             adaptiveIcon: {
-                foregroundImage: "./sources/assets/images/icon-adaptive.png",
-                monochromeImage: "./sources/assets/images/icon-monochrome.png",
-                backgroundColor: "#000000"
+                foregroundImage: localBridge
+                    ? "./sources/assets/images/codelync-icon-adaptive.png"
+                    : "./sources/assets/images/icon-adaptive.png",
+                monochromeImage: localBridge
+                    ? "./sources/assets/images/codelync-icon-monochrome.png"
+                    : "./sources/assets/images/icon-monochrome.png",
+                backgroundColor: localBridge ? "#0142F3" : "#000000"
             },
             permissions: [
                 "android.permission.RECORD_AUDIO",
                 "android.permission.MODIFY_AUDIO_SETTINGS",
                 "android.permission.ACCESS_NETWORK_STATE",
-                "android.permission.POST_NOTIFICATIONS",
             ],
             blockedPermissions: [
+                "android.permission.POST_NOTIFICATIONS",
                 "android.permission.ACTIVITY_RECOGNITION",
                 // Not using external storage/media access for now — blocks Google Play photo/video permission declaration
                 "android.permission.READ_EXTERNAL_STORAGE",
@@ -145,6 +159,7 @@ export default {
         },
         plugins: [
             require("./plugins/withEinkCompatibility.js"),
+            [withAndroidCleartextTraffic, { usesCleartextTraffic: true }],
             [
                 "expo-router",
                 {
@@ -195,7 +210,9 @@ export default {
                 "expo-notifications",
                 {
                     "enableBackgroundRemoteNotifications": localBridge ? !!process.env.CODELYNC_APNS_ENVIRONMENT : true,
-                    "icon": "./sources/assets/images/icon-notification.png"
+                    "icon": localBridge
+                        ? "./sources/assets/images/codelync-icon-notification.png"
+                        : "./sources/assets/images/icon-notification.png"
                 }
             ],
             ...(localBridge ? ['expo-background-task'] : []),
@@ -209,10 +226,15 @@ export default {
                         }
                     },
                     android: {
-                        image: "./sources/assets/images/splash-android-light.png",
+                        image: localBridge
+                            ? "./sources/assets/images/codelync-splash-android-light.png"
+                            : "./sources/assets/images/splash-android-light.png",
+                        imageWidth: localBridge ? 112 : 100,
                         backgroundColor: "#F5F5F5",
                         dark: {
-                            image: "./sources/assets/images/splash-android-dark.png",
+                            image: localBridge
+                                ? "./sources/assets/images/codelync-splash-android-dark.png"
+                                : "./sources/assets/images/splash-android-dark.png",
                             backgroundColor: "#000000",
                         }
                     }

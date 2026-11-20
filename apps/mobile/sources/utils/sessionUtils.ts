@@ -40,8 +40,9 @@ export function useSessionStatus(session: Session): SessionStatus {
     });
     const aggregate = native ? currentNativeAggregate(session) : null;
     const activity = useCodelyncSessionActivityForSource(session);
+    const activityConfirmed = activity.known && (activity.status === 'ready' || (activity.status === 'refreshing' && activity.observedAt > 0));
     const labelActivity = (value: SessionStatus): SessionStatus => {
-        if (!native || session.metadata?.nativeSession?.isSubagent === true || activity.status !== 'ready' || !activity.known
+        if (!native || session.metadata?.nativeSession?.isSubagent === true || !activityConfirmed
             || value.state === 'permission_required' || value.state === 'input_required') return value;
         const status = activity.waiting ? 'waiting' : activity.active ? 'running' : 'idle';
         const color = activity.waiting ? '#FF9500' : activity.active ? '#007AFF' : '#34C759';

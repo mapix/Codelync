@@ -33,7 +33,7 @@ export function assertPeerRouteWrite(peer: PeerCredentials, method: string, revi
 function assertPeerHttpRouteWrite(peer: PeerCredentials, method: string, path: string, origin: string) {
     path = path.split('?')[0];
     if (method === 'GET' || method === 'HEAD' || method === 'POST' && ['/api/peer/activity', '/api/peer/desktop/heartbeat',
-        '/api/peer/desktop/ready', '/api/peer/desktop/leave', '/api/peer/desktop/displays'].includes(path)
+        '/api/peer/desktop/ready', '/api/peer/desktop/leave', '/api/peer/desktop/displays', '/api/peer/desktop/windows'].includes(path)
         || method === 'POST' && /^\/api\/peer\/sessions\/[^/]+\/recent$/.test(path)) return;
     assertPeerRouteWrite(peer, path, undefined, origin);
 }

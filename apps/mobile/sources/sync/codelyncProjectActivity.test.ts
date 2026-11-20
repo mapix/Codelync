@@ -88,3 +88,63 @@ it('row payload limits and unknown booleans cannot masquerade as confirmed runti
     expect(() => parseActivityReply(reply({ sessions: [{ id: 'row', known: false, active: true, waiting: false }] }))).toThrow();
     expect(() => parseActivityReply(reply({ sessions: Array.from({ length: 65 }, (_, n) => ({ id: `row-${n}`, known: false, active: false, waiting: false })) }))).toThrow();
 });
+
+it('preserves previously confirmed project and session statuses while refresh is in flight, across shared controllers, and only drops on failure or settled unknown', async () => {
+    const store = new CodelyncProjectActivityStore();
+    const withRow = { ...project, app: 'codex' as const, sessions: [{ id: 'phone-session', nativeId: 'native-session' }] };
+    const selectedProject = { id: 'selected:phone-session', projectKey: '/fixture', hostId: 'local', machineId: 'Mac', app: 'codex' as const, sessions: [{ id: 'phone-session', nativeId: 'native-session' }] };
+
+    let nextReply: unknown = reply({
+        total: 3, active: 2, waiting: 1, unknown: 0, status: 'ready',
+        sessions: [{ id: 'phone-session', known: true, active: true, waiting: false }],
+    }, 1);
+    let shouldFail = false;
+    const request = vi.fn(async (_machine: string, params: RequestParams) => {
+        if (!params.groups.length) return reply({ groups: [] }, 99);
+        if (shouldFail) throw Error('network-unreachable');
+        return nextReply;
+    });
+
+    const listController = new CodelyncProjectActivityController({ store, clientId: 'list-client', scope: async () => 'account', request });
+    const detailController = new CodelyncProjectActivityController({ store, clientId: 'detail-client', scope: async () => 'account', request });
+
+    listController.setProjects([withRow]);
+    listController.setEnabled(true);
+    await listController.refresh();
+    expect(store.get(project.id)).toMatchObject({ total: 3, active: 2, waiting: 1, unknown: 0, status: 'ready', observedAt: 1000 });
+    expect(store.getSession('phone-session')).toMatchObject({ known: true, active: true, waiting: false, status: 'ready', observedAt: 1000 });
+
+    // Shared controller unmount (leaving SessionView while list remains enabled) must not mark session stale.
+    detailController.setProjects([selectedProject]);
+    detailController.setEnabled(true);
+    detailController.setEnabled(false);
+    expect(store.getSession('phone-session').status).not.toBe('stale');
+    expect(store.getSession('phone-session').known).toBe(true);
+
+    // Cold/re-leased Mac refresh returning status:'refreshing' with known:false keeps prior confirmed status & schedules 800ms fast follow-up.
+    nextReply = reply({
+        total: 3, active: 0, waiting: 0, unknown: 3, status: 'refreshing',
+        sessions: [{ id: 'phone-session', known: false, active: false, waiting: false }],
+    }, 2);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(store.get(project.id)).toMatchObject({ total: 3, active: 2, waiting: 1, unknown: 0, status: 'refreshing' });
+    expect(store.getSession('phone-session')).toMatchObject({ known: true, active: true, waiting: false, status: 'refreshing' });
+
+    // Fast follow-up at 800ms settles to new confirmed idle state without ever passing through Unconfirmed.
+    nextReply = reply({
+        total: 3, active: 0, waiting: 0, unknown: 0, status: 'ready',
+        sessions: [{ id: 'phone-session', known: true, active: false, waiting: false }],
+    }, 3);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(store.get(project.id)).toMatchObject({ total: 3, active: 0, waiting: 0, unknown: 0, status: 'ready' });
+    expect(store.getSession('phone-session')).toMatchObject({ known: true, active: false, waiting: false, status: 'ready' });
+
+    // Genuine connection failure transitions both project and session to unavailable.
+    shouldFail = true;
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(store.get(project.id).status).toBe('unavailable');
+    expect(store.getSession('phone-session').status).toBe('unavailable');
+
+    listController.close();
+    detailController.close();
+});

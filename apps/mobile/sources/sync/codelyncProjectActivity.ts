@@ -21,6 +21,9 @@ export class CodelyncProjectActivityStore {
     private sessions = new Map<string, CodelyncSessionActivity>();
     private sessionListeners = new Map<string, Set<() => void>>();
     private versions = new Map<string, { epoch: string; sequence: number }>();
+    private projectRetainers = new Map<string, Set<string>>();
+    private sessionRetainers = new Map<string, Set<string>>();
+    private ownerHoldings = new Map<string, { projects: Set<string>; sessions: Set<string> }>();
     private scope = '';
     get(id: string) { return this.values.get(id) ?? EMPTY; }
     getSession(id: string) { return this.sessions.get(id) ?? EMPTY_SESSION; }
@@ -43,6 +46,46 @@ export class CodelyncProjectActivityStore {
         this.scope = scope; this.values.clear(); this.sessions.clear(); this.versions.clear();
         for (const set of this.listeners.values()) for (const listener of set) listener();
         for (const set of this.sessionListeners.values()) for (const listener of set) listener();
+    }
+    syncOwner(ownerId: string, active: boolean, projectIds: readonly string[], sessionIds: readonly string[]) {
+        const previous = this.ownerHoldings.get(ownerId);
+        if (active) {
+            const nextProjects = new Set(projectIds);
+            const nextSessions = new Set(sessionIds);
+            if (previous) {
+                for (const id of previous.projects) if (!nextProjects.has(id)) this.releaseRetainer(this.projectRetainers, id, ownerId);
+                for (const id of previous.sessions) if (!nextSessions.has(id)) this.releaseRetainer(this.sessionRetainers, id, ownerId);
+            }
+            for (const id of nextProjects) this.addRetainer(this.projectRetainers, id, ownerId);
+            for (const id of nextSessions) this.addRetainer(this.sessionRetainers, id, ownerId);
+            this.ownerHoldings.set(ownerId, { projects: nextProjects, sessions: nextSessions });
+            return;
+        }
+        this.ownerHoldings.delete(ownerId);
+        const releasedProjects = new Set<string>([...(previous?.projects ?? []), ...projectIds]);
+        const releasedSessions = new Set<string>([...(previous?.sessions ?? []), ...sessionIds]);
+        const staleProjects: string[] = [];
+        const staleSessions: string[] = [];
+        for (const id of releasedProjects) {
+            if (this.releaseRetainer(this.projectRetainers, id, ownerId) === 0) staleProjects.push(id);
+        }
+        for (const id of releasedSessions) {
+            if (this.releaseRetainer(this.sessionRetainers, id, ownerId) === 0) staleSessions.push(id);
+        }
+        if (staleProjects.length) this.mark(staleProjects, 'stale');
+        if (staleSessions.length) this.markSessions(staleSessions, 'stale');
+    }
+    private addRetainer(map: Map<string, Set<string>>, id: string, ownerId: string) {
+        let set = map.get(id);
+        if (!set) { set = new Set(); map.set(id, set); }
+        set.add(ownerId);
+    }
+    private releaseRetainer(map: Map<string, Set<string>>, id: string, ownerId: string): number {
+        const set = map.get(id);
+        if (!set) return 0;
+        set.delete(ownerId);
+        if (!set.size) { map.delete(id); return 0; }
+        return set.size;
     }
     mark(ids: readonly string[], status: 'refreshing' | 'unavailable' | 'stale') {
         for (const id of ids) this.set(id, { ...this.get(id), status });
@@ -77,10 +120,49 @@ export class CodelyncProjectActivityStore {
             if (!requested.has(group.id)) continue;
             seen.add(group.id);
             const { id, sessions, ...value } = group;
-            this.set(id, { ...value, observedAt: reply.observedAt }, reply.unchanged);
+            const priorProject = this.values.get(id);
+            const preservePriorProject = group.status === 'refreshing'
+                && !!priorProject
+                && priorProject.observedAt > 0
+                && priorProject.status !== 'unavailable'
+                && priorProject.total > 0
+                && group.unknown > priorProject.unknown
+                && (group.total === priorProject.total || group.unknown === group.total);
+            this.set(
+                id,
+                preservePriorProject
+                    ? { ...priorProject, status: 'refreshing' }
+                    : { ...value, observedAt: reply.observedAt },
+                reply.unchanged,
+            );
             const wanted = requestedSessions.get(id) ?? new Set<string>(), received = new Set<string>();
             for (const row of sessions ?? []) if (wanted.has(row.id)) {
-                received.add(row.id); this.setSession(row.id, { known: row.known, active: row.active, waiting: row.waiting, status: 'ready', observedAt: reply.observedAt, ...(sourceScopes.has(row.id) ? { sourceScopeKey: sourceScopes.get(row.id) } : {}) }, reply.unchanged);
+                received.add(row.id);
+                const nextScope = sourceScopes.get(row.id);
+                const priorSession = this.sessions.get(row.id);
+                if (!row.known && group.status === 'refreshing') {
+                    if (priorSession?.known && priorSession.observedAt > 0 && (!nextScope || priorSession.sourceScopeKey === nextScope)) {
+                        this.setSession(row.id, { ...priorSession, status: 'refreshing' }, reply.unchanged);
+                    } else {
+                        this.setSession(row.id, {
+                            known: false,
+                            active: false,
+                            waiting: false,
+                            status: 'refreshing',
+                            observedAt: 0,
+                            ...(nextScope !== undefined ? { sourceScopeKey: nextScope } : {}),
+                        }, reply.unchanged);
+                    }
+                } else {
+                    this.setSession(row.id, {
+                        known: row.known,
+                        active: row.active,
+                        waiting: row.waiting,
+                        status: 'ready',
+                        observedAt: reply.observedAt,
+                        ...(nextScope !== undefined ? { sourceScopeKey: nextScope } : {}),
+                    }, reply.unchanged);
+                }
             }
             for (const rowId of wanted) if (!received.has(rowId)) this.setSession(rowId, { ...EMPTY_SESSION, status: 'unavailable' });
         }
@@ -163,28 +245,40 @@ export class CodelyncProjectActivityController {
     private timer: ReturnType<typeof setTimeout> | null = null;
     private flight: Promise<void> | null = null;
     private failures = 0;
+    private fastRefreshCount = 0;
     private requestOrder = 0;
     private lastScope = ''; private lastMachines = new Set<string>();
     constructor(private options: ControllerOptions) {}
+    private syncStoreOwnership(active: boolean) {
+        const projectIds = this.projects.map(p => p.id);
+        const sessionIds = this.projects.flatMap(p => p.sessions?.map(row => row.id) ?? []);
+        if (typeof this.options.store.syncOwner === 'function') {
+            this.options.store.syncOwner(this.options.clientId, active, projectIds, sessionIds);
+        } else if (!active) {
+            this.options.store.mark(projectIds, 'stale');
+            this.options.store.markSessions(sessionIds, 'stale');
+        }
+    }
     setProjects(projects: CodelyncProjectDescriptor[]) {
         if (sameProjectDescriptors(projects, this.projects)) return;
         const next = projects.slice(0, 16).map(project => project.sessions
             ? { ...project, sessions: project.sessions.map(row => ({ id: row.id, nativeId: row.nativeId })) }
             : { ...project });
-        this.projects = next; this.revision++; this.clearTimer();
+        this.projects = next; this.revision++; this.fastRefreshCount = 0; this.clearTimer();
+        if (this.enabled) this.syncStoreOwnership(true);
         if (!next.length) void this.release();
         else if (this.enabled) void this.refresh();
     }
     setEnabled(enabled: boolean) {
         if (this.closed || enabled === this.enabled) return;
-        this.enabled = enabled; this.revision++; this.clearTimer();
+        this.enabled = enabled; this.revision++; this.fastRefreshCount = 0; this.clearTimer();
         if (enabled) {
+            this.syncStoreOwnership(true);
             this.options.store.mark(this.projects.map(p => p.id), 'refreshing');
             this.options.store.markSessions(this.projects.flatMap(p => p.sessions?.map(row => row.id) ?? []), 'refreshing');
             void this.refresh();
         } else {
-            this.options.store.mark(this.projects.map(p => p.id), 'stale');
-            this.options.store.markSessions(this.projects.flatMap(p => p.sessions?.map(row => row.id) ?? []), 'stale');
+            this.syncStoreOwnership(false);
             void this.release();
         }
     }
@@ -195,7 +289,7 @@ export class CodelyncProjectActivityController {
         const revision = this.revision, projects = this.projects;
         const operation = (async () => {
             const scope = await this.options.scope();
-            if (!this.current(revision)) return;
+            if (!this.enabled || this.closed || !this.projects.length) return;
             if (!scope) { this.options.store.reset(''); return; }
             this.options.store.reset(scope);
             this.lastScope = scope;
@@ -205,16 +299,29 @@ export class CodelyncProjectActivityController {
                 items.push(project); buckets.set(project.machineId, items);
             }
             for (const [machine, items] of buckets) {
-                if (!this.current(revision)) return;
+                if (!this.enabled || this.closed || !this.projects.length) return;
                 this.lastMachines.add(machine);
                 const groups = items.map(({ machineId: _machine, ...group }) => group);
                 const result = await this.options.request(machine, { clientId: this.options.clientId, requestSeq: ++this.requestOrder, groups }, scope);
                 // 原账户/入口已变化的迟到回复不能写进当前项目；这条读链路不重放任何会话动作。
-                if (!this.current(revision)) return;
+                if (!this.enabled || this.closed || !this.projects.length) return;
                 const currentScope = await this.options.scope();
                 if (currentScope !== scope) { this.options.store.reset(currentScope); return; }
-                const scopes = new Map(items.flatMap(item => item.sessions?.map(row => [row.id, codelyncActivitySourceScope(machine, item.app ?? 'codex', item.hostId, row.nativeId)] as const) ?? []));
-                this.options.store.apply(machine, result, new Set(items.map(item => item.id)), new Map(items.map(item => [item.id, new Set(item.sessions?.map(row => row.id) ?? [])])), scopes);
+                const activeById = new Map(this.projects.filter(p => p.machineId === machine).map(p => [p.id, p]));
+                const applicableItems = revision === this.revision ? items : items.filter(item => activeById.has(item.id));
+                if (!applicableItems.length) continue;
+                const scopes = new Map(applicableItems.flatMap(item => item.sessions?.map(row => [row.id, codelyncActivitySourceScope(machine, item.app ?? 'codex', item.hostId, row.nativeId)] as const) ?? []));
+                this.options.store.apply(
+                    machine,
+                    result,
+                    new Set(applicableItems.map(item => item.id)),
+                    new Map(applicableItems.map(item => {
+                        const liveSessions = revision === this.revision ? item.sessions : activeById.get(item.id)?.sessions;
+                        const liveIds = new Set(liveSessions?.map(row => row.id) ?? []);
+                        return [item.id, new Set((item.sessions?.map(row => row.id) ?? []).filter(id => liveIds.has(id)))];
+                    })),
+                    scopes,
+                );
             }
             this.failures = 0;
         })().catch(() => {
@@ -225,7 +332,19 @@ export class CodelyncProjectActivityController {
         }).finally(() => {
             this.flight = null;
             if (this.enabled && !this.closed && this.projects.length) {
-                const delay = revision !== this.revision ? 0 : Math.min((this.options.intervalMs ?? 10000) * (1 + this.failures), 30000);
+                const hasPendingRefresh = this.failures === 0
+                    && typeof this.options.store.get === 'function'
+                    && this.projects.some(p => this.options.store.get(p.id).status === 'refreshing');
+                let delay: number;
+                if (revision !== this.revision) {
+                    delay = 0;
+                } else if (hasPendingRefresh && this.fastRefreshCount < 3) {
+                    this.fastRefreshCount++;
+                    delay = Math.min(800, this.options.intervalMs ?? 10000);
+                } else {
+                    if (!hasPendingRefresh) this.fastRefreshCount = 0;
+                    delay = Math.min((this.options.intervalMs ?? 10000) * (1 + this.failures), 30000);
+                }
                 this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, delay);
             }
         });

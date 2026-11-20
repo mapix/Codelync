@@ -65,8 +65,8 @@ Notifications.setNotificationHandler({
     },
 });
 
-// Setup Android notification channels (required for Android 8.0+)
-if (Platform.OS === 'android') {
+// Setup Android notification channels (required for Android 8.0+), skipped in push-free local mode
+if (Platform.OS === 'android' && !config.noninvasiveLocal) {
     Notifications.setNotificationChannelAsync('default', {
         name: 'Default',
         importance: Notifications.AndroidImportance.MAX,

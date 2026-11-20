@@ -28,6 +28,18 @@ answers a question, or publishes conversation history to the phone.
 - A valid partial summary renders its confirmed counters immediately, alongside
   the unknown count and refreshing state. It does not hide all useful counts
   until every cold owner lookup finishes.
+- While a refresh is in flight (`status: 'refreshing'`, whether initiated locally
+  on focus/foreground resume or while the Mac observer's asynchronous read is
+  queued or starting), previously confirmed project counters and session statuses
+  within the same authenticated peer/account/source scope remain preserved instead
+  of flashing to unconfirmed or zeroing confirmed counters before the refresh
+  completes. When the Mac reports `refreshing` on a requested group, the phone
+  schedules a bounded fast follow-up poll (`800ms`, capped at 3 consecutive fast
+  polls before returning to the `10s` cadence) so cold or re-leased observers
+  settle promptly. Genuine connection failures, unavailable inventory, settled
+  unconfirmed native state, or peer/account/source scope changes immediately
+  transition to `unavailable` / `Unconfirmed` without fabricating idle/zero or
+  granting input admission.
 
 ## Foreground and payload contract
 
@@ -124,6 +136,10 @@ budget, including when their project header has scrolled out of view.
 This is additive to version 1: older project-only callers still work, and missing
 row-status support is shown as unconfirmed. One shared foreground loop serves
 both project counters and row labels; no per-row network poll is introduced.
+Active foreground controllers (project list and selected session view) share the
+activity store with per-controller retention so one screen's blur/unmount does
+not mark a session row `stale` while another active foreground controller is
+still observing or refreshing that session.
 
 Verify native snapshot/patch and owner generation boundaries, current question
 retirement, unrelated large text deltas, shared-interest expiry, foreground-only

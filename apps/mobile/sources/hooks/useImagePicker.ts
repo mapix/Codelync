@@ -4,14 +4,14 @@
  * Wraps expo-image-picker with permission handling and thumbhash generation.
  * Enforces limits: max 20 images per message, 10MB per file.
  *
- * iOS images are downscaled and measured after JPEG conversion. Other
- * platforms retain the picker's optional fileSize (0 when unavailable).
+ * Native iOS and Android images are downscaled to <=3072px and measured after
+ * JPEG conversion. Web retains the picker's optional fileSize (0 when unavailable).
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { cacheDirectory, getInfoAsync, writeAsStringAsync } from 'expo-file-system/legacy';
+import { cacheDirectory, copyAsync, deleteAsync, getInfoAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { Modal } from '@/modal';
 import { generateThumbhash } from '@/utils/thumbhash';
@@ -20,10 +20,15 @@ import type { AttachmentPreview } from '@/sync/attachmentTypes';
 
 export const MAX_IMAGES_PER_MESSAGE = 20;
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const IOS_ATTACHMENT_JPEG_QUALITY = 0.92;
-const IOS_ATTACHMENT_MAX_DIMENSION = 3072;
+export const ATTACHMENT_JPEG_QUALITY = 0.92;
+export const ATTACHMENT_MAX_DIMENSION = 3072;
 // encryptBlob adds a 24-byte nonce and 16-byte authentication tag.
-const IOS_ATTACHMENT_MAX_FILE_SIZE = MAX_FILE_SIZE - 40;
+export const ATTACHMENT_MAX_FILE_SIZE = MAX_FILE_SIZE - 40;
+
+// Backward-compatible aliases.
+export const IOS_ATTACHMENT_JPEG_QUALITY = ATTACHMENT_JPEG_QUALITY;
+export const IOS_ATTACHMENT_MAX_DIMENSION = ATTACHMENT_MAX_DIMENSION;
+export const IOS_ATTACHMENT_MAX_FILE_SIZE = ATTACHMENT_MAX_FILE_SIZE;
 
 export type { AttachmentPreview };
 
@@ -52,6 +57,49 @@ function withJpegExtension(fileName: string | null | undefined): string {
     return `${stem}.jpg`;
 }
 
+function shouldNormalizeNativeAsset(platformOs: string): boolean {
+    return platformOs === 'ios' || platformOs === 'android';
+}
+
+function isPositiveFiniteByteSize(size: unknown): size is number {
+    return typeof size === 'number' && Number.isFinite(size) && size > 0;
+}
+
+/**
+ * Resolves the real byte size of a local `file://` or `content://` URI.
+ *
+ * On `file://`, `getInfoAsync` reads `File.length()` / `NSFileSize` directly.
+ * On Android `content://`, `getInfoAsync` calls `InputStream.available()`
+ * without catching `IOException` and can return `0` or only a buffered kernel
+ * pipe chunk (e.g. 4 KB for a 15 MB cloud photo). Staging a temp copy via
+ * `copyAsync` whenever `cacheDirectory` is available streams the full content
+ * via `ContentResolver.openInputStream` and measures exact bytes on disk.
+ */
+export async function resolveLocalUriByteSize(uri: string): Promise<number> {
+    if (uri.startsWith('content://') && cacheDirectory) {
+        const tempUri = `${cacheDirectory}codelync_size_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        try {
+            await copyAsync({ from: uri, to: tempUri });
+            const staged = await getInfoAsync(tempUri);
+            if (staged.exists && !staged.isDirectory && isPositiveFiniteByteSize(staged.size)) {
+                return staged.size;
+            }
+        } finally {
+            await deleteAsync(tempUri, { idempotent: true }).catch(() => {});
+        }
+        throw new Error('Could not determine image size');
+    }
+
+    const info = await getInfoAsync(uri);
+    if (info.exists && info.isDirectory) {
+        throw new Error('Image URI points to a directory');
+    }
+    if (info.exists && isPositiveFiniteByteSize(info.size)) {
+        return info.size;
+    }
+    throw new Error('Could not determine image size');
+}
+
 export async function normalizePickedAssetForUpload(asset: ImagePicker.ImagePickerAsset): Promise<{
     uri: string;
     width: number;
@@ -60,32 +108,63 @@ export async function normalizePickedAssetForUpload(asset: ImagePicker.ImagePick
     name: string;
     size: number;
 }> {
-    if (Platform.OS !== 'ios') {
+    if (!shouldNormalizeNativeAsset(Platform.OS)) {
+        let size = isPositiveFiniteByteSize(asset.fileSize) ? asset.fileSize : 0;
+        if (size <= 0 && (asset.uri.startsWith('file://') || asset.uri.startsWith('content://'))) {
+            size = await resolveLocalUriByteSize(asset.uri);
+        }
         return {
             uri: asset.uri,
             width: asset.width,
             height: asset.height,
             mimeType: asset.mimeType ?? 'image/jpeg',
             name: asset.fileName ?? `image_${Date.now()}.jpg`,
-            size: asset.fileSize ?? 0,
+            size,
         };
     }
 
     // Supply only the long edge: Expo preserves aspect ratio without cropping.
+    const hasKnownDimensions = asset.width > 0 && asset.height > 0;
     const resize = asset.width >= asset.height
-        ? { width: IOS_ATTACHMENT_MAX_DIMENSION }
-        : { height: IOS_ATTACHMENT_MAX_DIMENSION };
-    const actions = Math.max(asset.width, asset.height) > IOS_ATTACHMENT_MAX_DIMENSION
+        ? { width: ATTACHMENT_MAX_DIMENSION }
+        : { height: ATTACHMENT_MAX_DIMENSION };
+    const actions = hasKnownDimensions && Math.max(asset.width, asset.height) > ATTACHMENT_MAX_DIMENSION
         ? [{ resize }]
         : [];
-    const converted = await manipulateAsync(asset.uri, actions, {
-        compress: IOS_ATTACHMENT_JPEG_QUALITY,
+    let converted = await manipulateAsync(asset.uri, actions, {
+        compress: ATTACHMENT_JPEG_QUALITY,
         format: SaveFormat.JPEG,
     });
 
-    const info = await getInfoAsync(converted.uri);
-    if (!info.exists || info.isDirectory || !Number.isFinite(info.size) || info.size <= 0) {
-        throw new Error('Could not determine normalized image size');
+    // If source metadata omitted dimensions (0x0 on raw content://), enforce
+    // the 3072px bound once the decoded dimensions are known.
+    if (!hasKnownDimensions && Math.max(converted.width, converted.height) > ATTACHMENT_MAX_DIMENSION) {
+        const firstUri = converted.uri;
+        const decodedResize = converted.width >= converted.height
+            ? { width: ATTACHMENT_MAX_DIMENSION }
+            : { height: ATTACHMENT_MAX_DIMENSION };
+        let secondUri: string | undefined;
+        try {
+            converted = await manipulateAsync(firstUri, [{ resize: decodedResize }], {
+                compress: ATTACHMENT_JPEG_QUALITY,
+                format: SaveFormat.JPEG,
+            });
+            secondUri = converted.uri;
+        } finally {
+            if (firstUri !== asset.uri && firstUri !== secondUri) {
+                await deleteAsync(firstUri, { idempotent: true }).catch(() => {});
+            }
+        }
+    }
+
+    let size: number;
+    try {
+        size = await resolveLocalUriByteSize(converted.uri);
+    } catch (error) {
+        if (converted.uri !== asset.uri) {
+            await deleteAsync(converted.uri, { idempotent: true }).catch(() => {});
+        }
+        throw error;
     }
 
     return {
@@ -94,7 +173,7 @@ export async function normalizePickedAssetForUpload(asset: ImagePicker.ImagePick
         height: converted.height || asset.height,
         mimeType: 'image/jpeg',
         name: withJpegExtension(asset.fileName),
-        size: info.size,
+        size,
     };
 }
 
@@ -118,8 +197,11 @@ async function previewForAsset(asset: ImagePicker.ImagePickerAsset): Promise<Att
     }
 
     const size = normalized.size;
-    const maxSize = Platform.OS === 'ios' ? IOS_ATTACHMENT_MAX_FILE_SIZE : MAX_FILE_SIZE;
+    const maxSize = shouldNormalizeNativeAsset(Platform.OS) ? ATTACHMENT_MAX_FILE_SIZE : MAX_FILE_SIZE;
     if (size > maxSize) {
+        if (normalized.uri !== asset.uri) {
+            await deleteAsync(normalized.uri, { idempotent: true }).catch(() => {});
+        }
         Modal.alert(
             t('imageUpload.fileTooLargeTitle'),
             t('imageUpload.fileTooLargeMessage', { name: asset.fileName ?? 'image', maxMb: 10 }),
@@ -154,7 +236,7 @@ export function useImagePicker(): UseImagePickerResult {
     }, [selectedImages]);
 
     const requestPermission = useCallback(async (): Promise<boolean> => {
-        if (Platform.OS === 'web') return true;
+        if (Platform.OS === 'web' || Platform.OS === 'android') return true;
 
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {

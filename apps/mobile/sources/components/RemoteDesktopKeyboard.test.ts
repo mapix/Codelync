@@ -53,6 +53,7 @@ describe('remote desktop keyboard regression', () => {
         mount(dispatch, { enabled: false, onKeyboardHeight: height });
         expect(native.focus).toHaveBeenCalled();
         expect(byId('desktop-text-input').props.autoFocus).toBe(true);
+        expect(byId('desktop-text-input').props.disableFullscreenUI).toBe(true);
         expect(byId('desktop-text-input').props.editable).not.toBe(false);
         edit('zhong');
         expect(byId('desktop-type').props.disabled).toBe(true);

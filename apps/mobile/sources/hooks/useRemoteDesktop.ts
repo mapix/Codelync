@@ -5,41 +5,98 @@ import { Room, RoomEvent, setLogLevel } from 'livekit-client';
 import { registerGlobals, RNKeyProvider, RNE2EEManager } from '@livekit/react-native';
 import { TokenStorage } from '@/auth/tokenStorage';
 import { getConnectionSnapshot, subscribeConnection } from '@/sync/codelyncConnection';
-import { desktopRequest, desktopBinding, DesktopRequestError, type DesktopStatus, type DesktopDisplay, type DesktopGrant, type DesktopInput, type DesktopQuality, type DesktopView, type DesktopSpaceAction } from '@/sync/remoteDesktop';
+import { desktopRequest, desktopBinding, DesktopRequestError, type DesktopStatus, type DesktopDisplay, type DesktopDisplaysResponse, type DesktopGrant, type DesktopInput, type DesktopQuality, type DesktopView, type DesktopSpaceAction, type DesktopViewport, type DesktopWindowItem, type DesktopWindowsResponse, type DesktopWindowActionResponse, type DesktopPermissions } from '@/sync/remoteDesktop';
 import { DesktopInputQueue, DesktopInputQueueError, desktopInputAcknowledged } from '@/sync/desktopInputQueue';
 
 type ActiveDesktop = { grant: DesktopGrant; room: Room; keyProvider: RNKeyProvider; peer: string; sequence: number };
+type AdoptableDesktopView = {
+    geometry?: string;
+    trackSid: string;
+    viewPending?: boolean;
+    permissions?: DesktopPermissions;
+    display?: DesktopDisplay;
+    activeWindowId?: string | null;
+};
+
+function isVirtualDisplayItem(display?: Pick<DesktopDisplay, 'id' | 'kind'> | null): boolean {
+    return !!display && (display.kind === 'virtual' || display.id === 'virtual');
+}
+
+function sameDesktopDisplay(a: DesktopDisplay, b: DesktopDisplay): boolean {
+    return a.id === b.id
+        && a.name === b.name
+        && a.kind === b.kind
+        && a.width === b.width
+        && a.height === b.height
+        && a.logicalWidth === b.logicalWidth
+        && a.logicalHeight === b.logicalHeight
+        && a.geometry === b.geometry;
+}
 
 export function useRemoteDesktop() {
     const focused = useIsFocused(), connection = React.useSyncExternalStore(subscribeConnection, getConnectionSnapshot);
     const [status, setStatus] = React.useState<DesktopStatus | null>(null), [displays, setDisplays] = React.useState<DesktopDisplay[]>([]);
+    const [selectedDisplayIdState, setSelectedDisplayId] = React.useState('');
+    const [virtualDisplaySupported, setVirtualDisplaySupported] = React.useState(false);
     const [grant, setGrant] = React.useState<DesktopGrant | null>(null), [room, setRoom] = React.useState<Room | null>(null);
     const [busy, setBusy] = React.useState(false), [closing, setClosing] = React.useState(false), [ready, setReady] = React.useState(false), [error, setError] = React.useState<string | null>(null);
     const [quality, setQuality] = React.useState<DesktopQuality>({ width: 1920, fps: 30 });
     const [notice, setNotice] = React.useState<string | null>(null);
+    const [windows, setWindows] = React.useState<DesktopWindowItem[]>([]);
+    const [activeWindowId, setActiveWindowId] = React.useState<string | null>(null);
+    const [windowsLoading, setWindowsLoading] = React.useState(false);
     const live = React.useRef<ActiveDesktop | null>(null);
-    const epoch = React.useRef(0), requestPending = React.useRef(false), inputQueue = React.useRef<DesktopInputQueue | null>(null);
+    const epoch = React.useRef(0), windowsEpoch = React.useRef(0), requestPending = React.useRef(false), inputQueue = React.useRef<DesktopInputQueue | null>(null);
     const errorCode = (failure: unknown) => failure instanceof DesktopRequestError || failure instanceof DesktopInputQueueError ? failure.code : 'desktop-media-connect-failed';
+
+    const resetWindowState = React.useCallback(() => {
+        ++windowsEpoch.current;
+        setWindows([]);
+        setActiveWindowId(null);
+        setWindowsLoading(false);
+    }, []);
 
     const disconnect = React.useCallback(async () => {
         ++epoch.current; const prior = live.current; live.current = null;
         inputQueue.current?.close(); inputQueue.current = null;
+        resetWindowState();
         setReady(false); setGrant(null); setRoom(null); setBusy(!!prior); setClosing(!!prior); requestPending.current = !!prior;
         if (prior) {
             await Promise.allSettled([prior.room.disconnect(), desktopRequest('leave', desktopBinding(prior.grant), prior.peer)]);
             prior.keyProvider.dispose();
         }
         setBusy(false); setClosing(false); requestPending.current = false;
-    }, []);
-    const adoptView = React.useCallback((active: ActiveDesktop, result: DesktopView) => {
+    }, [resetWindowState]);
+    const adoptView = React.useCallback((active: ActiveDesktop, result: AdoptableDesktopView) => {
         if (live.current !== active) return;
-        if (result.geometry !== active.grant.display.geometry || result.trackSid !== active.grant.trackSid || result.viewPending) {
-            inputQueue.current?.close(); inputQueue.current = null; setReady(false);
-            active.grant = { ...active.grant, trackSid: result.trackSid, display: { ...active.grant.display, geometry: result.geometry } };
+        const nextGeometry = result.geometry ?? result.display?.geometry ?? active.grant.display.geometry;
+        const nextDisplay: DesktopDisplay = result.display
+            ? { ...result.display, geometry: nextGeometry }
+            : { ...active.grant.display, geometry: nextGeometry };
+        const viewInvalidated = nextGeometry !== active.grant.display.geometry
+            || result.trackSid !== active.grant.trackSid
+            || Boolean(result.viewPending)
+            || nextDisplay.id !== active.grant.display.id;
+        const displayChanged = !sameDesktopDisplay(active.grant.display, nextDisplay);
+        if (viewInvalidated) {
+            inputQueue.current?.close();
+            inputQueue.current = null;
+            setReady(false);
+        }
+        if (viewInvalidated || displayChanged) {
+            active.grant = { ...active.grant, trackSid: result.trackSid, display: nextDisplay };
             setGrant(active.grant);
         }
-        setStatus(previous => previous ? { ...previous, permissions: result.permissions } : previous);
-    }, []);
+        if (result.permissions) {
+            const nextPermissions = result.permissions;
+            setStatus(previous => previous ? { ...previous, permissions: nextPermissions } : previous);
+        }
+        if (!isVirtualDisplayItem(nextDisplay)) {
+            resetWindowState();
+        } else if (result.activeWindowId !== undefined) {
+            setActiveWindowId(result.activeWindowId);
+        }
+    }, [resetWindowState]);
     const recoverView = React.useCallback(async () => {
         const active = live.current; if (!active) return;
         try {
@@ -68,10 +125,15 @@ export function useRemoteDesktop() {
             if (current !== epoch.current) return;
             setStatus(status); setError(null);
             if (status.enabled) {
-                const inventory = await desktopRequest<{ displays: DesktopDisplay[]; permissions: NonNullable<DesktopStatus['permissions']> }>('displays', {}, connection.peerId ?? undefined);
+                const inventory = await desktopRequest<DesktopDisplaysResponse>('displays', {}, connection.peerId ?? undefined);
                 if (current !== epoch.current) return;
-                setDisplays(inventory.displays); setStatus({ ...status, permissions: inventory.permissions });
-            } else setDisplays([]);
+                setDisplays(inventory.displays);
+                setVirtualDisplaySupported(inventory.virtualDisplaySupported ?? inventory.displays.some(isVirtualDisplayItem));
+                setStatus({ ...status, permissions: inventory.permissions });
+            } else {
+                setDisplays([]);
+                setVirtualDisplaySupported(false);
+            }
         } catch (failure) { if (current === epoch.current) setError(errorCode(failure)); }
     }, [connection.peerId]);
 
@@ -84,13 +146,19 @@ export function useRemoteDesktop() {
         return () => subscription.remove();
     }, [disconnect]);
 
-    const connect = React.useCallback(async (displayId: string) => {
+    const connect = React.useCallback(async (displayId: string, viewport?: DesktopViewport) => {
         if (requestPending.current || live.current || !connection.peerId) return;
-        requestPending.current = true; const current = ++epoch.current; setBusy(true); setError(null); setNotice(null); setReady(false);
+        requestPending.current = true; const current = ++epoch.current;
+        setSelectedDisplayId(displayId); resetWindowState();
+        setBusy(true); setError(null); setNotice(null); setReady(false);
         let created: Room | null = null, keyProvider: RNKeyProvider | null = null, joined: DesktopGrant | null = null;
         const peer = connection.peerId;
+        const isTargetVirtual = displayId === 'virtual' || isVirtualDisplayItem(displays.find(item => item.id === displayId));
+        const joinBody: Record<string, unknown> = isTargetVirtual && viewport
+            ? { displayId, quality, viewport: { width: viewport.width, height: viewport.height } }
+            : { displayId, quality };
         try {
-            joined = await desktopRequest<DesktopGrant>('join', { displayId, quality }, peer);
+            joined = await desktopRequest<DesktopGrant>('join', joinBody, peer);
             if (current !== epoch.current) { await desktopRequest('leave', desktopBinding(joined), peer); return; }
             registerGlobals({ autoConfigureAudioSession: false }); setLogLevel('silent');
             keyProvider = new RNKeyProvider({ sharedKey: true });
@@ -104,6 +172,7 @@ export function useRemoteDesktop() {
             if (current !== epoch.current) { await created.disconnect(); keyProvider.dispose(); await desktopRequest('leave', desktopBinding(joined), peer); return; }
             live.current = { grant: joined, room: created, keyProvider, peer, sequence: 0 };
             const active = live.current;
+            setSelectedDisplayId(joined.display.id);
             installInputQueue(active);
             setGrant(joined); setRoom(created);
         } catch (failure) {
@@ -111,7 +180,7 @@ export function useRemoteDesktop() {
             if (joined) await desktopRequest('leave', desktopBinding(joined), peer).catch(() => {});
             if (current === epoch.current) setError(errorCode(failure));
         } finally { if (current === epoch.current) { requestPending.current = false; setBusy(false); } }
-    }, [connection.peerId, quality, disconnect, installInputQueue]);
+    }, [connection.peerId, displays, quality, disconnect, installInputQueue, resetWindowState]);
 
     React.useEffect(() => {
         if (!grant) return;
@@ -160,22 +229,39 @@ export function useRemoteDesktop() {
         catch (failure) { if (live.current === active) { setError(errorCode(failure)); await disconnect(); } }
         finally { requestPending.current = false; setBusy(false); }
     }, [disconnect]);
-    const switchDisplay = React.useCallback(async (displayId: string) => {
+    const switchDisplay = React.useCallback(async (displayId: string, viewport?: DesktopViewport) => {
         const active = live.current; if (!active || requestPending.current || active.grant.display.id === displayId) return;
         requestPending.current = true; inputQueue.current?.close(); inputQueue.current = null; setBusy(true); setReady(false);
+        setError(null); setNotice(null);
+        const isTargetVirtual = displayId === 'virtual' || isVirtualDisplayItem(displays.find(item => item.id === displayId));
+        if (!isTargetVirtual) resetWindowState();
+        const body: Record<string, unknown> = isTargetVirtual && viewport
+            ? { ...desktopBinding(active.grant), displayId, viewport: { width: viewport.width, height: viewport.height } }
+            : { ...desktopBinding(active.grant), displayId };
         try {
-            const result = await desktopRequest<{ trackSid: string; display: DesktopDisplay }>('display', { ...desktopBinding(active.grant), displayId }, active.peer);
-            if (live.current === active) { active.grant = { ...active.grant, display: result.display, trackSid: result.trackSid }; setGrant(active.grant); }
+            const result = await desktopRequest<{ trackSid: string; display: DesktopDisplay; geometry?: string; viewPending?: boolean; permissions?: DesktopPermissions }>('display', body, active.peer);
+            if (live.current === active) {
+                setSelectedDisplayId(result.display.id);
+                adoptView(active, {
+                    geometry: result.geometry ?? result.display.geometry,
+                    trackSid: result.trackSid,
+                    viewPending: result.viewPending,
+                    permissions: result.permissions,
+                    display: result.display,
+                    activeWindowId: isVirtualDisplayItem(result.display) ? undefined : null,
+                });
+            }
         } catch (failure) { if (live.current === active) { setError(errorCode(failure)); await disconnect(); } }
         finally { if (live.current === active) { requestPending.current = false; setBusy(false); } }
-    }, [disconnect]);
+    }, [displays, adoptView, disconnect, resetWindowState]);
     const navigateSpace = React.useCallback(async (kind: DesktopSpaceAction) => {
         const active = live.current; if (!active || requestPending.current || !ready) return;
         requestPending.current = true; inputQueue.current?.close(); inputQueue.current = null;
         setReady(false); setBusy(true); setError(null); setNotice(null);
+        const sequence = ++active.sequence;
         try {
             const result = await desktopRequest<DesktopView & { spaceChanged: boolean }>('space', {
-                ...desktopBinding(active.grant), sequence: ++active.sequence, kind,
+                ...desktopBinding(active.grant), sequence, kind,
             }, active.peer);
             if (live.current === active) {
                 adoptView(active, result);
@@ -185,5 +271,112 @@ export function useRemoteDesktop() {
             if (live.current === active) { setNotice(errorCode(failure)); setError(null); await recoverView(); }
         } finally { if (live.current === active) { requestPending.current = false; setBusy(false); } }
     }, [ready, adoptView, recoverView]);
-    return { status, displays, grant, room, busy, closing, ready, inputAllowed: connection.writable !== false, error, notice, quality, connect, disconnect, refresh, input, changeQuality, switchDisplay, navigateSpace, videoReady };
+
+    const refreshWindows = React.useCallback(async () => {
+        const active = live.current;
+        if (!active || !isVirtualDisplayItem(active.grant.display)) return;
+        const reqId = ++windowsEpoch.current;
+        setWindowsLoading(true);
+        try {
+            const result = await desktopRequest<DesktopWindowsResponse>('windows', { connectionId: active.grant.connectionId }, active.peer);
+            if (live.current !== active || reqId !== windowsEpoch.current || !isVirtualDisplayItem(active.grant.display)) return;
+            setWindows(Array.isArray(result.windows) ? result.windows : []);
+            setActiveWindowId(result.activeWindowId ?? null);
+        } catch (failure) {
+            if (live.current !== active || reqId !== windowsEpoch.current) return;
+            const code = errorCode(failure);
+            if (['desktop-disconnected', 'desktop-locked'].includes(code)) {
+                setError(code);
+                await disconnect();
+            } else {
+                setNotice(code);
+            }
+        } finally {
+            if (reqId === windowsEpoch.current) setWindowsLoading(false);
+        }
+    }, [disconnect]);
+
+    const runWindowAction = React.useCallback(async (payload: { mode: 'fill'; windowId: string } | { mode: 'restore' }): Promise<boolean> => {
+        const active = live.current;
+        if (!active || requestPending.current || !ready || !isVirtualDisplayItem(active.grant.display)) return false;
+        if (payload.mode === 'fill' && !/^\d{1,10}:\d{1,10}$/u.test(payload.windowId)) return false;
+        requestPending.current = true;
+        inputQueue.current?.close();
+        inputQueue.current = null;
+        setReady(false);
+        setBusy(true);
+        setError(null);
+        setNotice(null);
+        const sequence = ++active.sequence;
+        try {
+            const result = await desktopRequest<DesktopWindowActionResponse>('window', {
+                ...desktopBinding(active.grant),
+                sequence,
+                ...payload,
+            }, active.peer);
+            if (live.current === active) {
+                adoptView(active, result);
+                setWindows(previous => previous.map(item => ({
+                    ...item,
+                    onVirtualDisplay: result.activeWindowId !== null && item.id === result.activeWindowId,
+                })));
+                return true;
+            }
+        } catch (failure) {
+            if (live.current === active) {
+                setNotice(errorCode(failure));
+                setError(null);
+                await recoverView();
+            }
+        } finally {
+            if (live.current === active) {
+                requestPending.current = false;
+                setBusy(false);
+            }
+        }
+        return false;
+    }, [ready, adoptView, recoverView]);
+
+    const fillWindow = React.useCallback((windowId: string) => runWindowAction({ mode: 'fill', windowId }), [runWindowAction]);
+    const restoreWindow = React.useCallback(() => runWindowAction({ mode: 'restore' }), [runWindowAction]);
+
+    const selectedDisplay = grant?.display
+        ?? displays.find(item => item.id === selectedDisplayIdState)
+        ?? displays[0]
+        ?? null;
+    const selectedDisplayId = selectedDisplay?.id ?? '';
+    const isVirtualDisplay = isVirtualDisplayItem(selectedDisplay);
+
+    return {
+        status,
+        displays,
+        selectedDisplayId,
+        selectedDisplay,
+        selectDisplay: setSelectedDisplayId,
+        isVirtualDisplay,
+        virtualDisplaySupported,
+        grant,
+        room,
+        busy,
+        closing,
+        ready,
+        inputAllowed: connection.writable !== false,
+        error,
+        notice,
+        quality,
+        windows,
+        activeWindowId,
+        windowsLoading,
+        connect,
+        disconnect,
+        refresh,
+        input,
+        changeQuality,
+        switchDisplay,
+        navigateSpace,
+        refreshWindows,
+        fillWindow,
+        restoreWindow,
+        videoReady,
+    };
 }

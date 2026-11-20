@@ -111,10 +111,12 @@ with the archive boundary; a previous archive acknowledgement cannot skip later
 verification of an existing mirror. These updates preserve keys, messages and
 unknown operation receipts and never load conversation steps.
 
-Selected large trajectories start with a native suffix of at most 16 steps using
+Selected large trajectories start with a native suffix of at most 64 steps by
+default (configurable for bounded unit fixtures) using
 `GetCascadeTrajectorySteps.stepOffset` and the original index's absolute count.
 The request never invents an end/count field. Earlier history extends that native
-offset backwards in small batches; a partial suffix is never reported as complete
+offset backwards in bounded batches, halving the step delta if an oversized
+response exceeds the RPC payload bound; a partial suffix is never reported as complete
 history. Resident summary merging preserves monotonic `max(base.stepCount, streamHeader.stepCount)`
 within the same `trajectoryId` when the reactive summary stream lags behind
 unary `GetAllCascadeTrajectories`, and `snapshot()` performs one post-flight

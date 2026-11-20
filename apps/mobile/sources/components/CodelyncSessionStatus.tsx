@@ -30,7 +30,8 @@ function SessionStatusGlyph({ shape, filled, color }: { shape: 'circle' | 'squar
 export const CodelyncSessionStatusView = React.memo(({ activity }: { activity: CodelyncSessionActivity }) => {
     const { theme } = useUnistyles();
     const color = theme.colors.textSecondary;
-    if (!activity.known || activity.status !== 'ready') {
+    const hasConfirmedStatus = activity.known && (activity.status === 'ready' || (activity.status === 'refreshing' && activity.observedAt > 0));
+    if (!hasConfirmedStatus) {
         const unknownLabel = t('codelyncSessionStatus.unknown');
         return (
             <View

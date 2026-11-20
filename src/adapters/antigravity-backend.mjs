@@ -18,7 +18,7 @@ const ACTIVE = new Set(['CASCADE_RUN_STATUS_RUNNING', 'CASCADE_RUN_STATUS_CANCEL
 const IDLE = new Set(['CASCADE_RUN_STATUS_IDLE', 1]);
 const STEP_STATUS = new Map([[0, 'unknown'], [1, 'pending'], [2, 'running'], [3, 'completed'], [4, 'failed'], [5, 'cancelled'], [6, 'cancelled'], [7, 'failed'], [8, 'running'], [9, 'waiting'], [11, 'pending'], [12, 'interrupted']]);
 const MAX_STEPS = 16384;
-const HISTORY_BATCH_STEPS = 16;
+const DEFAULT_HISTORY_BATCH_STEPS = 64;
 const MAX_TEXT = 1024 * 1024;
 
 /** @param {unknown} value @returns {value is Value} */
@@ -233,7 +233,7 @@ export class AntigravityBackend {
   supportsNativeModelSettings = true;
   supportsNativeHistoryPaging = true;
   supportedActions = Object.freeze(['send', 'steer', 'interrupt', 'approval', 'read-controls', 'stage-settings']);
-  /** @param {{rpc?:Value,runtimePath?:string,pollMs?:number,now?:()=>number,historyIndex?:Value|false,settings?:Value,summaryStream?:Value,summaryStreamFactory?:(scope:Value)=>Value}} [options] */
+  /** @param {{rpc?:Value,runtimePath?:string,pollMs?:number,historyBatchSteps?:number,now?:()=>number,historyIndex?:Value|false,settings?:Value,summaryStream?:Value,summaryStreamFactory?:(scope:Value)=>Value}} [options] */
   constructor(options = {}) {
     this.rpc = options.rpc ?? new AntigravityRpcClient({ runtimePath: options.runtimePath }); this.now = options.now ?? Date.now;
     this.settings = options.settings ?? new AntigravitySettings({ rpc: this.rpc });
@@ -242,6 +242,8 @@ export class AntigravityBackend {
     this.residentIndexComplete = false;
     this.pollMs = options.pollMs ?? 1000;
     if (!Number.isSafeInteger(this.pollMs) || this.pollMs < 1000) throw new BridgeError('invalid-refresh-rate', 'Antigravity selected-session refresh cannot exceed one request per second.');
+    this.historyBatchSteps = options.historyBatchSteps ?? DEFAULT_HISTORY_BATCH_STEPS;
+    if (!Number.isSafeInteger(this.historyBatchSteps) || this.historyBatchSteps < 1 || this.historyBatchSteps > MAX_STEPS) throw new BridgeError('invalid-history-budget', 'A bounded native step batch is required.');
     /** @type {Map<string,Value>} */ this.sessions = new Map();
     /** @type {Map<string,Value>} */ this.activities = new Map();
     /** @type {Map<string,string>} */ this.indexHints = new Map();
@@ -485,17 +487,17 @@ export class AntigravityBackend {
     catch { indexAvailable = false; }
     if (before && this.generation() && this.generation() !== before) throw new BridgeError('source-epoch-changed', 'The original owner changed during the selected native index read.', 409);
     const summary = this.residentSummaries[id], owner = this.generation();
-    if (indexAvailable && record(summary) && typeof owner === 'string' && typeof summary.trajectoryId === 'string' && Number.isSafeInteger(summary.stepCount) && summary.stepCount > HISTORY_BATCH_STEPS) {
+    if (indexAvailable && record(summary) && typeof owner === 'string' && typeof summary.trajectoryId === 'string' && Number.isSafeInteger(summary.stepCount) && summary.stepCount > this.historyBatchSteps) {
       const saved = this.historyOffsets.get(id), count = summary.stepCount;
       const matching = saved?.owner === owner && saved.trajectoryId === summary.trajectoryId;
-      let offset = Math.max(0, count - HISTORY_BATCH_STEPS);
-      if (context.older) offset = Math.max(0, (context.historyBaseOffset ?? (matching && saved.offset < count ? saved.offset : offset)) - HISTORY_BATCH_STEPS);
+      const ceiling = context.older ? (context.historyBaseOffset ?? (matching && saved.offset < count ? saved.offset : Math.max(0, count - this.historyBatchSteps))) : count;
+      let offset = Math.max(0, ceiling - this.historyBatchSteps);
       let reply;
       while (true) {
         try { reply = await this.rpc.call('GetCascadeTrajectorySteps', { cascadeId: id, stepOffset: offset, trajectoryVerbosity: 'CLIENT_TRAJECTORY_VERBOSITY_FULL' }, { expectedHostId: context.expectedHostId, expectedGeneration: owner }); break; }
         catch (error) {
-          if (context.older || !(error instanceof BridgeError) || error.code !== 'antigravity-response-too-large' || count - offset <= 1) throw error;
-          offset = count - Math.max(1, Math.floor((count - offset) / 2));
+          if (!(error instanceof BridgeError) || error.code !== 'antigravity-response-too-large' || ceiling - offset <= 1) throw error;
+          offset = ceiling - Math.max(1, Math.floor((ceiling - offset) / 2));
         }
       }
       if (!Array.isArray(reply.steps) || !reply.steps.length || reply.steps.length > MAX_STEPS) throw new BridgeError('antigravity-invalid-response', 'The native suffix does not match its observed offset/count.', 503);

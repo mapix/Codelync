@@ -19,3 +19,15 @@ it('each list row displays real runtime and waiting state, including their overl
     expect(text(false, false, false)).toContain('codelyncSessionStatus.unknown');
     expect(text(false, false, false)).not.toContain('codelyncSessionStatus.idle');
 });
+
+it('retains last confirmed session label while status is refreshing, and drops to unknown on unavailable or unconfirmed', () => {
+    const renderWith = (status: 'ready' | 'refreshing' | 'unavailable' | 'stale', known: boolean, observedAt: number) => {
+        let renderer!: ReturnType<typeof create>;
+        act(() => { renderer = create(React.createElement(CodelyncSessionStatusView, { activity: { known, active: true, waiting: false, status, observedAt } })); });
+        const value = JSON.stringify(renderer.toJSON()); act(() => renderer.unmount()); return value;
+    };
+    expect(renderWith('refreshing', true, 1000)).toContain('codelyncSessionStatus.active');
+    expect(renderWith('refreshing', true, 1000)).not.toContain('codelyncSessionStatus.unknown');
+    expect(renderWith('refreshing', false, 0)).toContain('codelyncSessionStatus.unknown');
+    expect(renderWith('unavailable', true, 1000)).toContain('codelyncSessionStatus.unknown');
+});

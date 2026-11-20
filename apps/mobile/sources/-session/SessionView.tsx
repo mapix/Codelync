@@ -87,6 +87,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import * as React from 'react';
 import { useMemo } from 'react';
+import * as ReactNative from 'react-native';
 import { ActivityIndicator, LayoutChangeEvent, Platform, Pressable, Text, View } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -108,6 +109,7 @@ import {
 } from '@/sync/rig';
 import { useCodelyncConnectionState } from '@/hooks/useCodelyncConnectionState';
 import { isNoninvasiveBridge, canReadFromNoninvasiveSource, canSendToNoninvasiveSource } from '@/sync/noninvasiveBridge';
+import { nativeCachedReadControlsUnavailable } from '@/utils/nativeCachedRead';
 import { RigActivityBar } from '@/components/RigActivityBar';
 import { AnimatedFade } from '@/components/AnimatedOverlay';
 
@@ -423,6 +425,17 @@ export const SessionView = React.memo((props: { id: string }) => {
     // Wire intra-session back / forward into the global SidebarNavigator arrows.
     const canOverlayBack = overlayHistory.cursor > 0;
     const canOverlayForward = overlayHistory.cursor < overlayHistory.stack.length - 1;
+    const handleSessionBack = React.useCallback(() => {
+        const nav = typeof useOverlayNav.getState === 'function' ? useOverlayNav.getState() : null;
+        if (nav?.canBack && nav.back()) return;
+        const canGoBack = (router as { canGoBack?: () => boolean }).canGoBack;
+        if (typeof canGoBack !== 'function' || canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/');
+        }
+    }, [router]);
+
     useFocusEffect(React.useCallback(() => {
         const controls = {
             canBack: canOverlayBack,
@@ -443,12 +456,25 @@ export const SessionView = React.memo((props: { id: string }) => {
             },
         };
         useOverlayNav.getState().publish(controls);
+        const rn = ReactNative as Record<string, any>;
+        const backSub = Platform.OS === 'android' && typeof rn.BackHandler?.addEventListener === 'function'
+            ? rn.BackHandler.addEventListener('hardwareBackPress', () => {
+                const nav = typeof useOverlayNav.getState === 'function' ? useOverlayNav.getState() : null;
+                if (nav?.canBack) return nav.back();
+                if (typeof (router as { canGoBack?: () => boolean }).canGoBack === 'function' && !(router as { canGoBack: () => boolean }).canGoBack()) {
+                    router.replace('/');
+                    return true;
+                }
+                return false;
+            })
+            : null;
         return () => {
+            backSub?.remove?.();
             if (useOverlayNav.getState().back === controls.back) {
                 useOverlayNav.getState().reset();
             }
         };
-    }, [canOverlayBack, canOverlayForward]));
+    }, [canOverlayBack, canOverlayForward, router]));
 
     // Compute header props based on session state
     const headerProps = useMemo(() => {
@@ -614,7 +640,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                         extraPathSegment={fileViewPath ?? undefined}
                         rightSlot={(diffViewOpen || !!fileViewPath) ? headerRightSlot : headerRight}
                         onTitlePress={session ? () => router.push(`/session/${session.id}/info`) : undefined}
-                        onBackPress={() => router.back()}
+                        onBackPress={handleSessionBack}
                     />
                     {/* The strip goes by the route, which is where a chat that
                         does not exist yet still has a chip of its own. */}
@@ -860,6 +886,16 @@ export function SessionViewLoaded({
 }) {
     const { theme } = useUnistyles();
     const router = useRouter();
+    const handleLoadedSessionBack = React.useCallback(() => {
+        const nav = typeof useOverlayNav.getState === 'function' ? useOverlayNav.getState() : null;
+        if (nav?.canBack && nav.back()) return;
+        const canGoBack = (router as { canGoBack?: () => boolean }).canGoBack;
+        if (typeof canGoBack !== 'function' || canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/');
+        }
+    }, [router]);
     const safeArea = useSafeAreaInsets();
     const isLandscape = useIsLandscape();
     const isTablet = useIsTablet();
@@ -975,14 +1011,15 @@ export function SessionViewLoaded({
     // Attachment availability is capability-driven by the active session. There
     // is nothing to attach to before the chat exists.
     const { selectedImages, attachImages, removeImage, clearImages, addImages } = useImagePicker();
+    const isCachedNativeRead = nativeCachedReadControlsUnavailable(session);
     const canUseAttachments = !!session && (isRigMetadataV1(session.metadata)
         ? rigCanUseAttachments(session.metadata)
         : supportsImageAttachmentsForFlavor(session.metadata?.flavor));
     React.useEffect(() => {
-        if (!canUseAttachments && selectedImages.length > 0) {
+        if (!canUseAttachments && !isCachedNativeRead && selectedImages.length > 0) {
             clearImages();
         }
-    }, [canUseAttachments, selectedImages.length, clearImages]);
+    }, [canUseAttachments, isCachedNativeRead, selectedImages.length, clearImages]);
 
     // ChatComposer owns the message state + useDraft subscription. We only
     // hold an imperative handle so handleSend can read the live text and
@@ -1344,7 +1381,7 @@ export function SessionViewLoaded({
                     || (Platform.OS === 'web' && sessionStatus.state === 'waiting')
                 )}
                 onFileViewerPress={session && experiments && !isTablet && rigCanBrowseFiles(session.metadata) && rigCanReadFiles(session.metadata) ? handleFileViewerPress : undefined}
-                selectedImages={canUseAttachments ? selectedImages : undefined}
+                selectedImages={canUseAttachments || isCachedNativeRead ? selectedImages : undefined}
                 onPickImages={canUseAttachments ? attachImages : undefined}
                 onRemoveImage={canUseAttachments ? removeImage : undefined}
                 onAddImages={canUseAttachments ? addImages : undefined}
@@ -1484,7 +1521,7 @@ export function SessionViewLoaded({
                         testID="codelync-landscape-back"
                         accessibilityRole="button"
                         accessibilityLabel={t('common.back')}
-                        onPress={() => router.back()}
+                        onPress={handleLoadedSessionBack}
                         style={{
                             position: 'absolute',
                             top: safeArea.top + 8,
